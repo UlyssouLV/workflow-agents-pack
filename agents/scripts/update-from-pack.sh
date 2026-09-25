@@ -17,6 +17,13 @@ if [ ! -d "$PACK/agents/skills" ]; then
   exit 1
 fi
 
+echo "Cible : $TARGET"
+if git -C "$PACK" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Pack  : $(git -C "$PACK" rev-parse --short HEAD) — $(git -C "$PACK" log -1 --format='%s')"
+else
+  echo "Pack  : $PACK"
+fi
+
 updated=0
 added=0
 
