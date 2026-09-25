@@ -103,16 +103,20 @@ Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → sto
 
 **Commande :** `/qg`
 
-**Options :** aucune.
+**Options :** `-w` — attend qu’une analyse existe pour le SHA `HEAD` (15 s × 12, soit 3 min). Credentials absents → stop tout de suite, pas de poll.
 
 **Corps :** inutile ; le skill lit le Quality Gate Sonar du SHA `HEAD`.
 
-Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`). Gate pas `OK` → stop. Ne corrige pas. Équivalent : « vérifie le quality gate ».
+Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`). Credentials manquants ou vides → stop immédiat (même avec `-w`). Pas d’analyse pour HEAD → stop (avec `-w` : après le poll). Gate pas `OK` (`ERROR`, `WARN`, …) → stop. Ne corrige pas. Équivalent : « vérifie le quality gate ».
 
 **Exemple :**
 
 ```
 /qg
+```
+
+```
+/qg -w
 ```
 
 ### Ouvrir une branche
@@ -242,7 +246,7 @@ Vérifie la fiabilité du code
 
 **Corps :** inutile.
 
-Lit **`/qg`**, corrige ce que le gate exige, relit **`/qg`** une fois. Pas de boucle. Skill `corriger-quality-gate`.
+Lit **`/qg`**, corrige ce que le gate exige. Ne relit pas le même SHA (même analyse). Le caller (ou toi) fait **`/c`** puis **`/qg`** / **`/qg -w`**. Skill `corriger-quality-gate`.
 
 **Exemple :**
 
@@ -320,7 +324,7 @@ Ouvre la version 1.3.0
 
 **Corps :** inutile en général (le ticket suffit).
 
-TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci #<n>`**, puis le suivant ou **Finalise la version**. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
+TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/qg -w`** (skip immédiat s’il n’y a pas de credentials Sonar), **`/cqg`** si le gate est rouge, **`/cci #<n>`**, puis le suivant ou **Finalise la version**. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
 
 **Exemple :**
 

@@ -78,7 +78,7 @@ Then, without printing secret values:
 2. If **`.env.example`** has no `SONAR_` keys, append empty placeholders (`SONAR_HOST_URL=`, `SONAR_TOKEN=`, `SONAR_PROJECT_KEY=`). That file may be committed.
 3. If `gh` can see a GitHub remote: `gh secret set` for the same three names (`printf '%s' "$value" | gh secret set NAME`). If `gh` fails (no remote, no admin): say so; **`.env` alone** is enough for `/qg` locally.
 
-`/qg`, `/vf`, and `/cqg` load `.env`. They do not read GitHub Actions secrets.
+`/qg`, `/vf`, `/cqg`, and the `/implement` wrap load `.env`. They do not read GitHub Actions secrets.
 
 ## 6. Commit
 
