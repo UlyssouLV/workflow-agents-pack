@@ -105,9 +105,9 @@ Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → sto
 
 **Options :** `-w` — attend qu’une analyse existe pour le SHA `HEAD` (15 s × 12, soit 3 min). Credentials absents → stop tout de suite, pas de poll.
 
-**Corps :** inutile ; le skill lit le Quality Gate Sonar du SHA `HEAD`.
+**Corps :** inutile ; le skill lit le Quality Gate Sonar de la **branche courante** + SHA `HEAD` (`analysisId`). Jamais le gate de `main` par défaut.
 
-Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`). Credentials manquants ou vides → stop immédiat (même avec `-w`). Pas d’analyse pour HEAD → stop (avec `-w` : après le poll). Gate pas `OK` (`ERROR`, `WARN`, …) → stop. Ne corrige pas. Équivalent : « vérifie le quality gate ».
+Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`). Credentials manquants ou vides → stop immédiat (même avec `-w`). Pas d’analyse pour cette branche/HEAD → stop (avec `-w` : après le poll). Gate pas `OK` (`ERROR`, `WARN`, …) → stop. Ne corrige pas. Équivalent : « vérifie le quality gate ».
 
 **Exemple :**
 

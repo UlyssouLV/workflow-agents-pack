@@ -23,7 +23,7 @@ See `agents/domain.md`. File roles and path lookup: `agents/roles.yml`. `/code-r
 
 ## Tests
 
-Tests: `/t`. Quality gate: `/qg` (`-w` waits for the HEAD analysis; no poll if credentials are missing). Both: `/vf` / « Vérifie la fiabilité du code ». Fix a red gate: `/cqg`. After `/implement` commit: `encadrer-implement` skips Sonar when credentials are missing; otherwise `/qg -w`, then `/cqg` if the gate is red.
+Tests: `/t`. Quality gate: `/qg` (`-w` waits for the current-branch HEAD analysis; no poll if credentials are missing; never the default `main` gate). Both: `/vf` / « Vérifie la fiabilité du code ». Fix a red gate: `/cqg`. After `/implement` commit: `encadrer-implement` skips Sonar when credentials are missing; otherwise `/qg -w`, then `/cqg` if the gate is red.
 
 ## Git
 
