@@ -5,6 +5,7 @@
 **« Ouvre la version »** → implement each child (close when tests are green and the quality gate is `OK` or skipped) → **« Finalise la version »**. The **parent** spec closes via `Fixes` on the squash. Do **not** leave implemented children Open. Do **not** close the parent from `encadrer-implement`.
 
 - **« Initialise le repo »** (`/init`): skill `initialise-le-repo` (already done in this repo)
+- **« Augmente la feuille de route de dev »** (`/afr`): skill `augmenter-la-feuille-de-route-dev`
 - **« Ouvre la version »** (must include **`X.Y.Z`**): skill `ouvrir-la-version`
 - Child-ticket TDD: `/implement`, then skill `encadrer-implement`
 - **« Finalise la version »**: skill `finaliser-la-version`

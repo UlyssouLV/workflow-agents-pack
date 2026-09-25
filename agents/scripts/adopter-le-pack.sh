@@ -34,7 +34,7 @@ echo "copié  agents/"
 
 if [ ! -f "$TARGET/docs/dev/feuille-de-route-dev.md" ]; then
   mkdir -p "$TARGET/docs/dev"
-  printf '%s\n' '# Feuille de route' > "$TARGET/docs/dev/feuille-de-route-dev.md"
+  printf '%s\n' '# Feuille de route de dev' > "$TARGET/docs/dev/feuille-de-route-dev.md"
   echo "créé   docs/dev/feuille-de-route-dev.md"
 fi
 mkdir -p "$TARGET/docs/specs" "$TARGET/docs/adr"
