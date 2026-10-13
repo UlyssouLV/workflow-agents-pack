@@ -87,16 +87,20 @@ Tableau : chaque skill, bucket `meta`/`process` s’il est sous `agents/`, prés
 
 **Commande :** `/t`
 
-**Options :** aucune.
+**Options :** `-a` — tous les `test-roots`, suites complètes (ignore le scoping).
 
-**Corps :** inutile ; le skill choisit les dossiers du rôle **`test-roots`** selon le diff.
+**Corps :** inutile.
 
-Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → stop. Extra Tests : rôle **`agent-adapter`**. Échec → stop. Équivalent : « lance les tests ».
+Rôle **`test-roots`**. Sans `-a` : périmètre **hybride** — working tree s’il est sale, sinon `origin/main...HEAD` ; pour pytest, seulement les fichiers de tests liés aux `*.py` touchés (repli = suite du root si aucun match). `npm test` reste la suite du package. Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → stop. Extra Tests : rôle **`agent-adapter`**. Échec → stop. Équivalent : « lance les tests ».
 
 **Exemple :**
 
 ```
 /t
+```
+
+```
+/t -a
 ```
 
 ### Quality gate
