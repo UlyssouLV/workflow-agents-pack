@@ -246,6 +246,27 @@ Squash-merge du PR de la branche courante dans `main`, suppression de la branche
 
 ## Process
 
+### Mettre à jour le pack
+
+**Commande :** `/up` ou `Mets à jour le pack` / `Update le pack`
+
+**Options :** aucune sur `/up` ; docs / suivi se choisissent dans le plan (o/n).
+
+**Corps :** optionnel — chemin local vers un checkout `workflow-agents-pack` ; sinon clone temporaire depuis GitHub.
+
+Inventorie le projet vs le pack (`agents/docs/migrations-pack.md`), propose migrations + sync skills, **attend un oui**, puis applique et dispatch. N’efface pas les skills locaux. Ne commit pas. Skill `mettre-a-jour-le-pack`. Sync brut sans grill : `update-from-pack.sh`.
+
+**Exemple :**
+
+```
+/up
+```
+
+```
+/up
+Pack local : /Users/moi/Desktop/workflow-agents-pack
+```
+
 ### Initialise le repo
 
 **Commande :** `/init` ou `Initialise le repo`

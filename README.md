@@ -33,15 +33,16 @@ Si `agents/skills/` existe déjà, cette commande refuse : utilise la mise à jo
 
 ## Mettre à jour un repo déjà initialisé
 
-À la racine du projet (celui qui a déjà `agents/skills/`, ex. `aduna_crea-website`) :
+**Préférer le skill `/up`** (dans Cursor / Claude Code, à la racine du projet) : inventaire des écarts (chemins glossaire/feuille, rôles, tracker, cycle), proposition, **oui**, puis sync + migrations. Catalogue : `agents/docs/migrations-pack.md`.
+
+Sync brut skills/hooks seulement (sans migration intelligente) :
 
 ```bash
 TMP=$(mktemp -d)
 git clone --depth 1 https://github.com/UlyssouLV/workflow-agents-pack.git "$TMP"
 bash "$TMP/agents/scripts/update-from-pack.sh"
+# options : --with-docs  --with-suivi
 rm -rf "$TMP"
 ```
 
-Ça met à jour les skills et hooks **déjà présents** avec la version de ce pack, et **ajoute** ceux qui n’existent que dans le pack. Ça n’efface pas un skill ou un hook créé seulement dans le projet. `AGENTS.md`, `agents/roles.yml`, le README du projet, `.env` et les settings des adaptateurs ne sont pas touchés.
-
-Ensuite `dispatch.py` recopie vers `.claude/skills/` et `.cursor/skills/` (sans supprimer un skill qui n’existe que dans un adaptateur).
+Le script met à jour / ajoute les skills et hooks du pack, ne supprime pas un skill local-only, puis lance `dispatch.py`. Sans `/up`, il **n’aligne pas** tout seul `roles.yml`, `CONTEXT.md` → glossaire, ancienne feuille, etc.
