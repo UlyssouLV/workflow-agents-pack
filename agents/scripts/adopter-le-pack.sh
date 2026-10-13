@@ -3,19 +3,21 @@
 # rewrite, no Sonar credentials. Creates missing skeleton/templates only.
 # If agents/skills/ already exists, use update-from-pack.sh instead.
 #
-# Usage: adopter-le-pack.sh [--with-suivi]
+# Usage: adopter-le-pack.sh [--with-suivi] [--with-docs]
 set -euo pipefail
 
 WITH_SUIVI=0
+WITH_DOCS=0
 for arg in "$@"; do
   case "$arg" in
     --with-suivi) WITH_SUIVI=1 ;;
+    --with-docs) WITH_DOCS=1 ;;
     -h|--help)
-      echo "Usage: $0 [--with-suivi]" >&2
+      echo "Usage: $0 [--with-suivi] [--with-docs]" >&2
       exit 0
       ;;
     *)
-      echo "Option inconnue : $arg (attendu : --with-suivi)" >&2
+      echo "Option inconnue : $arg (attendu : --with-suivi | --with-docs)" >&2
       exit 1
       ;;
   esac
@@ -184,11 +186,20 @@ echo "câblé  hooks Claude + Cursor (merge, rien d’autre écrasé)"
   python3 agents/scripts/dispatch.py --check
 )
 
+if [ "$WITH_DOCS" -eq 1 ]; then
+  bash "$TARGET/agents/scripts/scaffold-docs-site.sh" "$TARGET"
+fi
+
 echo "Sonar : désactivé (pas de credentials). /qg skippe tant que SONAR_* n’est pas dans .env."
 if [ "$WITH_SUIVI" -eq 1 ]; then
   echo "Suivi : activé (docs/suivi-avancement/ + rôle)."
 else
   echo "Suivi : non activé (passe --with-suivi pour le scaffold). Finalise soft-skip /msa."
+fi
+if [ "$WITH_DOCS" -eq 1 ]; then
+  echo "Docs : activé (docs-site/ + workflow Pages). Active GitHub Pages → Actions après push."
+else
+  echo "Docs : non activé (passe --with-docs, ou plus tard update-from-pack.sh --with-docs)."
 fi
 echo "Ne lance pas /init : le README du projet est inchangé."
 echo "Pack adopté."

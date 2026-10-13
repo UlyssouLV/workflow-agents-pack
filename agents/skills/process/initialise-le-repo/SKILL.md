@@ -102,7 +102,22 @@ Ask in French, then **wait**:
 
      Place it after `roadmap` (or at the end of `roles:`). Do not invent other roles.
 
-## 7. Commit
+## 7. Documentation Docusaurus + GitHub Pages (o/n)
+
+Ask in French, then **wait**:
+
+> Publier une documentation Docusaurus sur GitHub Pages ? **o/n**
+
+- **n** / **non** → skip. A later `agents/scripts/update-from-pack.sh --with-docs` can add it.
+- **o** / **oui** → from the repo root, run the pack helper (same as update/adopter):
+
+  ```bash
+  bash agents/scripts/scaffold-docs-site.sh "$(pwd)"
+  ```
+
+  That copies `agents/templates/docs-site/`, fills owner/repo from `origin`, adds role **`docs-site`**, stubs under `docs/`, and `.github/workflows/deploy-docs.yml`. Do not invent Moduléo/poste scripts. Remind the user to enable **GitHub Pages → GitHub Actions** after the first push.
+
+## 8. Commit
 
 Run skill **`commit`** as if the user had typed **`/c -a -p`**. Still never `.env`, `*.db`, `.venv/`, secrets.
 

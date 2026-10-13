@@ -5,7 +5,8 @@ Source unique : **`feuille-de-route-dev.md`**.
 Outils branchés dessus :
 
 - skill `/afr` (`augmenter-la-feuille-de-route-dev`) — rôle `roadmap` dans `agents/roles.yml` ;
-- skill `/cub` (`creer-un-bug`) — issue GitHub `bug` + entrée sous **Plus tard**.
+- skill `/cub` (`creer-un-bug`) — issue GitHub `bug` + entrée sous **Plus tard** ;
+- si le rôle **`docs-site`** est activé (opt-in `/init` ou `update-from-pack.sh --with-docs`) : `docs-site/scripts/generer-feuille-de-route.mjs` et `generer-bugs.mjs` au build Pages.
 
 Ce n’est **pas** une spec (la spec naît à « Ouvre la version »).
 

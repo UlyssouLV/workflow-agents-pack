@@ -254,7 +254,7 @@ Squash-merge du PR de la branche courante dans `main`, suppression de la branche
 
 **Corps :** inutile ; le skill grille à quoi sert le repo.
 
-Crée le squelette (`docs/dev/feuille-de-route/`, recherches, specs, ADR, `docs/glossaire.md`), dispatch, grill, README + modèles, demande Sonar **o/n** (`.env` + `gh secret set` si oui), demande suivi d’avancement HTML **o/n** (scaffold + rôle si oui), commit `/c -a -p` (y compris sur `main`). Stop si un README existe déjà. Skill `initialise-le-repo`.
+Crée le squelette (`docs/dev/feuille-de-route/`, recherches, specs, ADR, `docs/glossaire.md`), dispatch, grill, README + modèles, demande Sonar **o/n** (`.env` + `gh secret set` si oui), demande suivi d’avancement HTML **o/n**, demande documentation Docusaurus + GitHub Pages **o/n** (`scaffold-docs-site.sh` si oui), commit `/c -a -p` (y compris sur `main`). Stop si un README existe déjà. Skill `initialise-le-repo`. Sur un repo déjà initialisé sans site : `agents/scripts/update-from-pack.sh --with-docs`.
 
 **Exemple :**
 
