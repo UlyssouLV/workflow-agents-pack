@@ -103,7 +103,7 @@ Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → sto
 
 **Commande :** `/qg`
 
-**Options :** `-w` — attend que `project_pull_requests/list` ou `project_branches/list` montre le SHA `HEAD` (15 s × 12, soit 3 min). Credentials absents → stop tout de suite, pas de poll.
+**Options :** `-w` — attend que `project_pull_requests/list` ou `project_branches/list` montre le SHA `HEAD` (15 s × 60, soit 15 min). Credentials absents → stop tout de suite, pas de poll.
 
 **Corps :** inutile ; le skill lit le Quality Gate du **commit courant** via sa PR ou sa branche Sonar (`project_status?pullRequest=` / `?branch=`). Jamais le gate de `main` par défaut, jamais `project_analyses/search` comme source de vérité.
 
@@ -160,6 +160,50 @@ Fixes #12
 Fixes #13
 ```
 
+### Créer un ticket
+
+**Commande :** `/ct`
+
+**Options :** aucune.
+
+**Corps :** titre + ce que le ticket livre (critères d’acceptation) ; `#parent` si besoin ; éventuellement `Blocked by #n` **avec** `vraie dépendance : <ce qui casse>` ou `ordre de confort : …` (`agents/issue-tracker.md`). Sans cette phrase : l’agent demande, il n’invente pas.
+
+Crée **un** enfant GitHub (`Part of`, sub-issue, parent bloqué par l’enfant). Corps au format Matt `/to-tickets` : `## What to build` / `## Acceptance criteria` / `## Blocked by` (`agents/issue-tracker.md`). Avant : le ticket tient dans `docs/specs/vX.Y.Z-*.md`. Après : le corps de l’issue parente GitHub = ce fichier ; si une PR ouverte cite déjà le parent, ajoute les `Fixes #n` manquants. Pas de nouvelle PR. Équivalent : « crée un ticket ». Skill `creer-ticket`.
+
+**Exemple :**
+
+```
+/ct #12
+Titre : garde-fou chiffres manquants après reverse
+Le reverse d’un message avec chiffres doit rejouer le garde-fou avant envoi.
+Blocked by #40 — vraie dépendance : sans #40 le reverse n’a pas de garde-fou à rejouer
+```
+
+### Créer un bug
+
+**Commande :** `/cub`
+
+**Options :** aucune.
+
+**Corps :** titre court + constat, reproductibilité, impact, cause probable, à corriger ; métadonnées (version trouvée, contexte, date, priorité). Hors périmètre optionnel.
+
+Crée **une** issue GitHub (`Bug — …`, label `bug`, corps à titres fixes) et l’entrée sous **Plus tard** de la feuille de route (`docs/dev/feuille-de-route/`). Standards : `docs/dev/feuille-de-route/README.md` (jeton `Informations manquantes` si une case manque → bug **incomplet**). Pas de commit. Pas de promo en Prochaine/Ensuite (`/afr`). Équivalents : « crée un bug », « ajoute un bug », « documente un bug ». Skill `creer-un-bug`.
+
+**Exemple :**
+
+```
+/cub
+Titre : bascule de conversation pendant qu’une réponse est en cours
+Constat : le fil affiché ne suit pas la sidebar…
+Reproductibilité : envoyer un message, cliquer une autre conversation
+Impact : mauvais fil affiché
+Cause probable : état React non synchronisé avec la sélection
+À corriger : synchroniser le fil même si une requête est en vol
+Trouvé dans : 1.4.3
+Contexte : test humain
+Priorité : avant déploiement
+```
+
 ### Créer une release
 
 **Commande :** `/crel`
@@ -168,7 +212,7 @@ Fixes #13
 
 **Corps :** `vX.Y.Z` (ou `X.Y.Z`), éventuellement le purpose.
 
-Crée la GitHub Release **sur le SHA de la branche courante**, pas `main`. Titre `VX.Y.Z — …`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag). Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
+Crée la GitHub Release **sur le SHA de la branche courante**, pas `main`. Titre `VX.Y.Z — …`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
 
 **Exemple :**
 
@@ -206,7 +250,7 @@ Squash-merge du PR de la branche courante dans `main`, suppression de la branche
 
 **Corps :** inutile ; le skill grille à quoi sert le repo.
 
-Crée le squelette (`docs/dev/`, specs, ADR, `CONTEXT.md`), dispatch, grill, README + modèles, demande Sonar **o/n** (`.env` + `gh secret set` si oui), commit `/c -a -p` (y compris sur `main`). Stop si un README existe déjà. Skill `initialise-le-repo`.
+Crée le squelette (`docs/dev/feuille-de-route/`, recherches, specs, ADR, `docs/glossaire.md`), dispatch, grill, README + modèles, demande Sonar **o/n** (`.env` + `gh secret set` si oui), demande suivi d’avancement HTML **o/n** (scaffold + rôle si oui), commit `/c -a -p` (y compris sur `main`). Stop si un README existe déjà. Skill `initialise-le-repo`.
 
 **Exemple :**
 
@@ -246,7 +290,7 @@ Vérifie la fiabilité du code
 
 **Corps :** inutile.
 
-Lit **`/qg`**, corrige ce que le gate exige. Ne relit pas le même SHA (même analyse). Le caller (ou toi) fait **`/c`** puis **`/qg`** / **`/qg -w`**. Skill `corriger-quality-gate`.
+Lit **`/qg`**, corrige ce que le gate exige. Ne relit pas le même SHA (même analyse). Appelé depuis **Finalise la version** quand le gate n’est pas `OK`. Le caller (ou toi) fait **`/c`** puis **`/qg`** / **`/qg -w`**. Skill `corriger-quality-gate`.
 
 **Exemple :**
 
@@ -286,7 +330,7 @@ Commit sur la branche courante (HEAD ↔ working tree). Défaut = fichiers déj�
 
 **Corps :** `#n` de l’enfant. S’il manque, le skill demande et attend.
 
-Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of` / `## Parent` (probable spec). Équivalent : « ferme le ticket enfant ».
+Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of` / `## Parent` (probable spec). Refuse les tickets **tests humains** (`ready-for-human` → `/th`). Équivalent : « ferme le ticket enfant ».
 
 **Exemple :**
 
@@ -306,7 +350,7 @@ Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of`
 
 **Corps :** versions à ajouter ou à reformuler, si tu les as déjà ; sinon le skill lit la feuille de route de dev et propose.
 
-Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route-dev.md`), liste les `X.Y.Z` et les « Plus tard », argumente, **attend**, puis écrit uniquement ce que tu as validé (`## X.Y.Z — un job`). Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
+Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé. Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
 
 **Exemple :**
 
@@ -327,7 +371,7 @@ Augmente la feuille de route de dev
 
 **Corps :** seulement si la version n’est pas déjà dans le rôle **`roadmap`** — à quoi elle sert (un job).
 
-Grill + spec, puis **`/ob`**, écriture de la spec, **`/c -a -p`**, tickets, **`/opr -draft`**, puis propose le premier `/implement`. Skill `ouvrir-la-version`.
+Grill + spec, puis **`/ob`**, écriture de la spec, **`/c -a -p`**, tickets d’implémentation + **un enfant tests humains** (`ready-for-human` ; chaque enfant : `Part of`, **sub-issue** GitHub, `blocked_by` **avec** `vraie dépendance` / `ordre de confort`), **`/opr -draft`**, puis propose le premier `/implement` (pas le ticket tests humains). Skill `ouvrir-la-version`.
 
 **Exemple :**
 
@@ -345,12 +389,67 @@ Ouvre la version 1.3.0
 
 **Corps :** inutile en général (le ticket suffit).
 
-TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/qg -w`** (skip immédiat s’il n’y a pas de credentials Sonar), **`/cqg`** si le gate est rouge, **`/cci #<n>`**, puis le suivant ou **Finalise la version**. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
+TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci #<n>`**, puis le suivant `ready-for-agent`. Quand il n’en reste plus : remplit le **plan** sur le ticket tests humains et renvoie vers **`/th`** (pas `/code-review` tant que ce ticket est Open). Quand tout est Closed : **`/code-review`**, puis **Finalise la version**. Pas de quality gate ici. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
 
 **Exemple :**
 
 ```
 /implement #42
+```
+
+
+
+### Tests humains
+
+**Commande :** `/th`
+
+**Options :** aucune (le ticket `Tests humains — VX.Y.Z` de la branche courante).
+
+**Corps :** scénarios joués / non joués, résultats ; images de preuve optionnelles (commit sous `docs/img/changelog/vX.Y.Z/`).
+
+Met à jour le ticket `ready-for-human`, commit les captures si besoin, ferme l’issue, propose `/code-review` puis Finalise. Skill `tests-humains`. Pas `/implement`. Pas `/cci`.
+
+**Exemple :**
+
+```
+/th
+J’ai joué 1, 2 et 4 (OK). 3 non joué (pas de compte admin sous la main).
+```
+
+
+
+### Ouvrir la semaine de travail
+
+**Commande :** `/os`
+
+**Options :** versions attendues en surcharge (`/os 1.5.0 1.6.0`) ; sinon Prochaine + Ensuite de la feuille de route (confirmation avant écriture).
+
+**Corps :** inutile en général.
+
+Nécessite le rôle **`suivi-avancement`** (opt-in à `/init` ou `adopter-le-pack.sh --with-suivi`). Crée le dossier `semaine-…` + HTML depuis `docs/suivi-avancement/template-semaine.html` (lun→ven). Convention : `docs/suivi-avancement/README.md`. Skill `ouvrir-semaine-de-travail`. Ne commit pas. Ne finalise pas.
+
+**Exemple :**
+
+```
+/os
+```
+
+
+
+### Mettre à jour le suivi d’avancement
+
+**Commande :** `/msa`
+
+**Options :** semver `X.Y.Z` si pas déductible de la branche.
+
+**Corps :** inutile.
+
+Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `generer-pdf.mjs` existe (sinon soft-skip). Soft-skip + rappel `/os` s’il n’y a pas de dossier. Soft-skip si le rôle suivi est absent. Appelé aussi par **Finalise la version**. Skill `mettre-a-jour-suivi-avancement`. Ne commit pas. Ne crée pas la semaine.
+
+**Exemple :**
+
+```
+/msa 1.5.0
 ```
 
 
@@ -363,7 +462,7 @@ TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/qg 
 
 **Corps :** inutile.
 
-Enfants Closed + docs à jour (`/c -a -p` si besoin), puis **`/crel`**, puis **`/mpr`**. Skill `finaliser-la-version`.
+Après une **`/code-review`** acceptée : tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis **`/crel`**, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 

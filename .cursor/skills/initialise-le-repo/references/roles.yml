@@ -6,14 +6,17 @@
 # Tell the user: to continue, run **Créer <name>** (creates the missing
 # file and, if needed, the key here). A listed directory that exists may
 # be empty.
+#
+# Optional role `suivi-avancement` is added only when /init (or
+# adopter-le-pack.sh --with-suivi) enables weekly HTML suivi.
 
 roles:
   roadmap:
     paths:
-      - docs/dev/feuille-de-route-dev.md
+      - docs/dev/feuille-de-route/feuille-de-route-dev.md
   glossary:
     paths:
-      - CONTEXT.md
+      - docs/glossaire.md
   spec:
     paths:
       - docs/specs/

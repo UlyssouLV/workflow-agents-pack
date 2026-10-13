@@ -26,16 +26,17 @@ Paths: **`agents/roles.yml`**. After step 2, those paths are the pack layout in 
 
 Create only what is absent. Never overwrite an existing file.
 
-- `docs/dev/feuille-de-route-dev.md` — title `# Feuille de route de dev` only
+- `docs/dev/feuille-de-route/feuille-de-route-dev.md` — title `# Feuille de route de dev` only
+- `docs/dev/feuille-de-route/` and `docs/dev/recherches/` (directories). If missing, copy `references/feuille-de-route/README.md` → `docs/dev/feuille-de-route/README.md` (writing standards for `/afr` / `/cub`).
 - `docs/specs/` (directory)
 - `docs/adr/` (directory)
-- `CONTEXT.md` — title `# Glossary` only
+- `docs/glossaire.md` — title `# Glossary` only
 
 Copy `agents/scripts/gate-code-review.py` → `.claude/hooks/gate-code-review.py`.
 
 Merge **only** the `hooks` object from `references/settings-hooks.json` into `.claude/settings.json` (create the file if needed). Do **not** add `enabledPlugins` / frontend-design.
 
-Replace `agents/roles.yml` with `references/roles.yml` (pack paths). Do not invent `test-roots`.
+Replace `agents/roles.yml` with `references/roles.yml` (pack paths). Do not invent `test-roots`. Do **not** add `suivi-avancement` here — that is step 6.
 
 ## 2. Dispatch
 
@@ -78,9 +79,30 @@ Then, without printing secret values:
 2. If **`.env.example`** has no `SONAR_` keys, append empty placeholders (`SONAR_HOST_URL=`, `SONAR_TOKEN=`, `SONAR_PROJECT_KEY=`). That file may be committed.
 3. If `gh` can see a GitHub remote: `gh secret set` for the same three names (`printf '%s' "$value" | gh secret set NAME`). If `gh` fails (no remote, no admin): say so; **`.env` alone** is enough for `/qg` locally.
 
-`/qg`, `/vf`, `/cqg`, and the `/implement` wrap load `.env`. They do not read GitHub Actions secrets.
+`/qg`, `/vf`, `/cqg`, and `finaliser-la-version` load `.env`. They do not read GitHub Actions secrets.
 
-## 6. Commit
+## 6. Suivi d’avancement (o/n)
+
+Ask in French, then **wait**:
+
+> Utilisez-vous un suivi d’avancement hebdomadaire (HTML) ? **o/n**
+
+- **n** / **non** → skip. Skills `/os` / `/msa` remain dispatched but Finalise soft-skips when role `suivi-avancement` is absent.
+- **o** / **oui** → scaffold (create only what is absent):
+  1. `docs/suivi-avancement/` directory
+  2. Copy `references/suivi-avancement/README.md` → `docs/suivi-avancement/README.md`
+  3. Copy `references/suivi-avancement/template-semaine.html` → `docs/suivi-avancement/template-semaine.html`
+  4. Add role **`suivi-avancement`** to `agents/roles.yml`:
+
+     ```yaml
+     suivi-avancement:
+       paths:
+         - docs/suivi-avancement/
+     ```
+
+     Place it after `roadmap` (or at the end of `roles:`). Do not invent other roles.
+
+## 7. Commit
 
 Run skill **`commit`** as if the user had typed **`/c -a -p`**. Still never `.env`, `*.db`, `.venv/`, secrets.
 
