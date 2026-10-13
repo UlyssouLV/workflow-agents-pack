@@ -15,7 +15,7 @@ Triggered by **`/up`**, **« mets à jour le pack »**, or **« update le pack �
 
 This skill **orchestrates** an intelligent upgrade. The bash script
 `agents/scripts/update-from-pack.sh` remains the **sync-only** engine
-(skills/hooks/templates). Migrations (paths, roles, tracker) come from
+(skills/hooks/scripts; templates are read from the pack, never copied). Migrations (paths, roles, tracker) come from
 **`agents/docs/migrations-pack.md`** in the **pack source** (not only the
 local copy, which may be stale).
 

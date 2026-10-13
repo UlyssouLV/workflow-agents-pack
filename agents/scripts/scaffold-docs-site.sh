@@ -31,6 +31,7 @@ WF_SRC="$PACK/agents/templates/github/workflows/deploy-docs.yml"
 
 if [ ! -d "$TMPL" ] || [ ! -f "$TMPL/package.json" ]; then
   echo "Template introuvable : $TMPL" >&2
+  echo "Lance ce script depuis un clone du pack (bash <pack>/agents/scripts/scaffold-docs-site.sh <cible>)." >&2
   exit 1
 fi
 
