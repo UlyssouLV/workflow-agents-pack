@@ -6,6 +6,7 @@
 #
 # Usage: update-from-pack.sh [--with-docs] [--with-suivi]
 #   --with-docs   scaffold docs-site if missing; else refresh PACK_OWNED paths
+#                 and repair known defects left by older templates
 #   --with-suivi  scaffold suivi-avancement if missing (role + README + template)
 set -euo pipefail
 
