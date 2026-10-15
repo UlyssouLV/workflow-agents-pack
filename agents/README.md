@@ -1,7 +1,5 @@
 # Agents de développement
 
-C’est depuis ce dossier qu’on génère les skills, hooks et le reste de l’outillage des agents de développement. Le résultat est ensuite dispatché de façon cohérente dans les méthodes de travail des différents modèles d’IA (Cursor, Claude Code).
+Sur cette branche, le pack de skills est un outil installé depuis `main` : `agents/skills/`, `agents/hooks/`, `agents/scripts/` et `agents/templates/` sont ignorés par git et se réinstallent avec le bloc « Installer les skills » du [README](../README.md). Ne pas créer ni corriger de skill ici : cela se fait sur `main`, puis se réinstalle ([ADR 0001](../docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md)).
 
-Les conventions de process (tracker, labels, lecture du domaine) sont ici. Chemins et règle d’arrêt si un rôle est irrésolu : [roles.yml](roles.yml). Comment lancer les skills : [docs/guide-skills.md](docs/guide-skills.md). Hooks : [docs/guide-hooks.md](docs/guide-hooks.md). Canal d’intégration (cycle version hors `main`) : [docs/integration-channel.md](docs/integration-channel.md), fichier optionnel [integration-channel.yml](integration-channel.yml).
-
-Skills : `agents/skills/meta/` (fonctions primaires des agents : créer un skill, message de commit, …) et `agents/skills/process/` (recettes qui s’appellent entre elles, ex. cycle de version, `/c`). Nouveau skill : `creer-skill`, puis `python3 agents/scripts/dispatch.py` (copie à plat vers `.claude/skills/` et `.cursor/skills/`).
+Ce dossier garde la configuration propre au projet : conventions de process (tracker, labels, lecture du domaine), chemins et règle d’arrêt si un rôle est irrésolu ([roles.yml](roles.yml)), canal d’intégration ([docs/integration-channel.md](docs/integration-channel.md), [integration-channel.yml](integration-channel.yml)). Comment lancer les skills : [docs/guide-skills.md](docs/guide-skills.md). Hooks : [docs/guide-hooks.md](docs/guide-hooks.md).

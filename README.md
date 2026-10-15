@@ -23,11 +23,16 @@ Les versions de cette branche partent de `feat/runtime-orchestrator` et y revien
 
 ## Installer les skills
 
-Sur un clone neuf de la branche, à la racine du dépôt :
+Cloner la branche :
 
 ```bash
 git clone -b feat/runtime-orchestrator https://github.com/UlyssouLV/workflow-agents-pack.git
 cd workflow-agents-pack
+```
+
+Puis, à la racine du dépôt :
+
+```bash
 mkdir -p agents/skills
 TMP=$(mktemp -d)
 git clone --depth 1 -b main https://github.com/UlyssouLV/workflow-agents-pack.git "$TMP"
@@ -37,7 +42,7 @@ rm -rf "$TMP"
 
 Le script copie skills, hooks et scripts du pack puis lance `dispatch.py` (skills visibles dans Claude Code et Cursor).
 
-**Mettre à jour** quand les skills évoluent sur `main` : même commande, sans le `mkdir`. `git status` reste propre.
+**Mettre à jour** quand les skills évoluent sur `main` : relancer ce second bloc, sans le `mkdir`, à la racine du dépôt (pas le clone). `git status` reste propre.
 
 ## Préparer l’environnement de dev
 
