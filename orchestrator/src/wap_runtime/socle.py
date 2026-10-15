@@ -89,25 +89,25 @@ def installer_socle(
     debug = env.get("WAP_DEBUG") == "1"
     journal.parent.mkdir(parents=True, exist_ok=True)
     with journal.open("a") as log:
-        _ecrire(log, f"socle : {plateforme.id} {plateforme.version} ({plateforme.codename})")
+        journaliser(log, f"socle : {plateforme.id} {plateforme.version} ({plateforme.codename})")
         detection = _detecter(env, home_orchestrator)
         if debug:
             for element, present in detection.items():
-                _ecrire(log, f"détecté {element} : {'oui' if present else 'non'}")
+                journaliser(log, f"détecté {element} : {'oui' if present else 'non'}")
         plan = _plan(plateforme, detection)
         if not plan:
-            _ecrire(log, "socle complet, rien à installer")
+            journaliser(log, "socle complet, rien à installer")
             print("OK — socle déjà installé.")
             return 0
         for etape in plan:
             print(f"→ {etape.nom}", flush=True)
-            _ecrire(log, f"étape « {etape.nom} » : début")
+            journaliser(log, f"étape « {etape.nom} » : début")
             code = _executer(etape, env, log, debug)
             if code != 0:
-                _ecrire(log, f"étape « {etape.nom} » : échec (code {code})")
+                journaliser(log, f"étape « {etape.nom} » : échec (code {code})")
                 print(f"KO — l’étape « {etape.nom} » a échoué (code {code}) ; voir {journal}")
                 return 1
-            _ecrire(log, f"étape « {etape.nom} » : OK")
+            journaliser(log, f"étape « {etape.nom} » : OK")
     print(f"OK — socle installé ({len(plan)} étape(s)) ; journal : {journal}")
     return 0
 
@@ -245,6 +245,6 @@ def _executer(etape: Etape, env: Mapping[str, str], log, debug: bool) -> int:
     return resultat.returncode
 
 
-def _ecrire(log, message: str) -> None:
+def journaliser(log, message: str) -> None:
     log.write(f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
     log.flush()
