@@ -87,3 +87,13 @@ def test_wap_runtime_health_en_root_lit_l_instance_d_orchestrator(
     monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
 
     assert cli.main(["health"]) == 0
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536])
+def test_wap_runtime_health_refuse_un_port_hors_plage(port, capsys):
+    from wap_runtime.cli import main
+
+    code = main(["health", "--port", str(port)])
+
+    assert code != 0
+    assert "port invalide" in capsys.readouterr().out
