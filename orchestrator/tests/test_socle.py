@@ -15,7 +15,7 @@ from wap_runtime.socle import (
 DEBIAN_12 = 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n'
 UBUNTU_2204 = 'NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\nVERSION_ID="22.04"\nVERSION_CODENAME=jammy\n'
 
-TOUT_PRESENT = ("git", "docker", "gh", "claude", "agent", "curl")
+TOUT_PRESENT = ("git", "docker", "systemctl", "gh", "claude", "agent", "curl")
 
 
 def os_release(tmp_path: Path, contenu: str) -> Path:
@@ -192,8 +192,20 @@ def test_plugin_compose_absent_ajoute_seulement_le_plugin(machine):
     assert "docker-ce " not in script
 
 
+def test_docker_present_mais_pas_active_au_demarrage_ajoute_seulement_son_activation(machine):
+    machine.binaires(*(nom for nom in TOUT_PRESENT if nom != "systemctl"))
+    machine.binaire("systemctl", '[ "$1" = is-enabled ] && exit 1\nexit 0')
+    machine.utilisateur()
+
+    (etape,) = machine.plan()
+
+    assert etape.nom == "service docker"
+    assert etape.commandes == ("systemctl enable --now docker",)
+    assert etape.utilisateur is None
+
+
 def test_claude_et_agent_s_installent_pour_l_utilisateur_orchestrator(machine):
-    machine.binaires("git", "docker", "gh", "curl")
+    machine.binaires("git", "docker", "systemctl", "gh", "curl")
     machine.utilisateur()
 
     plan = machine.plan()
@@ -203,7 +215,7 @@ def test_claude_et_agent_s_installent_pour_l_utilisateur_orchestrator(machine):
 
 
 def test_claude_et_agent_deja_installes_chez_orchestrator(machine):
-    machine.binaires("git", "docker", "gh", "curl")
+    machine.binaires("git", "docker", "systemctl", "gh", "curl")
     machine.utilisateur()
     local_bin = machine.home_orchestrator / ".local" / "bin"
     local_bin.mkdir(parents=True)
@@ -232,7 +244,7 @@ def test_utilisateur_hors_du_groupe_docker(machine):
 
 
 def test_curl_absent_n_est_installe_que_pour_les_installeurs_officiels(machine):
-    machine.binaires("git", "docker", "gh", "claude", "agent")
+    machine.binaires("git", "docker", "systemctl", "gh", "claude", "agent")
     machine.utilisateur()
 
     assert machine.plan() == []
@@ -268,7 +280,7 @@ def test_plan_vide_ne_lance_rien(machine):
 
 
 def test_etape_utilisateur_passe_par_runuser(machine):
-    machine.binaires("git", "docker", "gh", "curl", "agent", "bash")
+    machine.binaires("git", "docker", "systemctl", "gh", "curl", "agent", "bash")
     machine.utilisateur()
     machine.binaire("runuser", 'while [ "$1" != -- ]; do shift; done\nshift\nexec "$@"')
 
@@ -294,7 +306,7 @@ def test_echec_d_une_etape_nomme_l_etape_ecrit_le_log_et_sort_non_zero(machine, 
 
 
 def test_echec_arrete_les_etapes_suivantes(machine):
-    machine.binaires("docker", "gh", "curl", "claude", "agent")
+    machine.binaires("docker", "systemctl", "gh", "curl", "claude", "agent")
     machine.utilisateur()
     machine.binaire("apt-get", "exit 100")
 

@@ -5,15 +5,30 @@ import os
 import subprocess
 from pathlib import Path
 
-from wap_runtime.instance import desinstaller
+from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.sante import sonder
 from wap_runtime.server import creer_serveur
+from wap_runtime.socle import HOME_UTILISATEUR
 
 PORT_PAR_DEFAUT = 8787
 
 
-def _health(port: int) -> int:
+def _home_instance() -> Path:
+    """En root (`sudo wap-runtime …`), l’instance est celle de l’utilisateur d’instance."""
+    return HOME_UTILISATEUR if os.geteuid() == 0 else Path.home()
+
+
+def _port_configure() -> int:
+    try:
+        return int(lire_config(chemin_instance(_home_instance()))["port"])
+    except (OSError, ValueError, KeyError):
+        return PORT_PAR_DEFAUT
+
+
+def _health(port: int | None) -> int:
+    if port is None:
+        port = _port_configure()
     ok, message = sonder(port)
     print(f"{'OK' if ok else 'KO'} — {message}")
     return 0 if ok else 1
@@ -33,7 +48,7 @@ def _serve(hote: str, port: int) -> int:
 
 def _uninstall(purge: bool) -> int:
     try:
-        instance = desinstaller(Path.home(), purge)
+        instance = desinstaller(_home_instance(), purge)
     except (OSError, subprocess.CalledProcessError) as erreur:
         print(f"KO — `docker compose down` a échoué ({erreur}) ; instance conservée")
         return 1
@@ -62,7 +77,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="wap-runtime")
     sous = parser.add_subparsers(dest="commande", required=True)
     health = sous.add_parser("health", help="interroge GET /health du runtime")
-    health.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)
+    health.add_argument(
+        "--port", type=int, help="défaut : port de config.toml, sinon 8787"
+    )
     serve = sous.add_parser("serve", help="lance le service HTTP du runtime")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)

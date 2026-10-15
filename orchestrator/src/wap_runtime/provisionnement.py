@@ -12,20 +12,16 @@ import time
 from pathlib import Path
 from typing import Mapping
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib
-
-from wap_runtime.instance import preparer_instance
+from wap_runtime.instance import lire_config, preparer_instance
 from wap_runtime.sante import sonder
 from wap_runtime.socle import (
     HOME_UTILISATEUR,
     JOURNAL,
     OS_RELEASE,
     UTILISATEUR,
-    journaliser,
     installer_socle,
+    journaliser,
+    mode_debug,
 )
 
 DELAI_HEALTH = 60
@@ -48,7 +44,7 @@ def setup(
         "runuser", "-u", UTILISATEUR, "--",
         sys.executable, "-m", "wap_runtime", "setup", "--instance-seule",
     ]
-    debug = env.get("WAP_DEBUG") == "1"
+    debug = mode_debug(env)
     with journal.open("a") as log:
         journaliser(log, f"instance : passe en utilisateur {UTILISATEUR}")
         enfant = subprocess.Popen(
@@ -79,7 +75,7 @@ def demarrer_instance(
     print(f"→ {ETAPE_INSTANCE}", flush=True)
     try:
         instance = preparer_instance(home, env)
-        port = tomllib.loads((instance / "config.toml").read_text())["port"]
+        port = lire_config(instance)["port"]
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as erreur:
         return _echec(ETAPE_INSTANCE, erreur)
 

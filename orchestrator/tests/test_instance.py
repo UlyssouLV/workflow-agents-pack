@@ -237,3 +237,19 @@ def test_uninstall_echoue_si_compose_down_echoue(home, depot_pack, faux_docker):
     assert main(["uninstall", "--purge"]) != 0
 
     assert instance.exists()
+
+
+def test_uninstall_en_root_retire_l_instance_d_orchestrator(
+    tmp_path, home, depot_pack, faux_docker, monkeypatch
+):
+    from wap_runtime import cli
+
+    instance = passe(home, depot_pack)
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
+
+    assert cli.main(["uninstall", "--purge"]) == 0
+
+    assert "down" in faux_docker.read_text()
+    assert not instance.exists()

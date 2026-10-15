@@ -43,6 +43,10 @@ def preparer_instance(
     return instance
 
 
+def lire_config(instance: Path) -> dict:
+    return tomllib.loads((instance / "config.toml").read_text())
+
+
 def desinstaller(home: Path, purge: bool) -> Path | None:
     """`docker compose down` sur l’instance ; `purge` supprime aussi l’instance.
 

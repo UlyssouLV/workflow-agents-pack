@@ -42,12 +42,14 @@ etape() {
   journaliser "étape « $nom » : OK"
 }
 
-# Contrôle rapide avant apt ; `wap-runtime setup` vérifie les versions (Debian 12+ / Ubuntu 22.04+).
-ID=$(. /etc/os-release 2>/dev/null && echo "${ID:-}") || ID=
-case "$ID" in
-  debian | ubuntu) ;;
+# Avant tout apt : hors Debian 12+ / Ubuntu 22.04+, Python < 3.10 ferait échouer pipx sans message clair.
+OS_ID=$(. /etc/os-release 2>/dev/null && echo "${ID:-}") || OS_ID=
+OS_VERSION=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-}") || OS_VERSION=
+case "$OS_ID:$OS_VERSION" in
+  debian:1[2-9]* | debian:[2-9][0-9]*) ;;
+  ubuntu:2[2-9].* | ubuntu:[3-9][0-9].*) ;;
   *)
-    echo "KO — plateforme non supportée (${ID:-inconnue}) ; plateformes supportées : Debian 12+ / Ubuntu 22.04+" >&2
+    echo "KO — plateforme non supportée : ${OS_ID:-inconnue} ${OS_VERSION:-(sans VERSION_ID)} ; plateformes supportées : Debian 12+ / Ubuntu 22.04+" >&2
     exit 2
     ;;
 esac

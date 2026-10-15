@@ -42,7 +42,7 @@ class Hote:
         self.os_release.write_text(DEBIAN_12)
         self.port = port_libre()
         self.env = {"PATH": str(self.bin), "WAP_PORT": str(self.port)}
-        for nom in ("gh", "curl", "claude", "agent", "useradd", "usermod"):
+        for nom in ("systemctl", "gh", "curl", "claude", "agent", "useradd", "usermod"):
             self.binaire(nom)
         self.binaire("runuser", 'while [ "$1" != -- ]; do shift; done\nshift\nexec "$@"')
         # Le clone réel est couvert par test_instance : ici on ne fait que le simuler.

@@ -39,9 +39,9 @@ curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 
-**Santé** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime health [--port N]` dit en une ligne si le runtime répond (code `0` si OK).
+**Santé** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre).
 
-**Désinstallation** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime uninstall` arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
+**Désinstallation** : `sudo ~orchestrator/.local/bin/wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
 ## Le pack vit sur `main`
 

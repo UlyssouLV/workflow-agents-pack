@@ -20,6 +20,7 @@ L’orchestrateur s’installe sur la machine hôte de l’utilisateur : un serv
 ## Conséquences
 
 - Renommer la branche de base change l’URL d’installation.
+- Le paquet installé par pipx et l’image construite par Compose viennent tous deux de la tête de la branche de base, lue à des moments différents : un `setup` lancé pendant un Finalise peut les désaligner ; relancer la commande les réaligne.
 - Le serveur reçoit les dépôts apt Docker et GitHub CLI ; les autres services du serveur ne sont pas touchés.
 - L’utilisateur `orchestrator` devient naturellement l’identité des runners (0.4.0).
 - La mise à jour des serveurs déjà installés se fait en relançant la commande (`setup` idempotent) ; une mise à jour CI/CD et une image publiée sont à venir.

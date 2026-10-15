@@ -86,7 +86,7 @@ def installer_socle(
     except PlateformeNonSupportee as erreur:
         print(f"KO — {erreur}")
         return 2
-    debug = env.get("WAP_DEBUG") == "1"
+    debug = mode_debug(env)
     journal.parent.mkdir(parents=True, exist_ok=True)
     with journal.open("a") as log:
         journaliser(log, f"socle : {plateforme.id} {plateforme.version} ({plateforme.codename})")
@@ -112,6 +112,10 @@ def installer_socle(
     return 0
 
 
+def mode_debug(env: Mapping[str, str]) -> bool:
+    return env.get("WAP_DEBUG") == "1"
+
+
 def _version(texte: str) -> tuple[int, ...]:
     return tuple(int(partie) for partie in texte.split("."))
 
@@ -124,6 +128,7 @@ def _detecter(env: Mapping[str, str], home_orchestrator: Path) -> dict[str, bool
         "git": _present("git", path),
         "docker": _present("docker", path),
         "docker compose": _reussit(["docker", "compose", "version"], path),
+        "docker activé": _reussit(["systemctl", "is-enabled", "docker"], path),
         "gh": _present("gh", path),
         "curl": _present("curl", path),
         "claude": _present("claude", chez_orchestrator),
@@ -157,8 +162,12 @@ def _plan(plateforme: Plateforme, present: Mapping[str, bool]) -> list[Etape]:
         plan.append(Etape("git", ("apt-get update", "apt-get install -y git")))
     if not present["docker"]:
         plan.append(_etape_docker(plateforme, plugin_seul=False))
-    elif not present["docker compose"]:
-        plan.append(_etape_docker(plateforme, plugin_seul=True))
+    else:
+        if not present["docker compose"]:
+            plan.append(_etape_docker(plateforme, plugin_seul=True))
+        # Sans service activé, Compose ne repart pas après un redémarrage.
+        if not present["docker activé"]:
+            plan.append(Etape("service docker", ("systemctl enable --now docker",)))
     if not present["gh"]:
         plan.append(_etape_gh())
     if not present["utilisateur"]:

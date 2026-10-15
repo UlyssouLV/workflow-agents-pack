@@ -60,3 +60,30 @@ def test_wap_runtime_health_sort_en_non_zero_contre_un_port_ferme(capsys):
     assert code != 0
     assert len(sortie.strip().splitlines()) == 1
     assert f"127.0.0.1:{port}" in sortie
+
+
+def test_wap_runtime_health_lit_le_port_de_l_instance(serveur, tmp_path, monkeypatch, capsys):
+    from wap_runtime.cli import main
+
+    instance = tmp_path / ".wap-runtime"
+    instance.mkdir()
+    (instance / "config.toml").write_text(f"port = {port_de(serveur)}\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert main(["health"]) == 0
+    assert f"127.0.0.1:{port_de(serveur)}" in capsys.readouterr().out
+
+
+def test_wap_runtime_health_en_root_lit_l_instance_d_orchestrator(
+    serveur, tmp_path, monkeypatch, capsys
+):
+    from wap_runtime import cli
+
+    home = tmp_path / "home-orchestrator"
+    (home / ".wap-runtime").mkdir(parents=True)
+    (home / ".wap-runtime" / "config.toml").write_text(f"port = {port_de(serveur)}\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
+
+    assert cli.main(["health"]) == 0
