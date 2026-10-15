@@ -32,3 +32,6 @@ roles:
       - AGENTS.md
       - .claude/CLAUDE.md
       - agents/
+  test-roots:
+    paths:
+      - orchestrator/
