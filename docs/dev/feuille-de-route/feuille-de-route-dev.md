@@ -10,9 +10,9 @@ Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integrati
 
 ## Prochaine : 0.1.0 — Frontière pack / runtime
 
-Objectif. Le monorepo sépare clairement le pack (`agents/`) du runtime (`orchestrator/`). Les commandes d’init et de mise à jour ne déploient que la partie pack ; le runtime est exclu de la sync. La doc expose les deux surfaces : adopter le pack sur un projet vs installer le cockpit sur sa machine.
+Objectif. Sur la branche orchestrateur, le pack de skills est un outil installé, pas du code versionné : le développeur l’installe et le met à jour depuis `main` avec la commande de mise à jour du pack, et le dépôt ne suit que la configuration propre au projet. `orchestrator/` est la seule zone de développement, et le README de la branche présente l’orchestrateur. La branche n’est jamais fusionnée dans `main`.
 
-Hors périmètre : installer le runtime, UI, runners, credentials d’instance.
+Hors périmètre : modifier les commandes d’adoption ou de mise à jour du pack (`main`), README de `main`, CI, installer le runtime, choix de la stack runtime, UI, runners, credentials d’instance.
 
 ## Ensuite : 0.2.0 — Provisionning self-hosted (Linux + CLIs)
 
