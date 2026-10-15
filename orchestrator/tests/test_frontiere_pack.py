@@ -11,6 +11,7 @@ CHEMINS_REGENERES = [
     "agents/skills/",
     "agents/hooks/",
     "agents/scripts/",
+    "agents/templates/",
     ".claude/skills/",
     ".cursor/skills/",
 ]

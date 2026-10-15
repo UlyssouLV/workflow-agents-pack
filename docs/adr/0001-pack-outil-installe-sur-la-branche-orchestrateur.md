@@ -10,7 +10,7 @@ Le dépôt `workflow-agents-pack` porte deux choses : le pack de skills (mainten
 
 ## Décision
 
-1. Sur `feat/runtime-orchestrator`, le pack est un **outil installé** : ce que `update-from-pack.sh` et `dispatch.py` régénèrent (`agents/skills/`, `agents/hooks/`, `agents/scripts/`, `.claude/skills/`, `.cursor/skills/`) est ignoré par git. Le développeur l’installe et le met à jour lui-même depuis `main`.
+1. Sur `feat/runtime-orchestrator`, le pack est un **outil installé** : ce que `update-from-pack.sh` et `dispatch.py` régénèrent (`agents/skills/`, `agents/hooks/`, `agents/scripts/`, `.claude/skills/`, `.cursor/skills/`) est ignoré par git, ainsi que `agents/templates/`, ancienne copie que la mise à jour supprime. Le développeur l’installe et le met à jour lui-même depuis `main`.
 2. Le dépôt ne suit que la configuration propre au projet (`agents/roles.yml`, `agents/integration-channel.yml`, `agents/issue-tracker.md`, adaptateurs `.claude/` et `.cursor/` hors skills, etc.).
 3. Les skills se modifient sur `main`, jamais ici. Les commandes d’adoption et de mise à jour du pack appartiennent à `main`.
 4. `feat/runtime-orchestrator` n’est **jamais** fusionnée dans `main` : le retrait des skills de l’index les supprimerait de `main`.

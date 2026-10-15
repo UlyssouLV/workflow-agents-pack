@@ -17,7 +17,7 @@ Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-rout
 
 ## Le pack vit sur `main`
 
-Le pack de skills se maintient sur `main` ; cette branche n’y est jamais fusionnée. Ici, le pack est un outil installé : `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `.claude/skills/` et `.cursor/skills/` sont ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici. Voir l’[ADR 0001](docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md).
+Le pack de skills se maintient sur `main` ; cette branche n’y est jamais fusionnée. Ici, le pack est un outil installé : `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `agents/templates/`, `.claude/skills/` et `.cursor/skills/` sont ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici. Voir l’[ADR 0001](docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md).
 
 Les versions de cette branche partent de `feat/runtime-orchestrator` et y reviennent (tags `orchestrator-v*`) : [`agents/integration-channel.yml`](agents/integration-channel.yml).
 
@@ -37,7 +37,7 @@ rm -rf "$TMP"
 
 Le script copie skills, hooks et scripts du pack puis lance `dispatch.py` (skills visibles dans Claude Code et Cursor).
 
-**Mettre à jour** quand les skills évoluent sur `main` : même commande, sans le `mkdir`.
+**Mettre à jour** quand les skills évoluent sur `main` : même commande, sans le `mkdir`. `git status` reste propre.
 
 ## Préparer l’environnement de dev
 
