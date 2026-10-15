@@ -1,0 +1,50 @@
+"""Point d’entrée console `wap-runtime`."""
+
+import argparse
+import json
+import urllib.request
+
+from wap_runtime.server import creer_serveur
+
+PORT_PAR_DEFAUT = 8787
+
+
+def _health(port: int) -> int:
+    adresse = f"127.0.0.1:{port}"
+    try:
+        with urllib.request.urlopen(f"http://{adresse}/health", timeout=5) as rep:
+            corps = json.loads(rep.read())
+    except (OSError, ValueError) as erreur:
+        print(f"KO — le runtime ne répond pas sur {adresse} ({erreur})")
+        return 1
+    if not isinstance(corps, dict) or corps.get("status") != "ok":
+        print(f"KO — réponse inattendue de {adresse} : {corps}")
+        return 1
+    print(f"OK — wap-runtime {corps.get('version')} répond sur {adresse}")
+    return 0
+
+
+def _serve(hote: str, port: int) -> int:
+    serveur = creer_serveur(hote, port)
+    print(f"wap-runtime écoute sur {hote}:{port}", flush=True)
+    try:
+        serveur.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        serveur.server_close()
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="wap-runtime")
+    sous = parser.add_subparsers(dest="commande", required=True)
+    health = sous.add_parser("health", help="interroge GET /health du runtime")
+    health.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)
+    serve = sous.add_parser("serve", help="lance le service HTTP du runtime")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)
+    args = parser.parse_args(argv)
+    if args.commande == "serve":
+        return _serve(args.host, args.port)
+    return _health(args.port)

@@ -46,12 +46,14 @@ Le script copie skills, hooks et scripts du pack puis lance `dispatch.py` (skill
 
 ## Préparer l’environnement de dev
 
-Le code vit sous `orchestrator/`, les tests sous `orchestrator/tests/`. Python 3.12 :
+Le code vit sous `orchestrator/` (paquet Python `wap-runtime`), les tests sous `orchestrator/tests/`. Python 3.12 pour le dev (le paquet accepte ≥ 3.10) :
 
 ```bash
 python3.12 -m venv orchestrator/.venv
-orchestrator/.venv/bin/pip install -r orchestrator/requirements-dev.txt
+orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 ```
+
+L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`).
 
 Lancer les tests : **`/t`** dans Claude Code ou Cursor, ou directement :
 
