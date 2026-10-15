@@ -2,8 +2,11 @@
 
 import argparse
 import json
+import subprocess
 import urllib.request
+from pathlib import Path
 
+from wap_runtime.instance import desinstaller
 from wap_runtime.server import creer_serveur
 
 PORT_PAR_DEFAUT = 8787
@@ -36,6 +39,21 @@ def _serve(hote: str, port: int) -> int:
     return 0
 
 
+def _uninstall(purge: bool) -> int:
+    try:
+        instance = desinstaller(Path.home(), purge)
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        print(f"KO — `docker compose down` a échoué ({erreur}) ; instance conservée")
+        return 1
+    if instance is None:
+        print("Aucune instance à désinstaller.")
+    elif purge:
+        print(f"Runtime arrêté, instance {instance} supprimée.")
+    else:
+        print(f"Runtime arrêté ; instance {instance} conservée (--purge pour la supprimer).")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="wap-runtime")
     sous = parser.add_subparsers(dest="commande", required=True)
@@ -44,7 +62,15 @@ def main(argv=None) -> int:
     serve = sous.add_parser("serve", help="lance le service HTTP du runtime")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)
+    uninstall = sous.add_parser(
+        "uninstall", help="arrête et retire le Compose de l’instance"
+    )
+    uninstall.add_argument(
+        "--purge", action="store_true", help="supprime aussi ~/.wap-runtime/"
+    )
     args = parser.parse_args(argv)
     if args.commande == "serve":
         return _serve(args.host, args.port)
+    if args.commande == "uninstall":
+        return _uninstall(args.purge)
     return _health(args.port)
