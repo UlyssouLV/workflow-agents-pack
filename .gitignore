@@ -5,3 +5,11 @@ __pycache__/
 *.egg-info/
 *.db
 .env
+
+# Pack installé depuis main (update-from-pack.sh + dispatch.py) — ADR 0001.
+/agents/skills/
+/agents/hooks/
+/agents/scripts/
+/agents/templates/
+/.claude/skills/
+/.cursor/skills/

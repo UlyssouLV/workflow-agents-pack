@@ -6,15 +6,9 @@ Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integrati
 
 ## Déjà livré
 
-*(aucune version encore)*
+- **0.1.0** — Frontière pack / runtime : sur la branche orchestrateur, le pack de skills est un outil installé depuis `main` (ignoré par git, `update-from-pack.sh`), `orchestrator/` est la seule zone de développement gardée par une suite pytest, et le README présente l’orchestrateur ([#4](https://github.com/UlyssouLV/workflow-agents-pack/issues/4), [spec](../../specs/v0.1.0-frontiere-pack-runtime.md), [ADR 0001](../../adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md)).
 
-## Prochaine : 0.1.0 — Frontière pack / runtime
-
-Objectif. Le monorepo sépare clairement le pack (`agents/`) du runtime (`orchestrator/`). Les commandes d’init et de mise à jour ne déploient que la partie pack ; le runtime est exclu de la sync. La doc expose les deux surfaces : adopter le pack sur un projet vs installer le cockpit sur sa machine.
-
-Hors périmètre : installer le runtime, UI, runners, credentials d’instance.
-
-## Ensuite : 0.2.0 — Provisionning self-hosted (Linux + CLIs)
+## Prochaine : 0.2.0 — Provisionning self-hosted (Linux + CLIs)
 
 Objectif. Une commande dédiée prépare une machine hôte (Linux chez l’utilisateur, pas un VPS imposé) : vérifie ou guide l’install du socle (Docker Compose, `git`, `gh`, CLI agents Cursor `agent` et/ou Claude `claude`), crée la config d’instance hors git (`~/.wap-runtime/` : secrets, emplacements), démarre les services runtime via Compose, et expose un healthcheck local. Tout le runtime repose sur du CLI / headless — pas d’IDE graphique sur la box.
 
