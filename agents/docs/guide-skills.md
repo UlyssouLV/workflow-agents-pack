@@ -131,7 +131,7 @@ Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`)
 
 **Corps :** le nom de la branche. S’il manque, le skill demande et attend.
 
-Crée et checkout la branche depuis `origin/main`, en emportant le working tree. Pas de commit, pas de push. Stop si le nom existe. Équivalent : « ouvre une branche ».
+Crée et checkout la branche depuis la **base** d’intégration (`origin/main` par défaut ; si `agents/integration-channel.yml` est présent, `origin/<base_branch>` — voir [integration-channel.md](integration-channel.md)), en emportant le working tree. Pas de commit, pas de push. Stop si le nom existe. Équivalent : « ouvre une branche ».
 
 **Exemple :**
 
@@ -149,7 +149,7 @@ Crée et checkout la branche depuis `origin/main`, en emportant le working tree.
 
 **Corps :** titre + summary / `Fixes` si tu les as ; sinon titre = dernier commit.
 
-Push la branche courante (pas de force) et ouvre un PR vers `main`. Refuse `main`. Équivalent : « ouvre une PR ».
+Push la branche courante (pas de force) et ouvre un PR vers la **base** (`main` par défaut, ou `base_branch` du [canal d’intégration](integration-channel.md)). Refuse de créer depuis une branche protected. Équivalent : « ouvre une PR ».
 
 **Exemple :**
 
@@ -216,7 +216,7 @@ Priorité : avant déploiement
 
 **Corps :** `vX.Y.Z` (ou `X.Y.Z`), éventuellement le purpose.
 
-Crée la GitHub Release **sur le SHA de la branche courante**, pas `main`. Titre `VX.Y.Z — …`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
+Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag = `vX.Y.Z` ou `{release_tag_prefix}X.Y.Z` si [canal d’intégration](integration-channel.md) (ex. `orchestrator-v0.1.0`). Titre humain `VX.Y.Z — …`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
 
 **Exemple :**
 
@@ -232,7 +232,7 @@ Crée la GitHub Release **sur le SHA de la branche courante**, pas `main`. Titre
 
 **Corps :** inutile.
 
-Squash-merge du PR de la branche courante dans `main`, suppression de la branche. Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
+Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), suppression de la branche **feature** seulement (jamais la base). Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
 
 **Exemple :**
 

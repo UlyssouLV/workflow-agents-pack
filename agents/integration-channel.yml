@@ -1,0 +1,9 @@
+# Canal d’intégration (hors `main`).
+# Présent → les skills git (`/ob`, `/opr`, `/mpr`, `/crel`, ouvrir/finaliser)
+# ancrent le cycle de version sur cette base, pas sur `main`.
+# Absent → comportement pack classique (base = main, tags = vX.Y.Z).
+#
+# Doc : agents/docs/integration-channel.md
+
+base_branch: feat/runtime-orchestrator
+release_tag_prefix: orchestrator-v
