@@ -13,3 +13,9 @@
 **Instance** — une installation du runtime sur une machine hôte, avec sa configuration et ses secrets hors git (`~/.wap-runtime/`).
 
 **Repo métier** — un dépôt de l’utilisateur qui a adopté le pack et que l’orchestrateur suit ou pilote.
+
+**Socle** — les outils système dont le runtime a besoin sur la machine hôte : `git`, Docker Engine + Compose, `gh`, et les CLIs agents `claude` / `agent`. Le provisionnement n’installe que ce qui manque, sans authentification.
+
+**Provisionnement** — la préparation d’une machine hôte par la commande d’installation : socle (Docker, `git`, `gh`, CLIs agents), utilisateur d’instance, instance et services runtime démarrés.
+
+**Utilisateur d’instance** — l’utilisateur système `orchestrator` créé par le provisionnement : il possède l’instance et les CLIs agents, et exécute le runtime (jamais root).

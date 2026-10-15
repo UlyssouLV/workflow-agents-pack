@@ -7,14 +7,9 @@ Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integrati
 ## Déjà livré
 
 - **0.1.0** — Frontière pack / runtime : sur la branche orchestrateur, le pack de skills est un outil installé depuis `main` (ignoré par git, `update-from-pack.sh`), `orchestrator/` est la seule zone de développement gardée par une suite pytest, et le README présente l’orchestrateur ([#4](https://github.com/UlyssouLV/workflow-agents-pack/issues/4), [spec](../../specs/v0.1.0-frontiere-pack-runtime.md), [ADR 0001](../../adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md)).
+- **0.2.0** — Provisionnement self-hosted (Linux + CLIs) : une seule commande `curl … | sudo bash`, sans interaction, prépare un Debian 12+ / Ubuntu 22.04+ — socle manquant (Docker + Compose, `git`, `gh`, `claude`, `agent`, sans authentification), utilisateur d’instance `orchestrator`, instance `~/.wap-runtime/`, service `runtime` sous Compose sur `127.0.0.1` qui repart après reboot ; `wap-runtime health` et `uninstall [--purge]`. Tests humains différés après publication ([#14](https://github.com/UlyssouLV/workflow-agents-pack/issues/14)) ([#9](https://github.com/UlyssouLV/workflow-agents-pack/issues/9), [spec](../../specs/v0.2.0-provisionnement-self-hosted.md), [ADR 0002](../../adr/0002-installation-root-utilisateur-orchestrator-compose.md)).
 
-## Prochaine : 0.2.0 — Provisionning self-hosted (Linux + CLIs)
-
-Objectif. Une commande dédiée prépare une machine hôte (Linux chez l’utilisateur, pas un VPS imposé) : vérifie ou guide l’install du socle (Docker Compose, `git`, `gh`, CLI agents Cursor `agent` et/ou Claude `claude`), crée la config d’instance hors git (`~/.wap-runtime/` : secrets, emplacements), démarre les services runtime via Compose, et expose un healthcheck local. Tout le runtime repose sur du CLI / headless — pas d’IDE graphique sur la box.
-
-Hors périmètre : dashboard multi-repo, lancer des actions métier (`/implement`, etc.), mapping skills → prompts headless, tunnel Internet, autopilot.
-
-## Ensuite : 0.3.0 — Registry + cockpit lecture seule
+## Prochaine : 0.3.0 — Registry + cockpit lecture seule
 
 Objectif. L’utilisateur configure des repos liés de façon générique et suit leur état (labels / cycle du pack) depuis un cockpit local en lecture seule.
 

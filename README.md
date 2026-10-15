@@ -15,6 +15,34 @@ Cette branche développe l’**orchestrateur** self-hosted : un runtime install�
 
 Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-route/feuille-de-route-dev.md).
 
+## Installer l’orchestrateur sur une machine hôte
+
+Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interaction :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
+```
+
+Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, et attente de `GET /health`. La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`) et n’écoute que sur `127.0.0.1`.
+
+Options, par variables d’environnement passées à `sudo` :
+
+| Variable | Défaut | Effet |
+| --- | --- | --- |
+| `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) |
+| `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
+| `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
+
+```bash
+curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
+```
+
+**Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
+
+**Santé** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre).
+
+**Désinstallation** : `sudo ~orchestrator/.local/bin/wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
+
 ## Le pack vit sur `main`
 
 Le pack de skills se maintient sur `main` ; cette branche n’y est jamais fusionnée. Ici, le pack est un outil installé : `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `agents/templates/`, `.claude/skills/` et `.cursor/skills/` sont ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici. Voir l’[ADR 0001](docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md).
@@ -46,12 +74,14 @@ Le script copie skills, hooks et scripts du pack puis lance `dispatch.py` (skill
 
 ## Préparer l’environnement de dev
 
-Le code vit sous `orchestrator/`, les tests sous `orchestrator/tests/`. Python 3.12 :
+Le code vit sous `orchestrator/` (paquet Python `wap-runtime`), les tests sous `orchestrator/tests/`. Python 3.12 pour le dev (le paquet accepte ≥ 3.10) :
 
 ```bash
 python3.12 -m venv orchestrator/.venv
-orchestrator/.venv/bin/pip install -r orchestrator/requirements-dev.txt
+orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 ```
+
+L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `setup`, `uninstall [--purge]`).
 
 Lancer les tests : **`/t`** dans Claude Code ou Cursor, ou directement :
 
