@@ -80,7 +80,7 @@ export function detail(d: Partial<Detail> = {}): Detail {
 
 /** Faux `fetch` : `routes[chemin]` est la réponse JSON (ou une fonction appelée à chaque requête). */
 export function simulerApi(routes: Record<string, unknown | (() => unknown)>) {
-  const fetch = vi.fn(async (chemin: string) => {
+  const repondre = (chemin: string): Response => {
     if (!(chemin in routes)) {
       return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
     }
@@ -88,7 +88,8 @@ export function simulerApi(routes: Record<string, unknown | (() => unknown)>) {
     const corps = typeof route === "function" ? route() : route;
     if (corps instanceof Response) return corps;
     return new Response(JSON.stringify(corps), { status: 200 });
-  });
+  };
+  const fetch = vi.fn((chemin: string) => Promise.resolve(repondre(chemin)));
   vi.stubGlobal("fetch", fetch);
   return fetch;
 }

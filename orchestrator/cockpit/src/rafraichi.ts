@@ -20,7 +20,7 @@ export function useRafraichi<T>(chemin: string): Lecture<T> {
         (donnees) => actif && setLecture({ donnees, erreur: null }),
         (erreur: Error) => actif && setLecture((avant) => ({ ...avant, erreur: erreur.message })),
       );
-    relire();
+    void relire();
     const minuteur = setInterval(relire, RAFRAICHISSEMENT_MS);
     return () => {
       actif = false;

@@ -3,9 +3,9 @@
 FROM node:24-slim AS cockpit
 
 WORKDIR /cockpit
-# Dépendances verrouillées par package-lock.json (intégrité vérifiée par `npm ci`).
+# Dépendances verrouillées par package-lock.json (intégrité vérifiée par `npm ci`), sans scripts d’installation.
 COPY cockpit/package.json cockpit/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --ignore-scripts
 COPY cockpit ./
 RUN npm run build
 
