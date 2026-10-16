@@ -3,7 +3,10 @@
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+from wap_runtime.auth import lancer_auth, statut
 
 from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
@@ -16,7 +19,7 @@ from wap_runtime.registry import (
 )
 from wap_runtime.sante import sonder
 from wap_runtime.server import creer_serveur
-from wap_runtime.socle import HOME_UTILISATEUR
+from wap_runtime.socle import HOME_UTILISATEUR, UTILISATEUR
 
 PORT_PAR_DEFAUT = 8787
 
@@ -96,6 +99,29 @@ def _repo(action: str, slug: str | None, nom: str | None) -> int:
     return 0
 
 
+def _auth(status: bool, avec_jeton: bool) -> int:
+    instance = chemin_instance(_home_instance())
+    if not instance.is_dir():
+        print(f"KO — aucune instance dans {instance} : lance d’abord `sudo wap-runtime setup`")
+        return 1
+    # En root, `gh` tourne en utilisateur d’instance : c’est sa connexion qui compte.
+    utilisateur = UTILISATEUR if os.geteuid() == 0 else None
+    if status:
+        connectee, detail = statut(instance, utilisateur)
+        if connectee:
+            print(f"OK — instance connectée à GitHub en tant que {detail}")
+            return 0
+        print(f"KO — instance non connectée à GitHub ({detail}) : `sudo wap-runtime auth`")
+        return 1
+    jeton = None
+    if avec_jeton:
+        jeton = sys.stdin.read().strip()
+        if not jeton:
+            print("KO — aucun token sur stdin : `… | sudo wap-runtime auth --with-token`")
+            return 1
+    return lancer_auth(instance, jeton, utilisateur)
+
+
 def _setup(instance_seule: bool) -> int:
     if instance_seule:
         return demarrer_instance(Path.home())
@@ -132,6 +158,13 @@ def main(argv=None) -> int:
     remove = actions.add_parser("remove", help="retire un repo lié")
     remove.add_argument("slug", metavar="owner/name")
     actions.add_parser("list", help="liste les repos liés")
+    auth = sous.add_parser(
+        "auth", help="connecte l’instance à GitHub (device flow), ou affiche son état"
+    )
+    auth.add_argument("status", nargs="?", choices=["status"], help="affiche l’état")
+    auth.add_argument(
+        "--with-token", action="store_true", help="lit le token GitHub sur stdin"
+    )
     setup_ = sous.add_parser(
         "setup",
         help="provisionne la machine : socle, instance, Compose, attente de /health",
@@ -141,6 +174,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.commande == "setup":
         return _setup(args.instance_seule)
+    if args.commande == "auth":
+        return _auth(args.status == "status", args.with_token)
     if args.commande == "repo":
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
