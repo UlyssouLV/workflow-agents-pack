@@ -41,6 +41,8 @@ curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 
 **Santé** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre).
 
+**Repos liés** : `sudo ~orchestrator/.local/bin/wap-runtime repo add owner/name [--nom <affichage>]`, `repo remove owner/name` et `repo list` gèrent le registry `~orchestrator/.wap-runtime/repos.toml` (en root, l’instance visée est celle d’`orchestrator`). `owner/name` invalide ou en double est refusé. Le fichier s’édite aussi à la main ; `setup` n’y touche pas, et le service `runtime` le voit en lecture seule (l’instance est montée sur `/instance:ro`).
+
 **Désinstallation** : `sudo ~orchestrator/.local/bin/wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
 ## Le pack vit sur `main`
@@ -81,7 +83,7 @@ python3.12 -m venv orchestrator/.venv
 orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 ```
 
-L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `setup`, `uninstall [--purge]`).
+L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `repo add|remove|list`, `setup`, `uninstall [--purge]`).
 
 Lancer les tests : **`/t`** dans Claude Code ou Cursor, ou directement :
 

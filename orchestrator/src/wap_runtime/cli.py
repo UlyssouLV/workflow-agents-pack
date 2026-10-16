@@ -7,6 +7,13 @@ from pathlib import Path
 
 from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
+from wap_runtime.registry import (
+    RegistryErreur,
+    ajouter,
+    chemin_registry,
+    lire_registry,
+    retirer,
+)
 from wap_runtime.sante import sonder
 from wap_runtime.server import creer_serveur
 from wap_runtime.socle import HOME_UTILISATEUR
@@ -61,6 +68,34 @@ def _uninstall(purge: bool) -> int:
     return 0
 
 
+def _repo(action: str, slug: str | None, nom: str | None) -> int:
+    instance = chemin_instance(_home_instance())
+    if not instance.is_dir():
+        print(f"KO — aucune instance dans {instance} : lance d’abord `sudo wap-runtime setup`")
+        return 1
+    registry = chemin_registry(instance)
+    try:
+        if action == "add":
+            ajouter(registry, slug, nom)
+            print(f"OK — {slug} ajouté au registry")
+        elif action == "remove":
+            retire = retirer(registry, slug)
+            print(f"OK — {retire.slug} retiré du registry")
+        else:
+            repos = lire_registry(registry)
+            if not repos:
+                print("Aucun repo lié : `sudo wap-runtime repo add owner/name`.")
+            for repo in repos:
+                print(repo.slug + (f" — {repo.nom}" if repo.nom else ""))
+    except RegistryErreur as erreur:
+        print(f"KO — {erreur}")
+        return 1
+    except OSError as erreur:
+        print(f"KO — écriture de {registry} impossible ({erreur})")
+        return 1
+    return 0
+
+
 def _setup(instance_seule: bool) -> int:
     if instance_seule:
         return demarrer_instance(Path.home())
@@ -89,6 +124,14 @@ def main(argv=None) -> int:
     uninstall.add_argument(
         "--purge", action="store_true", help="supprime aussi ~/.wap-runtime/"
     )
+    repo = sous.add_parser("repo", help="gère le registry des repos liés")
+    actions = repo.add_subparsers(dest="action", required=True)
+    add = actions.add_parser("add", help="lie un repo GitHub owner/name")
+    add.add_argument("slug", metavar="owner/name")
+    add.add_argument("--nom", help="nom d’affichage dans le cockpit")
+    remove = actions.add_parser("remove", help="retire un repo lié")
+    remove.add_argument("slug", metavar="owner/name")
+    actions.add_parser("list", help="liste les repos liés")
     setup_ = sous.add_parser(
         "setup",
         help="provisionne la machine : socle, instance, Compose, attente de /health",
@@ -98,6 +141,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.commande == "setup":
         return _setup(args.instance_seule)
+    if args.commande == "repo":
+        return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
         return _serve(args.host, args.port)
     if args.commande == "uninstall":

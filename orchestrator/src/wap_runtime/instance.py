@@ -24,6 +24,8 @@ CONTEXTE_RUNTIME = (
     "#feat/runtime-orchestrator:orchestrator"
 )
 PORT_CONTENEUR = 8787
+# L’instance montée en lecture seule dans `runtime`, pour y lire `repos.toml`.
+INSTANCE_CONTENEUR = "/instance"
 
 
 def chemin_instance(home: Path) -> Path:
@@ -115,6 +117,12 @@ services:
     image: wap-runtime:local
     env_file:
       - secrets.env
+    environment:
+      WAP_INSTANCE: {INSTANCE_CONTENEUR}
+    # Le dossier et non `repos.toml` seul : absent, ce fichier deviendrait un dossier
+    # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur.
+    volumes:
+      - ".:{INSTANCE_CONTENEUR}:ro"
     ports:
       - "127.0.0.1:{port}:{PORT_CONTENEUR}"
     restart: unless-stopped
