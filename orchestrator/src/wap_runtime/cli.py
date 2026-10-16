@@ -18,7 +18,6 @@ from wap_runtime.registry import (
     retirer,
 )
 from wap_runtime.sante import sonder
-from wap_runtime.server import creer_serveur
 from wap_runtime.socle import HOME_UTILISATEUR, UTILISATEUR
 
 PORT_PAR_DEFAUT = 8787
@@ -45,14 +44,14 @@ def _health(port: int | None) -> int:
 
 
 def _serve(hote: str, port: int) -> int:
-    serveur = creer_serveur(hote, port)
-    print(f"wap-runtime écoute sur {hote}:{port}", flush=True)
     try:
-        serveur.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        serveur.server_close()
+        # Dépendances de l’image seulement (extra `serve`) : la CLI de l’hôte s’en passe.
+        from wap_runtime.server import servir
+    except ImportError as erreur:
+        print(f"KO — service HTTP indisponible ({erreur}) : `pip install 'wap-runtime[serve]'`")
+        return 1
+    print(f"wap-runtime écoute sur {hote}:{port}", flush=True)
+    servir(hote, port)
     return 0
 
 

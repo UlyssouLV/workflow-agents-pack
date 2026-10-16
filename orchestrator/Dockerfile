@@ -1,4 +1,5 @@
-# Service `runtime` : expose GET /health. Image construite localement par `wap-runtime setup`.
+# Service `runtime` : FastAPI servi par uvicorn (GET /health, API du cockpit sous /api/).
+# Image construite localement par `wap-runtime setup`.
 FROM python:3.12-slim AS build
 
 WORKDIR /src
@@ -10,7 +11,10 @@ RUN pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /dist .
 
 FROM python:3.12-slim
 
-# Le paquet n’a aucune dépendance sur 3.12 : on n’installe que sa wheel, sans résolution.
+# Dépendances du service (extra `serve`) verrouillées par hash, puis la wheel sans résolution.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 COPY --from=build /dist /dist
 RUN pip install --no-cache-dir --no-index --no-deps --only-binary :all: /dist/*.whl \
     && rm -rf /dist \
