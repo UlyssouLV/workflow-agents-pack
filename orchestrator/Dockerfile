@@ -1,5 +1,14 @@
-# Service `runtime` : FastAPI servi par uvicorn (GET /health, API du cockpit sous /api/).
-# Image construite localement par `wap-runtime setup`.
+# Service `runtime` : FastAPI servi par uvicorn (GET /health, API du cockpit sous /api/, front sur /).
+# Image construite localement par `wap-runtime setup`. Node ne sert qu’à construire le front.
+FROM node:24-slim AS cockpit
+
+WORKDIR /cockpit
+# Dépendances verrouillées par package-lock.json (intégrité vérifiée par `npm ci`).
+COPY cockpit/package.json cockpit/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY cockpit ./
+RUN npm run build
+
 FROM python:3.12-slim AS build
 
 WORKDIR /src
@@ -19,6 +28,8 @@ COPY --from=build /dist /dist
 RUN pip install --no-cache-dir --no-index --no-deps --only-binary :all: /dist/*.whl \
     && rm -rf /dist \
     && useradd --system --no-create-home runtime
+COPY --from=cockpit /cockpit/dist /opt/wap-cockpit
+ENV WAP_COCKPIT=/opt/wap-cockpit
 
 USER runtime
 EXPOSE 8787

@@ -47,6 +47,14 @@ curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 
 **Repos liés** : `sudo ~orchestrator/.local/bin/wap-runtime repo add owner/name [--nom <affichage>]`, `repo remove owner/name` et `repo list` gèrent le registry `~orchestrator/.wap-runtime/repos.toml` (en root, l’instance visée est celle d’`orchestrator`). `owner/name` invalide ou en double est refusé. Le fichier s’édite aussi à la main ; `setup` n’y touche pas, et le service `runtime` le voit en lecture seule (l’instance est montée sur `/instance:ro`).
 
+**Cockpit** : le service `runtime` sert un cockpit en lecture seule sur `http://127.0.0.1:<port>/` (port de `config.toml`, `8787` par défaut). La vue liste montre une ligne par repo lié — version ouverte, progression X/Y, étape, badge **Intervention humaine requise**, heure de lecture — les repos qui attendent quelqu’un en tête, et se relit toutes les 60 s (la lecture GitHub de la liste est gardée 60 s). Un repo inaccessible n’affiche que sa ligne en erreur ; un bandeau demande `sudo wap-runtime auth` si l’instance n’est pas connectée ou si son token est refusé. La vue `/repos/<owner>/<name>` relit le repo en direct : parent, enfants (état, labels, bloqué), PR de version et ses checks, bugs ouverts. Les liens ouvrent GitHub ; aucune action n’est lancée depuis le cockpit. L’API JSON est sous `/api/` (`/api/repos`, `/api/repos/<owner>/<name>`, `/api/auth`).
+
+Le port n’écoute que sur `127.0.0.1` de l’hôte (ADR 0002) : depuis votre poste, ouvrez un tunnel SSH puis le navigateur.
+
+```bash
+ssh -L 8787:127.0.0.1:8787 mon-serveur      # puis http://127.0.0.1:8787/
+```
+
 **Désinstallation** : `sudo ~orchestrator/.local/bin/wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
 ## Le pack vit sur `main`
@@ -89,10 +97,19 @@ orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 
 L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `auth [status] [--with-token]`, `repo add|remove|list`, `setup`, `uninstall [--purge]`).
 
-Lancer les tests : **`/t`** dans Claude Code ou Cursor, ou directement :
+Le front du cockpit vit sous `orchestrator/cockpit/` (React + TypeScript + Vite, Node 24) ; l’image le construit dans une étape Node, l’hôte n’a pas besoin de Node :
+
+```bash
+cd orchestrator/cockpit && npm ci
+npm run dev        # front sur http://127.0.0.1:5173/, API relayée vers un `wap-runtime serve` local (8787)
+npm run build      # typecheck + build dans dist/ ; `WAP_COCKPIT=dist wap-runtime serve` le sert sur /
+```
+
+Lancer les tests : **`/t`** dans Claude Code ou Cursor (deux test-roots : pytest sous `orchestrator/`, Vitest sous `orchestrator/cockpit/`), ou directement :
 
 ```bash
 cd orchestrator && .venv/bin/pytest
+cd orchestrator/cockpit && npm test
 ```
 
 ## Repères

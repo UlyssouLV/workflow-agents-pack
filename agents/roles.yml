@@ -35,3 +35,4 @@ roles:
   test-roots:
     paths:
       - orchestrator/
+      - orchestrator/cockpit/

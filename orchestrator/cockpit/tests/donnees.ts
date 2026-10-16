@@ -1,0 +1,94 @@
+// Réponses `/api/` simulées, à la forme rendue par `wap_runtime.cockpit`.
+import { vi } from "vitest";
+import type { Auth, Detail, Etape, Liste, Repo, VersionResume } from "../src/api";
+
+export const CONNECTE: Auth = { etat: "connecte", compte: "octocat" };
+
+export const IMPLEMENT: Etape = { numero: 7, libelle: "Implement", humain: false };
+export const QUESTION: Etape = { numero: 1, libelle: "Question en attente", humain: true };
+export const PAS_DE_VERSION: Etape = { numero: 9, libelle: "Pas de version ouverte", humain: false };
+
+export function version(v: Partial<VersionResume> = {}): VersionResume {
+  return {
+    numero: 17,
+    titre: "v0.3.0 — registry",
+    url: "https://github.com/o/r/issues/17",
+    progression: { completed: 2, total: 5 },
+    etape: IMPLEMENT,
+    pr: { numero: 18, url: "https://github.com/o/r/pull/18", brouillon: true, ci: "ok" },
+    ...v,
+  };
+}
+
+export function repo(r: Partial<Repo> = {}): Repo {
+  return {
+    slug: "o/r",
+    nom: null,
+    url: "https://github.com/o/r",
+    lu_a: "2026-10-17T09:00:00+00:00",
+    erreur: null,
+    etape: IMPLEMENT,
+    humain_requis: false,
+    versions: [version()],
+    ...r,
+  };
+}
+
+export function liste(l: Partial<Liste> = {}): Liste {
+  return { auth: CONNECTE, erreur: null, repos: [repo()], ...l };
+}
+
+export function detail(d: Partial<Detail> = {}): Detail {
+  return {
+    ...repo(),
+    versions: [
+      {
+        ...version(),
+        enfants: [
+          {
+            numero: 20,
+            titre: "Registry",
+            url: "https://github.com/o/r/issues/20",
+            ouvert: false,
+            labels: [],
+            bloque: false,
+          },
+          {
+            numero: 22,
+            titre: "Front du cockpit",
+            url: "https://github.com/o/r/issues/22",
+            ouvert: true,
+            labels: ["ready-for-agent"],
+            bloque: true,
+          },
+        ],
+        pr: {
+          numero: 18,
+          titre: "v0.3.0",
+          url: "https://github.com/o/r/pull/18",
+          brouillon: true,
+          ci: "echec",
+          checks: [{ nom: "pytest", etat: "echec", url: "https://github.com/o/r/runs/1" }],
+        },
+        signaux: [IMPLEMENT],
+      },
+    ],
+    bugs: [{ numero: 30, titre: "Plantage", url: "https://github.com/o/r/issues/30", labels: ["bug"] }],
+    ...d,
+  };
+}
+
+/** Faux `fetch` : `routes[chemin]` est la réponse JSON (ou une fonction appelée à chaque requête). */
+export function simulerApi(routes: Record<string, unknown | (() => unknown)>) {
+  const fetch = vi.fn(async (chemin: string) => {
+    if (!(chemin in routes)) {
+      return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
+    }
+    const route = routes[chemin];
+    const corps = typeof route === "function" ? route() : route;
+    if (corps instanceof Response) return corps;
+    return new Response(JSON.stringify(corps), { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
