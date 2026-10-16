@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import httpx
 
 API_GITHUB = "https://api.github.com"
+TOKEN_REFUSE = "token refusé par GitHub : `sudo wap-runtime auth`"
 
 
 class GitHubErreur(Exception):
@@ -88,7 +89,7 @@ def _message(reponse: httpx.Response) -> str:
     ):
         return f"limite d’appels GitHub atteinte{_reprise(reponse)}"
     if code == 401:
-        return "token refusé par GitHub : `sudo wap-runtime auth`"
+        return TOKEN_REFUSE
     if code == 403:
         return "accès refusé : le token n’a pas de droit sur ce repo"
     if code == 404:

@@ -41,6 +41,13 @@ describe("vue détail", () => {
     expect(within(enfants[1]).getByRole("link")).toHaveAttribute("href", "https://github.com/o/r/issues/22");
   });
 
+  it("montre tous les signaux de la version, même un seul", async () => {
+    rendre({ "/api/repos/o/r": detail() });
+
+    const version = await screen.findByRole("region", { name: /#17/ });
+    expect(version).toHaveTextContent("Signaux : Implement");
+  });
+
   it("montre la PR de version et ses checks", async () => {
     rendre({ "/api/repos/o/r": detail() });
 

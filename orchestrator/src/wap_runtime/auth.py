@@ -10,6 +10,8 @@ import subprocess
 from pathlib import Path
 from typing import IO, Mapping
 
+from wap_runtime.fichiers import remplacer
+
 ETAPE_LOGIN = "gh auth login"
 ETAPE_TOKEN = "gh auth token"
 ETAPE_COMPTE = "gh api user"
@@ -114,16 +116,7 @@ def ecrire_jeton(secrets: Path, jeton: str) -> None:
     """Remplace `GH_TOKEN` en gardant les autres lignes ; fichier remplacé d’un coup, `0600`."""
     lignes = secrets.read_text().splitlines() if secrets.exists() else []
     contenu = "".join(f"{l}\n" for l in lignes if not _est_jeton(l)) + f"GH_TOKEN={jeton}\n"
-    provisoire = secrets.with_name(f".{secrets.name}.tmp")
-    provisoire.unlink(missing_ok=True)
-    descripteur = os.open(provisoire, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descripteur, "w") as fichier:
-        fichier.write(contenu)
-    if os.geteuid() == 0:
-        # En root, le fichier revient au propriétaire de l’instance.
-        proprio = secrets.parent.stat()
-        os.chown(provisoire, proprio.st_uid, proprio.st_gid)
-    os.replace(provisoire, secrets)
+    remplacer(secrets, contenu, 0o600)
 
 
 def _est_jeton(ligne: str) -> bool:

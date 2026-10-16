@@ -226,7 +226,7 @@ def test_en_root_gh_tourne_en_utilisateur_d_instance(faux, tmp_path, instance, m
     monkeypatch.setattr(cli, "HOME_UTILISATEUR", instance.parent)
     proprietaires = []
     monkeypatch.setattr(
-        "wap_runtime.auth.os.chown",
+        "wap_runtime.fichiers.os.chown",
         lambda chemin, uid, gid: proprietaires.append((Path(chemin).name, uid, gid)),
     )
 

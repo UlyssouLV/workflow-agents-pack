@@ -63,7 +63,7 @@ function SectionVersion({ version }: { version: Version }) {
         Progression : {version.progression.completed}/{version.progression.total} · Étape :{" "}
         <LibelleEtape etape={version.etape} />
       </p>
-      {version.signaux.length > 1 && (
+      {version.signaux.length > 0 && (
         <p>Signaux : {version.signaux.map((s) => s.libelle).join(", ")}</p>
       )}
       <table aria-label="Enfants">

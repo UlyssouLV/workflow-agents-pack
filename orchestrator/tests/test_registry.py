@@ -150,7 +150,7 @@ def test_en_root_les_commandes_visent_l_instance_d_orchestrator(
     monkeypatch.setattr(cli, "HOME_UTILISATEUR", instance.parent)
     proprietaires = []
     monkeypatch.setattr(
-        "wap_runtime.registry.os.chown",
+        "wap_runtime.fichiers.os.chown",
         lambda chemin, uid, gid: proprietaires.append((Path(chemin), uid, gid)),
     )
 

@@ -247,6 +247,20 @@ def test_plusieurs_versions_ouvertes_toutes_rendues(registry, github, horloge):
     assert corps["humain_requis"] is True
 
 
+def test_une_version_qui_attend_un_humain_passe_avant_une_plus_prioritaire(registry, github, horloge):
+    repo = github.repo(SLUG)
+    repo.version(17, [(18, "open", ["ready-for-agent"])])
+    repo.version(30, [(31, "closed", [])])
+    repo.pr(24, "Fixes #30", "sha24", checks=[("completed", "success")])
+
+    corps = entree(liste(registry, github, horloge))
+
+    assert [(v["numero"], v["etape"]["numero"]) for v in corps["versions"]] == [(17, 7), (30, 8)]
+    # Le badge suit l’étape affichée : celle qui attend quelqu’un l’emporte.
+    assert corps["etape"]["numero"] == 8
+    assert corps["humain_requis"] is True
+
+
 @pytest.mark.parametrize(
     "panne, message",
     [

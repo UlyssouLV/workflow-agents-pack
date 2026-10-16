@@ -6,7 +6,7 @@ Cette branche (`feat/runtime-orchestrator`) développe l’**orchestrateur** sel
 
 - **Ne pas modifier le pack ici.** `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `agents/templates/`, `.claude/skills/` et `.cursor/skills/` sont installés depuis `main` (ou supprimés par la mise à jour) et ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici (voir README).
 - **Jamais de merge dans `main`.** Les versions de cette branche partent de `feat/runtime-orchestrator` et y reviennent (`agents/integration-channel.yml`, tags `orchestrator-v*`).
-- **Le code vit sous `orchestrator/`.** Tests : `orchestrator/tests/` (rôle `test-roots`), pytest dans `orchestrator/.venv`.
+- **Le code vit sous `orchestrator/`.** Tests (rôle `test-roots`) : `orchestrator/tests/` (pytest dans `orchestrator/.venv`) et `orchestrator/cockpit/tests/` (Vitest, `npm test` dans `orchestrator/cockpit/`).
 
 ## Cycle
 

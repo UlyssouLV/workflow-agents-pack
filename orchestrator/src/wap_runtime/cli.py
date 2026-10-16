@@ -28,6 +28,15 @@ def _home_instance() -> Path:
     return HOME_UTILISATEUR if os.geteuid() == 0 else Path.home()
 
 
+def _instance_existante() -> Path | None:
+    """L’instance visée, ou `None` (avec la ligne KO) si `setup` n’est pas passé."""
+    instance = chemin_instance(_home_instance())
+    if not instance.is_dir():
+        print(f"KO — aucune instance dans {instance} : lance d’abord `sudo wap-runtime setup`")
+        return None
+    return instance
+
+
 def _port_configure() -> int:
     try:
         return int(lire_config(chemin_instance(_home_instance()))["port"])
@@ -71,9 +80,8 @@ def _uninstall(purge: bool) -> int:
 
 
 def _repo(action: str, slug: str | None, nom: str | None) -> int:
-    instance = chemin_instance(_home_instance())
-    if not instance.is_dir():
-        print(f"KO — aucune instance dans {instance} : lance d’abord `sudo wap-runtime setup`")
+    instance = _instance_existante()
+    if instance is None:
         return 1
     registry = chemin_registry(instance)
     try:
@@ -99,9 +107,8 @@ def _repo(action: str, slug: str | None, nom: str | None) -> int:
 
 
 def _auth(status: bool, avec_jeton: bool) -> int:
-    instance = chemin_instance(_home_instance())
-    if not instance.is_dir():
-        print(f"KO — aucune instance dans {instance} : lance d’abord `sudo wap-runtime setup`")
+    instance = _instance_existante()
+    if instance is None:
         return 1
     # En root, `gh` tourne en utilisateur d’instance : c’est sa connexion qui compte.
     utilisateur = UTILISATEUR if os.geteuid() == 0 else None

@@ -1,5 +1,5 @@
 import type { Liste, Repo } from "./api";
-import { BadgeHumain, BandeauAuth, heure, nomAffiche } from "./commun";
+import { BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
 
 /** `/` : une ligne par repo lié, ceux qui attendent quelqu’un en tête. */
@@ -81,7 +81,7 @@ function Ligne({ repo }: { repo: Repo }) {
             ))}
           </td>
           <td>
-            {repo.etape?.libelle} {repo.humain_requis && <BadgeHumain />}
+            <LibelleEtape etape={repo.etape} />
           </td>
         </>
       )}

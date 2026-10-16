@@ -58,7 +58,7 @@ def signaux(enfants: list[dict], ci: str | None) -> list[Etape]:
 
     `enfants` : sub-issues du parent (`state`, `labels`) ; `ci` : `None` sans PR de version.
     """
-    ouverts = [_labels(e) for e in enfants if e["state"] == "open"]
+    ouverts = [set(noms_labels(e)) for e in enfants if e["state"] == "open"]
     regles = [
         (QUESTION, any("needs-info" in l for l in ouverts)),
         (ETAPE_CI_ECHEC, ci == CI_ECHEC),
@@ -72,17 +72,19 @@ def signaux(enfants: list[dict], ci: str | None) -> list[Etape]:
     return [etape for etape, applicable in regles if applicable]
 
 
-def choisir(signaux_: list[Etape]) -> Etape:
-    return signaux_[0] if signaux_ else INDETERMINEE
+def etape_de_version(applicables: list[Etape]) -> Etape:
+    """La première des `signaux` d’une version, sinon indéterminée."""
+    return applicables[0] if applicables else INDETERMINEE
 
 
-def la_plus_prioritaire(etapes: list[Etape]) -> Etape:
-    """Étape d’un repo : celle de ses versions qui passe en premier, sinon pas de version."""
+def etape_du_repo(etapes: list[Etape]) -> Etape:
+    """Étape d’un repo parmi celles de ses versions : celles qui attendent quelqu’un d’abord
+    (le badge suit l’étape affichée), puis par priorité ; sans version, pas de version."""
     numerotees = [e for e in etapes if e.numero is not None]
     if numerotees:
-        return min(numerotees, key=lambda e: e.numero)
+        return min(numerotees, key=lambda e: (not e.humain, e.numero))
     return etapes[0] if etapes else PAS_DE_VERSION
 
 
-def _labels(issue: dict) -> set[str]:
-    return {label["name"] for label in issue.get("labels", [])}
+def noms_labels(issue: dict) -> list[str]:
+    return [label["name"] for label in issue.get("labels", [])]

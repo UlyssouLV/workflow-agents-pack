@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import Callable
 
 from wap_runtime import etapes
-from wap_runtime.github import ClientGitHub, GitHubErreur
+from wap_runtime.github import TOKEN_REFUSE, ClientGitHub, GitHubErreur
 from wap_runtime.registry import RegistryErreur, RepoLie, lire_registry
 
 CACHE_SECONDES = 60
 SANS_TOKEN = "GitHub non connecté : `sudo wap-runtime auth`"
-TOKEN_REFUSE = "token refusé par GitHub : `sudo wap-runtime auth`"
 
 
 class Cockpit:
@@ -55,7 +54,7 @@ class Cockpit:
 
         Lève `RegistryErreur` si le registry est illisible.
         """
-        repo = next((r for r in lire_registry(self._registry) if r.slug.lower() == slug.lower()), None)
+        repo = next((r for r in lire_registry(self._registry) if r.designe(slug)), None)
         if repo is None:
             return None
         lu_a = self._horloge()
@@ -68,7 +67,7 @@ class Cockpit:
             return {**_en_erreur(repo, lu_a, str(erreur)), "bugs": []}
         return {
             **_etat(repo, lu_a, versions),
-            "bugs": [_bug(i) for i in issues if "bug" in _noms_labels(i)],
+            "bugs": [_bug(i) for i in issues if "bug" in etapes.noms_labels(i)],
         }
 
     def _entree(self, repo: RepoLie, auth: str) -> dict:
@@ -122,13 +121,7 @@ def lire_versions(client: ClientGitHub, slug: str, issues: list[dict]) -> list[d
         if pr is not None:
             sha = pr["head"]["sha"]
             runs, statuts = client.check_runs(slug, sha), client.statuts(slug, sha)
-            ci = etapes.etat_ci(runs, statuts)
-            checks = [
-                {"nom": c["name"], "etat": etapes.etat_check(c), "url": c.get("html_url")} for c in runs
-            ] + [
-                {"nom": s["context"], "etat": etapes.etat_statut(s), "url": s.get("target_url")}
-                for s in statuts
-            ]
+            ci, checks = etapes.etat_ci(runs, statuts), _checks(runs, statuts)
         resume = parent["sub_issues_summary"]
         signaux = etapes.signaux(enfants, ci)
         versions.append(
@@ -149,10 +142,20 @@ def lire_versions(client: ClientGitHub, slug: str, issues: list[dict]) -> list[d
                     "checks": checks,
                 },
                 "signaux": signaux,
-                "etape": etapes.choisir(signaux),
+                "etape": etapes.etape_de_version(signaux),
             }
         )
     return versions
+
+
+def _checks(runs: list[dict], statuts: list[dict]) -> list[dict]:
+    """Checks et statuts du commit de tête, un par un."""
+    return [
+        {"nom": c["name"], "etat": etapes.etat_check(c), "url": c.get("html_url")} for c in runs
+    ] + [
+        {"nom": s["context"], "etat": etapes.etat_statut(s), "url": s.get("target_url")}
+        for s in statuts
+    ]
 
 
 def pr_de_version(prs: list[dict], parent: int) -> dict | None:
@@ -171,12 +174,13 @@ def _identite(repo: RepoLie, lu_a: datetime) -> dict:
 
 
 def _etat(repo: RepoLie, lu_a: datetime, versions: list[dict]) -> dict:
-    """Le repo et ses versions en JSON, avec l’étape la plus prioritaire de ses versions."""
+    """Le repo et ses versions en JSON ; le badge suit l’étape retenue pour le repo."""
+    etape = etapes.etape_du_repo([v["etape"] for v in versions])
     return {
         **_identite(repo, lu_a),
         "erreur": None,
-        "etape": etapes.la_plus_prioritaire([v["etape"] for v in versions]).en_json(),
-        "humain_requis": any(v["etape"].humain for v in versions),
+        "etape": etape.en_json(),
+        "humain_requis": etape.humain,
         "versions": [
             {**v, "etape": v["etape"].en_json(), "signaux": [e.en_json() for e in v["signaux"]]}
             for v in versions
@@ -200,7 +204,7 @@ def _enfant(issue: dict) -> dict:
         "titre": issue["title"],
         "url": issue["html_url"],
         "ouvert": issue["state"] == "open",
-        "labels": _noms_labels(issue),
+        "labels": etapes.noms_labels(issue),
         # `blocked_by` ne compte que les bloqueurs encore ouverts.
         "bloque": dependances.get("blocked_by", 0) > 0,
     }
@@ -211,12 +215,8 @@ def _bug(issue: dict) -> dict:
         "numero": issue["number"],
         "titre": issue["title"],
         "url": issue["html_url"],
-        "labels": _noms_labels(issue),
+        "labels": etapes.noms_labels(issue),
     }
-
-
-def _noms_labels(issue: dict) -> list[str]:
-    return [label["name"] for label in issue.get("labels", [])]
 
 
 def _en_erreur(repo: RepoLie, lu_a: datetime, message: str) -> dict:

@@ -4,10 +4,11 @@ Fichier absent = registry vide. Éditable à la main ; `setup` n’y touche pas.
 """
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from wap_runtime.fichiers import remplacer
 
 try:
     import tomllib
@@ -30,6 +31,10 @@ class RegistryErreur(Exception):
 class RepoLie:
     slug: str
     nom: str | None = None
+
+    def designe(self, slug: str) -> bool:
+        """GitHub ignore la casse d’`owner/name`."""
+        return self.slug.lower() == slug.lower()
 
 
 def chemin_registry(instance: Path) -> Path:
@@ -56,7 +61,7 @@ def ajouter(chemin: Path, slug: str, nom: str | None = None) -> RepoLie:
     if not _SLUG.fullmatch(slug):
         raise RegistryErreur(f"{slug!r} invalide : attendu owner/name GitHub")
     repos = lire_registry(chemin)
-    if any(r.slug.lower() == slug.lower() for r in repos):
+    if any(r.designe(slug) for r in repos):
         raise RegistryErreur(f"{slug} est déjà dans le registry")
     nouveau = RepoLie(slug, nom)
     _ecrire(chemin, [*repos, nouveau])
@@ -65,7 +70,7 @@ def ajouter(chemin: Path, slug: str, nom: str | None = None) -> RepoLie:
 
 def retirer(chemin: Path, slug: str) -> RepoLie:
     repos = lire_registry(chemin)
-    trouves = [r for r in repos if r.slug.lower() == slug.lower()]
+    trouves = [r for r in repos if r.designe(slug)]
     if not trouves:
         raise RegistryErreur(f"{slug} absent du registry : rien à retirer")
     _ecrire(chemin, [r for r in repos if r not in trouves])
@@ -85,12 +90,5 @@ def _ecrire(chemin: Path, repos: list[RepoLie]) -> None:
         if repo.nom is not None:
             bloc += f"nom = {_chaine_toml(repo.nom)}\n"
         blocs.append(bloc)
-    provisoire = chemin.with_name(f".{chemin.name}.tmp")
-    provisoire.write_text("".join(blocs))
-    # Lisible par l’utilisateur du conteneur, quel que soit l’umask.
-    provisoire.chmod(0o644)
-    if os.geteuid() == 0:
-        # En root, le fichier revient au propriétaire de l’instance.
-        proprio = chemin.parent.stat()
-        os.chown(provisoire, proprio.st_uid, proprio.st_gid)
-    os.replace(provisoire, chemin)
+    # Lisible par l’utilisateur du conteneur.
+    remplacer(chemin, "".join(blocs), 0o644)
