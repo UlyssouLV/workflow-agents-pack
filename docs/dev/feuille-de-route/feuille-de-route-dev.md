@@ -4,6 +4,8 @@ Runtime self-hosted (monorepo) : pack syncé vers les repos métier ; orchestrat
 
 Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integration-channel.yml` (cycle version et releases `orchestrator-v*` vers cette base, pas `main`). Mis en place **hors semver** (bootstrap), pas une version numérotée.
 
+Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.7.0) restent une affaire de provisionnement.
+
 ## Déjà livré
 
 - **0.1.0** — Frontière pack / runtime : sur la branche orchestrateur, le pack de skills est un outil installé depuis `main` (ignoré par git, `update-from-pack.sh`), `orchestrator/` est la seule zone de développement gardée par une suite pytest, et le README présente l’orchestrateur ([#4](https://github.com/UlyssouLV/workflow-agents-pack/issues/4), [spec](../../specs/v0.1.0-frontiere-pack-runtime.md), [ADR 0001](../../adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md)).
@@ -11,9 +13,9 @@ Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integrati
 
 ## Prochaine : 0.3.0 — Registry + cockpit lecture seule
 
-Objectif. L’utilisateur configure des repos liés de façon générique et suit leur état (labels / cycle du pack) depuis un cockpit local en lecture seule.
+Objectif. L’utilisateur connecte son instance à GitHub, déclare ses repos liés de façon générique et suit leur état (étape du cycle du pack, intervention humaine requise) depuis un cockpit local en lecture seule.
 
-Hors périmètre : déclencher `/implement` ou toute autre action agent depuis l’UI.
+Hors périmètre : déclencher `/implement` ou toute autre action agent depuis l’UI ; le vrai design du cockpit ; faire poser les labels d’état par les skills du pack.
 
 ## Ensuite : 0.4.0 — Runner distant borné
 
@@ -33,11 +35,27 @@ Objectif. Enchaîner les enfants `ready-for-agent` tant que rien ne bloque ; s�
 
 Hors périmètre : SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
 
+## Ensuite : 0.7.0 — Instances multiples isolées
+
+Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
+
+Hors périmètre : accès au cockpit depuis Internet.
+
+## Ensuite : 0.8.0 — Accès web authentifié
+
+Objectif. Chaque personne joint son cockpit depuis Internet de façon sûre : TLS, identifiants propres à l’instance, aucune instance accessible par une autre, aucun port runtime exposé en clair sur le réseau du serveur.
+
+Hors périmètre : SaaS multi-tenant, comptes partagés entre instances.
+
 ## Plus tard (pas encore numéroté)
 
-### Accès distant optionnel à la machine hôte
+### Style du cockpit
 
-Tunnel (Tailscale, Cloudflare Tunnel, etc.) pour joindre le cockpit hors LAN — sans imposer de VPS.
+Un vrai design du cockpit (la 0.3.0 livre un style minimal).
+
+### Labels déclencheurs configurables
+
+Chaque instance choisit quels labels déclenchent quelle étape (ex. un autre label que `needs-info` pour « Question en attente »).
 
 ### Workers parallèles multi-repos
 
