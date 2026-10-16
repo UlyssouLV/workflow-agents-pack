@@ -115,6 +115,16 @@ for f in dispatch.py gate-code-review.py update-from-pack.sh adopter-le-pack.sh 
   fi
 done
 
+# Adapter copies actually executed by Claude Code / Cursor (same as adopter-le-pack.sh).
+mkdir -p "$TARGET/.claude/hooks" "$TARGET/.cursor/hooks"
+if [ -f "$PACK/agents/scripts/gate-code-review.py" ]; then
+  rsync -a "$PACK/agents/scripts/gate-code-review.py" "$TARGET/.claude/hooks/gate-code-review.py"
+fi
+if [ -f "$PACK/.cursor/hooks/gate-code-review.sh" ]; then
+  rsync -a "$PACK/.cursor/hooks/gate-code-review.sh" "$TARGET/.cursor/hooks/gate-code-review.sh"
+  chmod +x "$TARGET/.cursor/hooks/gate-code-review.sh"
+fi
+
 # Templates stay in the pack: scaffold-docs-site.sh reads them from $PACK.
 # Drop a copy left by an older update (duplicates docs-site/ for Sonar).
 if [ "$TARGET" != "$PACK" ] && [ -d "$TARGET/agents/templates" ]; then
