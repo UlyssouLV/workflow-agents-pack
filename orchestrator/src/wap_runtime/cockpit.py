@@ -1,7 +1,7 @@
-"""Vue liste du cockpit : l’état de chaque repo lié, lu sur GitHub derrière un cache mémoire.
+"""API du cockpit : l’état des repos liés, lu sur GitHub.
 
-Le registry est relu à chaque appel ; seule la lecture GitHub de chaque repo (et l’état
-d’auth) est gardée `CACHE_SECONDES`. Rien n’est persisté.
+Le registry est relu à chaque appel. La liste garde la lecture GitHub de chaque repo (et
+l’état d’auth) `CACHE_SECONDES` ; le détail d’un repo est lu en direct. Rien n’est persisté.
 """
 
 import re
@@ -50,6 +50,27 @@ class Cockpit:
             "repos": [self._entree(repo, auth["etat"]) for repo in repos],
         }
 
+    def detail(self, slug: str) -> dict | None:
+        """Le repo lié `slug`, lu en direct (sans cache) ; `None` s’il n’est pas dans le registry.
+
+        Lève `RegistryErreur` si le registry est illisible.
+        """
+        repo = next((r for r in lire_registry(self._registry) if r.slug.lower() == slug.lower()), None)
+        if repo is None:
+            return None
+        lu_a = self._horloge()
+        if self._client is None:
+            return {**_en_erreur(repo, lu_a, SANS_TOKEN), "bugs": []}
+        try:
+            issues = self._client.issues_ouvertes(repo.slug)
+            versions = lire_versions(self._client, repo.slug, issues)
+        except GitHubErreur as erreur:
+            return {**_en_erreur(repo, lu_a, str(erreur)), "bugs": []}
+        return {
+            **_etat(repo, lu_a, versions),
+            "bugs": [_bug(i) for i in issues if "bug" in _noms_labels(i)],
+        }
+
     def _entree(self, repo: RepoLie, auth: str) -> dict:
         if auth == "sans_token":
             return _en_erreur(repo, self._horloge(), SANS_TOKEN)
@@ -79,24 +100,17 @@ class Cockpit:
     def _lire_repo(self, repo: RepoLie) -> dict:
         lu_a = self._horloge()
         try:
-            versions = lire_versions(self._client, repo.slug)
+            versions = lire_versions(self._client, repo.slug, self._client.issues_ouvertes(repo.slug))
         except GitHubErreur as erreur:
             return _en_erreur(repo, lu_a, str(erreur))
-        etape = etapes.la_plus_prioritaire([v["etape"] for v in versions])
-        return {
-            **_identite(repo, lu_a),
-            "erreur": None,
-            "etape": etape.en_json(),
-            "humain_requis": any(v["etape"].humain for v in versions),
-            "versions": [{**v, "etape": v["etape"].en_json()} for v in versions],
-        }
+        etat = _etat(repo, lu_a, versions)
+        return {**etat, "versions": [_resume(v) for v in etat["versions"]]}
 
 
-def lire_versions(client: ClientGitHub, slug: str) -> list[dict]:
-    """Versions ouvertes du repo (issues ouvertes ayant des sub-issues), étape comprise."""
-    parents = [
-        i for i in client.issues_ouvertes(slug) if (i.get("sub_issues_summary") or {}).get("total")
-    ]
+def lire_versions(client: ClientGitHub, slug: str, issues: list[dict]) -> list[dict]:
+    """Versions ouvertes du repo (parmi `issues`, celles ayant des sub-issues), avec enfants,
+    PR de version et ses checks, signaux et étape retenue (`Etape`)."""
+    parents = [i for i in issues if (i.get("sub_issues_summary") or {}).get("total")]
     if not parents:
         return []
     prs = client.prs_ouvertes(slug)
@@ -104,26 +118,38 @@ def lire_versions(client: ClientGitHub, slug: str) -> list[dict]:
     for parent in parents:
         enfants = client.sous_issues(slug, parent["number"])
         pr = pr_de_version(prs, parent["number"])
-        ci = None
+        checks = ci = None
         if pr is not None:
             sha = pr["head"]["sha"]
-            ci = etapes.etat_ci(client.check_runs(slug, sha), client.statuts(slug, sha))
+            runs, statuts = client.check_runs(slug, sha), client.statuts(slug, sha)
+            ci = etapes.etat_ci(runs, statuts)
+            checks = [
+                {"nom": c["name"], "etat": etapes.etat_check(c), "url": c.get("html_url")} for c in runs
+            ] + [
+                {"nom": s["context"], "etat": etapes.etat_statut(s), "url": s.get("target_url")}
+                for s in statuts
+            ]
         resume = parent["sub_issues_summary"]
+        signaux = etapes.signaux(enfants, ci)
         versions.append(
             {
                 "numero": parent["number"],
                 "titre": parent["title"],
                 "url": parent["html_url"],
                 "progression": {"completed": resume["completed"], "total": resume["total"]},
+                "enfants": [_enfant(e) for e in enfants],
                 "pr": None
                 if pr is None
                 else {
                     "numero": pr["number"],
+                    "titre": pr["title"],
                     "url": pr["html_url"],
                     "brouillon": pr.get("draft", False),
                     "ci": ci,
+                    "checks": checks,
                 },
-                "etape": etapes.choisir(etapes.signaux(enfants, ci)),
+                "signaux": signaux,
+                "etape": etapes.choisir(signaux),
             }
         )
     return versions
@@ -142,6 +168,55 @@ def _identite(repo: RepoLie, lu_a: datetime) -> dict:
         "url": f"https://github.com/{repo.slug}",
         "lu_a": lu_a.isoformat(),
     }
+
+
+def _etat(repo: RepoLie, lu_a: datetime, versions: list[dict]) -> dict:
+    """Le repo et ses versions en JSON, avec l’étape la plus prioritaire de ses versions."""
+    return {
+        **_identite(repo, lu_a),
+        "erreur": None,
+        "etape": etapes.la_plus_prioritaire([v["etape"] for v in versions]).en_json(),
+        "humain_requis": any(v["etape"].humain for v in versions),
+        "versions": [
+            {**v, "etape": v["etape"].en_json(), "signaux": [e.en_json() for e in v["signaux"]]}
+            for v in versions
+        ],
+    }
+
+
+def _resume(version: dict) -> dict:
+    """Ce que la liste garde d’une version : ni enfants, ni signaux, ni checks."""
+    pr = version["pr"]
+    return {
+        **{k: version[k] for k in ("numero", "titre", "url", "progression", "etape")},
+        "pr": None if pr is None else {k: pr[k] for k in ("numero", "url", "brouillon", "ci")},
+    }
+
+
+def _enfant(issue: dict) -> dict:
+    dependances = issue.get("issue_dependencies_summary") or {}
+    return {
+        "numero": issue["number"],
+        "titre": issue["title"],
+        "url": issue["html_url"],
+        "ouvert": issue["state"] == "open",
+        "labels": _noms_labels(issue),
+        # `blocked_by` ne compte que les bloqueurs encore ouverts.
+        "bloque": dependances.get("blocked_by", 0) > 0,
+    }
+
+
+def _bug(issue: dict) -> dict:
+    return {
+        "numero": issue["number"],
+        "titre": issue["title"],
+        "url": issue["html_url"],
+        "labels": _noms_labels(issue),
+    }
+
+
+def _noms_labels(issue: dict) -> list[str]:
+    return [label["name"] for label in issue.get("labels", [])]
 
 
 def _en_erreur(repo: RepoLie, lu_a: datetime, message: str) -> dict:

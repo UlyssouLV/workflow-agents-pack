@@ -18,9 +18,12 @@ class FauxRepo:
     # Réponse forcée pour toute route du repo : (code HTTP, en-têtes, message).
     panne: tuple[int, dict, str] | None = None
 
-    def version(self, numero: int, enfants: list[tuple[int, str, list[str]]], titre=None):
-        """Parent ouvert et ses enfants `(numéro, "open" | "closed", labels)`."""
-        self.sous_issues[numero] = [_issue(n, f"Enfant {n}", etat, labels) for n, etat, labels in enfants]
+    def version(self, numero: int, enfants: list[tuple[int, str, list[str]]], titre=None, bloques=()):
+        """Parent ouvert et ses enfants `(numéro, "open" | "closed", labels)` ; `bloques` : numéros
+        des enfants qu’un bloqueur ouvert retient."""
+        self.sous_issues[numero] = [
+            _issue(n, f"Enfant {n}", etat, labels, bloque=n in bloques) for n, etat, labels in enfants
+        ]
         parent = _issue(numero, titre or f"V0.{numero}.0", "open", [])
         parent["sub_issues_summary"] = {
             "total": len(enfants),
@@ -30,26 +33,38 @@ class FauxRepo:
         self.issues.append(parent)
         return parent
 
-    def pr(self, numero: int, corps: str, sha: str, checks=(), statuts=()):
+    def bug(self, numero: int, titre: str, labels=("bug",)):
+        self.issues.append(_issue(numero, titre, "open", list(labels)))
+
+    def pr(self, numero: int, corps: str, sha: str, checks=(), statuts=(), brouillon=False):
         """PR ouverte ; `checks` en `(status, conclusion)`, `statuts` en états de commit."""
         self.pulls.append(
             {
                 "number": numero,
                 "title": f"PR {numero}",
                 "body": corps,
-                "draft": False,
+                "draft": brouillon,
                 "html_url": f"https://github.com/o/r/pull/{numero}",
                 "head": {"sha": sha},
             }
         )
         self.issues.append({**_issue(numero, f"PR {numero}", "open", []), "pull_request": {}})
         self.check_runs[sha] = [
-            {"name": f"check {i}", "status": s, "conclusion": c} for i, (s, c) in enumerate(checks)
+            {
+                "name": f"check {i}",
+                "status": s,
+                "conclusion": c,
+                "html_url": f"https://github.com/o/r/runs/{i}",
+            }
+            for i, (s, c) in enumerate(checks)
         ]
-        self.statuts[sha] = [{"context": f"statut {i}", "state": e} for i, e in enumerate(statuts)]
+        self.statuts[sha] = [
+            {"context": f"statut {i}", "state": e, "target_url": f"https://ci.example/{i}"}
+            for i, e in enumerate(statuts)
+        ]
 
 
-def _issue(numero: int, titre: str, etat: str, labels: list[str]) -> dict:
+def _issue(numero: int, titre: str, etat: str, labels: list[str], bloque=False) -> dict:
     return {
         "number": numero,
         "title": titre,
@@ -57,6 +72,13 @@ def _issue(numero: int, titre: str, etat: str, labels: list[str]) -> dict:
         "html_url": f"https://github.com/o/r/issues/{numero}",
         "labels": [{"name": nom} for nom in labels],
         "sub_issues_summary": {"total": 0, "completed": 0, "percent_completed": 0},
+        # `blocked_by` : bloqueurs encore ouverts ; `total_blocked_by` compte aussi les fermés.
+        "issue_dependencies_summary": {
+            "blocked_by": int(bloque),
+            "total_blocked_by": 1,
+            "blocking": 0,
+            "total_blocking": 0,
+        },
     }
 
 

@@ -7,13 +7,13 @@ from typing import Callable
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from wap_runtime import __version__
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.github import API_GITHUB, ClientGitHub
 from wap_runtime.instance import chemin_instance
-from wap_runtime.registry import chemin_registry
+from wap_runtime.registry import RegistryErreur, chemin_registry
 
 
 def _registry_par_defaut() -> Path:
@@ -46,6 +46,17 @@ def creer_app(
     @app.get("/api/repos")
     def repos() -> dict:
         return cockpit.liste()
+
+    @app.get("/api/repos/{owner}/{name}")
+    def repo(owner: str, name: str) -> dict:
+        slug = f"{owner}/{name}"
+        try:
+            detail = cockpit.detail(slug)
+        except RegistryErreur as erreur:
+            raise HTTPException(500, str(erreur)) from erreur
+        if detail is None:
+            raise HTTPException(404, f"{slug} absent du registry : `sudo wap-runtime repo add {slug}`")
+        return detail
 
     return app
 

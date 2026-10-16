@@ -35,15 +35,22 @@ INDETERMINEE = Etape(None, "Étape indéterminée", False)
 
 def etat_ci(check_runs: list[dict], statuts: list[dict]) -> str:
     """Échec l’emporte sur en cours, qui l’emporte sur ok ; rien → aucune."""
-    if not check_runs and not statuts:
+    etats = {etat_check(c) for c in check_runs} | {etat_statut(s) for s in statuts}
+    if not etats:
         return CI_AUCUNE
-    if any(c["status"] == "completed" and c["conclusion"] in _CONCLUSIONS_ECHEC for c in check_runs) or any(
-        s["state"] in ("failure", "error") for s in statuts
-    ):
-        return CI_ECHEC
-    if any(c["status"] != "completed" for c in check_runs) or any(s["state"] == "pending" for s in statuts):
+    return next((e for e in (CI_ECHEC, CI_EN_COURS) if e in etats), CI_OK)
+
+
+def etat_check(check_run: dict) -> str:
+    if check_run["status"] != "completed":
         return CI_EN_COURS
-    return CI_OK
+    return CI_ECHEC if check_run["conclusion"] in _CONCLUSIONS_ECHEC else CI_OK
+
+
+def etat_statut(statut: dict) -> str:
+    if statut["state"] in ("failure", "error"):
+        return CI_ECHEC
+    return CI_EN_COURS if statut["state"] == "pending" else CI_OK
 
 
 def signaux(enfants: list[dict], ci: str | None) -> list[Etape]:
