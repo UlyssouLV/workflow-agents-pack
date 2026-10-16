@@ -19,3 +19,11 @@
 **Provisionnement** — la préparation d’une machine hôte par la commande d’installation : socle (Docker, `git`, `gh`, CLIs agents), utilisateur d’instance, instance et services runtime démarrés.
 
 **Utilisateur d’instance** — l’utilisateur système `orchestrator` créé par le provisionnement : il possède l’instance et les CLIs agents, et exécute le runtime (jamais root).
+
+**Repo lié** — un repo métier que l’instance suit, déclaré par son `owner/name` GitHub, sans clone.
+
+**Registry** — la liste des repos liés d’une instance (`~/.wap-runtime/repos.toml`), gérée par `wap-runtime repo add|remove|list`.
+
+**Étape** — ce que le cockpit affiche pour une version ouverte d’un repo lié, déduite du tracker (labels, sub-issues, checks de la PR) : une seule par version, choisie par priorité. L’étape d’un repo est celle de ses versions qui attend quelqu’un, sinon la plus prioritaire.
+
+**Intervention humaine** — une étape qui attend quelqu’un (question en attente, CI en échec, tests humains, code review / Finalise) ; le cockpit la signale par un badge.

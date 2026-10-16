@@ -3,26 +3,34 @@
 import json
 import socket
 import threading
+import time
 import urllib.request
 from importlib.metadata import version
 
 import pytest
+import uvicorn
 
-from wap_runtime.server import creer_serveur
+from wap_runtime.server import creer_app
 
 
 @pytest.fixture
-def serveur():
-    srv = creer_serveur("127.0.0.1", 0)
-    fil = threading.Thread(target=srv.serve_forever, daemon=True)
+def serveur(tmp_path):
+    """Le service FastAPI servi par uvicorn, comme dans l’image, sur un port libre."""
+    config = uvicorn.Config(
+        creer_app(registry=tmp_path / "repos.toml", jeton=""), host="127.0.0.1", port=0, log_level="warning"
+    )
+    srv = uvicorn.Server(config)
+    fil = threading.Thread(target=srv.run, daemon=True)
     fil.start()
+    while not srv.started:
+        time.sleep(0.01)
     yield srv
-    srv.shutdown()
-    srv.server_close()
+    srv.should_exit = True
+    fil.join()
 
 
 def port_de(srv) -> int:
-    return srv.server_address[1]
+    return srv.servers[0].sockets[0].getsockname()[1]
 
 
 def test_get_health_repond_ok_avec_la_version_du_paquet(serveur):

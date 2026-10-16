@@ -253,3 +253,27 @@ def test_uninstall_en_root_retire_l_instance_d_orchestrator(
 
     assert "down" in faux_docker.read_text()
     assert not instance.exists()
+
+
+def test_compose_monte_l_instance_et_donc_repos_toml_en_lecture_seule(home, depot_pack):
+    instance = passe(home, depot_pack)
+
+    compose = (instance / "compose.yaml").read_text()
+    # Le dossier, pas le fichier : un bind mount de fichier absent créerait un dossier
+    # `repos.toml` sur l’hôte, et ne verrait pas un fichier remplacé.
+    assert '- ".:/instance:ro"' in compose
+    assert "WAP_INSTANCE: /instance" in compose
+
+
+def test_une_passe_ne_cree_ni_ne_reecrit_repos_toml(home, depot_pack):
+    instance = passe(home, depot_pack)
+    assert not (instance / "repos.toml").exists()
+
+    registry = instance / "repos.toml"
+    registry.write_text('[[repos]]\nslug = "mon-org/mon-repo"\n')
+    avant = registry.stat().st_mtime_ns
+
+    passe(home, depot_pack)
+
+    assert registry.read_text() == '[[repos]]\nslug = "mon-org/mon-repo"\n'
+    assert registry.stat().st_mtime_ns == avant

@@ -189,9 +189,9 @@ Blocked by #40 — vraie dépendance : sans #40 le reverse n’a pas de garde-fo
 
 **Options :** aucune.
 
-**Corps :** titre court + constat, reproductibilité, impact, cause probable, à corriger ; métadonnées (version trouvée, contexte, date, priorité). Hors périmètre optionnel.
+**Corps :** titre court + constat, reproductibilité, impact, cause probable, à corriger ; métadonnées (version trouvée, contexte, date, priorité). Hors périmètre optionnel. Captures d’écran optionnelles (images du chat ou chemins).
 
-Crée **une** issue GitHub (`Bug — …`, label `bug`, corps à titres fixes) et l’entrée sous **Plus tard** de la feuille de route (`docs/dev/feuille-de-route/`). Standards : `docs/dev/feuille-de-route/README.md` (jeton `Informations manquantes` si une case manque → bug **incomplet**). Pas de commit. Pas de promo en Prochaine/Ensuite (`/afr`). Équivalents : « crée un bug », « ajoute un bug », « documente un bug ». Skill `creer-un-bug`.
+Crée **une** issue GitHub (`Bug — …`, label `bug`, corps à titres fixes) et l’entrée sous **Plus tard** de la feuille de route (`docs/dev/feuille-de-route/`). Si captures : fichiers sous `docs/img/bugs/` + `gh --attach` (pièces jointes réelles sur le ticket). Standards : `docs/dev/feuille-de-route/README.md` (jeton `Informations manquantes` si une case manque → bug **incomplet**). Pas de commit (sauf si tu veux versionner `docs/img/bugs/` via `/c`). Pas de promo en Prochaine/Ensuite (`/afr`). Équivalents : « crée un bug », « ajoute un bug », « documente un bug ». Skill `creer-un-bug`.
 
 **Exemple :**
 

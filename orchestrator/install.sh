@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Provisionnement en une commande (ADR 0002) :
 #   curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
-# Options sans interaction : WAP_PORT, WAP_PACK_REF, WAP_DEBUG=1 (passées par
-# l’environnement, ex. `| sudo WAP_PORT=9000 bash`) et transmises à `wap-runtime setup`.
+# Options sans interaction : WAP_PORT, WAP_PACK_REF, WAP_DEBUG=1, GH_TOKEN, WAP_SKIP_AUTH=1
+# (passées par l’environnement, ex. `| sudo WAP_PORT=9000 bash`) et transmises à
+# `wap-runtime setup`. Seule la connexion GitHub peut interagir, sur /dev/tty (ADR 0003).
 set -euo pipefail
 
 if [ "${WAP_DEBUG:-}" = 1 ]; then

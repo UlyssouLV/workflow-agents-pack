@@ -17,13 +17,13 @@ Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-rout
 
 ## Installer l’orchestrateur sur une machine hôte
 
-Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interaction :
+Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interaction hormis la connexion GitHub quand un terminal est disponible (ADR 0003) :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
 ```
 
-Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, et attente de `GET /health`. La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`) et n’écoute que sur `127.0.0.1`.
+Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`) et n’écoute que sur `127.0.0.1`.
 
 Options, par variables d’environnement passées à `sudo` :
 
@@ -32,6 +32,8 @@ Options, par variables d’environnement passées à `sudo` :
 | `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) |
 | `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
 | `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
+| `GH_TOKEN` | — | Token GitHub utilisé pour connecter l’instance, sans interaction |
+| `WAP_SKIP_AUTH` | — | `1` : ne lance pas le device flow GitHub, même dans un terminal |
 
 ```bash
 curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
@@ -40,6 +42,18 @@ curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 
 **Santé** : `sudo -u orchestrator ~orchestrator/.local/bin/wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre).
+
+**Connexion GitHub** (ADR 0003) : `sudo ~orchestrator/.local/bin/wap-runtime auth` lance `gh auth login` (device flow : un code et une URL à valider dans le navigateur) en utilisateur `orchestrator`, copie son token dans `secrets.env` (`0600`) sous `GH_TOKEN`, puis recrée le service `runtime` pour qu’il le lise. `… | sudo wap-runtime auth --with-token` lit un token (fine-grained par exemple) sur stdin. Relancer `auth` reconnecte l’instance ou change de compte. `auth status` affiche le compte connecté (code `0`), ou « non connecté » (code `≠ 0`). En fin de `setup`, si l’instance n’est pas connectée : `GH_TOKEN` présent → utilisé ; sinon terminal disponible et pas `WAP_SKIP_AUTH=1` → `auth` ; sinon le setup réussit en affichant la prochaine étape.
+
+**Repos liés** : `sudo ~orchestrator/.local/bin/wap-runtime repo add owner/name [--nom <affichage>]`, `repo remove owner/name` et `repo list` gèrent le registry `~orchestrator/.wap-runtime/repos.toml` (en root, l’instance visée est celle d’`orchestrator`). `owner/name` invalide ou en double est refusé. Le fichier s’édite aussi à la main ; `setup` n’y touche pas, et le service `runtime` le voit en lecture seule (l’instance est montée sur `/instance:ro`).
+
+**Cockpit** : le service `runtime` sert un cockpit en lecture seule sur `http://127.0.0.1:<port>/` (port de `config.toml`, `8787` par défaut). La vue liste montre une ligne par repo lié — version ouverte, progression X/Y, étape, badge **Intervention humaine requise**, heure de lecture — les repos qui attendent quelqu’un en tête, et se relit toutes les 60 s (la lecture GitHub de la liste est gardée 60 s). Un repo inaccessible n’affiche que sa ligne en erreur ; un bandeau demande `sudo wap-runtime auth` si l’instance n’est pas connectée ou si son token est refusé. La vue `/repos/<owner>/<name>` relit le repo en direct : parent, enfants (état, labels, bloqué), PR de version et ses checks, bugs ouverts. Les liens ouvrent GitHub ; aucune action n’est lancée depuis le cockpit. L’API JSON est sous `/api/` (`/api/repos`, `/api/repos/<owner>/<name>`, `/api/auth`).
+
+Le port n’écoute que sur `127.0.0.1` de l’hôte (ADR 0002) : depuis votre poste, ouvrez un tunnel SSH puis le navigateur.
+
+```bash
+ssh -L 8787:127.0.0.1:8787 mon-serveur      # puis http://127.0.0.1:8787/
+```
 
 **Désinstallation** : `sudo ~orchestrator/.local/bin/wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
@@ -81,12 +95,21 @@ python3.12 -m venv orchestrator/.venv
 orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 ```
 
-L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `setup`, `uninstall [--purge]`).
+L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `auth [status] [--with-token]`, `repo add|remove|list`, `setup`, `uninstall [--purge]`).
 
-Lancer les tests : **`/t`** dans Claude Code ou Cursor, ou directement :
+Le front du cockpit vit sous `orchestrator/cockpit/` (React + TypeScript + Vite, Node 24) ; l’image le construit dans une étape Node, l’hôte n’a pas besoin de Node :
+
+```bash
+cd orchestrator/cockpit && npm ci
+npm run dev        # front sur http://127.0.0.1:5173/, API relayée vers un `wap-runtime serve` local (8787)
+npm run build      # typecheck + build dans dist/ ; `WAP_COCKPIT=dist wap-runtime serve` le sert sur /
+```
+
+Lancer les tests : **`/t`** dans Claude Code ou Cursor (deux test-roots : pytest sous `orchestrator/`, Vitest sous `orchestrator/cockpit/`), ou directement :
 
 ```bash
 cd orchestrator && .venv/bin/pytest
+cd orchestrator/cockpit && npm test
 ```
 
 ## Repères
