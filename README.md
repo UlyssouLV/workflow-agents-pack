@@ -17,7 +17,7 @@ Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-rout
 
 ## Installer l’orchestrateur sur une machine hôte
 
-Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interaction :
+Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interaction hormis la connexion GitHub quand un terminal est disponible (ADR 0003) :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
