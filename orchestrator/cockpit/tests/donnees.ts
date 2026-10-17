@@ -1,6 +1,6 @@
 // Réponses `/api/` simulées, à la forme rendue par `wap_runtime.cockpit`.
 import { vi } from "vitest";
-import type { Agent, Auth, Detail, Etape, Liste, Repo, VersionResume } from "../src/api";
+import type { Agent, Auth, Detail, Etape, Liste, Repo, Session, VersionResume } from "../src/api";
 
 export const CONNECTE: Auth = { etat: "connecte", compte: "octocat" };
 
@@ -43,6 +43,7 @@ export function repo(r: Partial<Repo> = {}): Repo {
     etape: IMPLEMENT,
     humain_requis: false,
     versions: [version()],
+    session: null,
     ...r,
   };
 }
@@ -54,6 +55,7 @@ export function liste(l: Partial<Liste> = {}): Liste {
 export function detail(d: Partial<Detail> = {}): Detail {
   return {
     ...repo(),
+    agents: [CLAUDE, CURSOR],
     versions: [
       {
         ...version(),
@@ -65,6 +67,7 @@ export function detail(d: Partial<Detail> = {}): Detail {
             ouvert: false,
             labels: [],
             bloque: false,
+            lancement: { claude: "enfant fermé", cursor: "enfant fermé" },
           },
           {
             numero: 22,
@@ -73,6 +76,16 @@ export function detail(d: Partial<Detail> = {}): Detail {
             ouvert: true,
             labels: ["ready-for-agent"],
             bloque: true,
+            lancement: { claude: "enfant bloqué", cursor: "enfant bloqué" },
+          },
+          {
+            numero: 23,
+            titre: "Lancer une session",
+            url: "https://github.com/o/r/issues/23",
+            ouvert: true,
+            labels: ["ready-for-agent"],
+            bloque: false,
+            lancement: { claude: null, cursor: "agent non connecté" },
           },
         ],
         pr: {
@@ -80,6 +93,7 @@ export function detail(d: Partial<Detail> = {}): Detail {
           titre: "v0.3.0",
           url: "https://github.com/o/r/pull/18",
           brouillon: true,
+          branche: "v0.3.0-registry",
           ci: "echec",
           checks: [{ nom: "pytest", etat: "echec", url: "https://github.com/o/r/runs/1" }],
         },
@@ -91,18 +105,36 @@ export function detail(d: Partial<Detail> = {}): Detail {
   };
 }
 
-/** Faux `fetch` : `routes[chemin]` est la réponse JSON (ou une fonction appelée à chaque requête). */
-export function simulerApi(routes: Record<string, unknown | (() => unknown)>) {
-  const repondre = (chemin: string): Response => {
-    if (!(chemin in routes)) {
+export function session(s: Partial<Session> = {}): Session {
+  return {
+    id: "20261017-090000-abcdef",
+    url: "/sessions/20261017-090000-abcdef",
+    repo: "o/r",
+    ticket: 23,
+    agent: "claude",
+    commande: 'claude "/implement #23"',
+    debut: "2026-10-17T09:00:00+00:00",
+    fin: null,
+    etat: "ouverte",
+    code_sortie: null,
+    ...s,
+  };
+}
+
+/** Faux `fetch` : `routes[chemin]` (GET) ou `routes["POST <chemin>"]` est la réponse JSON (ou une
+ * fonction appelée à chaque requête, avec ses options). */
+export function simulerApi(routes: Record<string, unknown | ((init?: RequestInit) => unknown)>) {
+  const repondre = (chemin: string, init?: RequestInit): Response => {
+    const cle = init?.method && init.method !== "GET" ? `${init.method} ${chemin}` : chemin;
+    if (!(cle in routes)) {
       return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
     }
-    const route = routes[chemin];
-    const corps = typeof route === "function" ? route() : route;
+    const route = routes[cle];
+    const corps = typeof route === "function" ? route(init) : route;
     if (corps instanceof Response) return corps;
     return new Response(JSON.stringify(corps), { status: 200 });
   };
-  const fetch = vi.fn((chemin: string) => Promise.resolve(repondre(chemin)));
+  const fetch = vi.fn((chemin: string, init?: RequestInit) => Promise.resolve(repondre(chemin, init)));
   vi.stubGlobal("fetch", fetch);
   return fetch;
 }

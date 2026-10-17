@@ -45,6 +45,29 @@ export interface VersionResume {
   pr: PrResume | null;
 }
 
+/** Lien vers la session ouverte de l’instance (une seule à la fois). */
+export interface LienSession {
+  id: string;
+  url: string;
+  repo: string;
+}
+
+export type EtatSession = "ouverte" | "terminée" | "échouée";
+
+/** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
+export interface Session {
+  id: string;
+  url: string;
+  repo: string;
+  ticket: number;
+  agent: Agent["id"];
+  commande: string;
+  debut: string;
+  fin: string | null;
+  etat: EtatSession;
+  code_sortie: number | null;
+}
+
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */
 export interface Repo<V = VersionResume> {
   slug: string;
@@ -55,6 +78,8 @@ export interface Repo<V = VersionResume> {
   etape: Etape | null;
   humain_requis: boolean;
   versions: V[];
+  /** Session ouverte sur ce repo (badge « Session en cours »). */
+  session: LienSession | null;
 }
 
 export interface Liste {
@@ -72,6 +97,8 @@ export interface Enfant {
   ouvert: boolean;
   labels: string[];
   bloque: boolean;
+  /** Par agent : pourquoi `/implement #n` est grisé, `null` s’il est possible. */
+  lancement: Record<Agent["id"], string | null>;
 }
 
 export interface Check {
@@ -82,7 +109,7 @@ export interface Check {
 
 export interface Version extends Omit<VersionResume, "pr"> {
   enfants: Enfant[];
-  pr: (PrResume & { titre: string; checks: Check[] }) | null;
+  pr: (PrResume & { titre: string; branche: string; checks: Check[] }) | null;
   signaux: Etape[];
 }
 
@@ -94,11 +121,17 @@ export interface Bug {
 }
 
 /** `GET /api/repos/{owner}/{name}`. */
-export interface Detail extends Repo<Version> {
+export interface Detail extends Omit<Repo<Version>, "session"> {
   bugs: Bug[];
+  agents: Agent[];
+  /** Session ouverte de l’instance, quel que soit son repo. */
+  session: LienSession | null;
 }
 
-export class ErreurApi extends Error {}
+export class ErreurApi extends Error {
+  /** `409` : la session déjà ouverte. */
+  session: LienSession | null = null;
+}
 
 export async function lire<T>(chemin: string): Promise<T> {
   const reponse = await fetch(chemin, { headers: { Accept: "application/json" } });
@@ -108,4 +141,20 @@ export async function lire<T>(chemin: string): Promise<T> {
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return (await reponse.json()) as T;
+}
+
+/** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
+export async function lancerSession(repo: string, ticket: number, agent: Agent["id"]): Promise<Session> {
+  const reponse = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ repo, ticket, agent }),
+  });
+  const corps = await reponse.json().catch(() => null);
+  if (!reponse.ok) {
+    const erreur = new ErreurApi(corps?.detail ?? `lancement : HTTP ${reponse.status}`);
+    erreur.session = corps?.session ?? null;
+    throw erreur;
+  }
+  return corps as Session;
 }

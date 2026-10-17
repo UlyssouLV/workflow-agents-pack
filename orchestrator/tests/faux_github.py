@@ -36,7 +36,9 @@ class FauxRepo:
     def bug(self, numero: int, titre: str, labels=("bug",)):
         self.issues.append(_issue(numero, titre, "open", list(labels)))
 
-    def pr(self, numero: int, corps: str, sha: str, checks=(), statuts=(), brouillon=False):
+    def pr(
+        self, numero: int, corps: str, sha: str, checks=(), statuts=(), brouillon=False, branche=None
+    ):
         """PR ouverte ; `checks` en `(status, conclusion)`, `statuts` en états de commit."""
         self.pulls.append(
             {
@@ -45,7 +47,7 @@ class FauxRepo:
                 "body": corps,
                 "draft": brouillon,
                 "html_url": f"https://github.com/o/r/pull/{numero}",
-                "head": {"sha": sha},
+                "head": {"sha": sha, "ref": branche or f"branche-{numero}"},
             }
         )
         self.issues.append({**_issue(numero, f"PR {numero}", "open", []), "pull_request": {}})
@@ -100,7 +102,7 @@ class FauxGitHub:
         if requete.headers.get("Authorization") != f"Bearer {JETON}":
             return httpx.Response(401, json={"message": "Bad credentials"})
         if chemin == "/user":
-            return httpx.Response(200, json={"login": self.compte})
+            return httpx.Response(200, json={"login": self.compte, "id": 583231})
         m = re.fullmatch(r"/repos/([^/]+/[^/]+)(/.*)", chemin)
         if not m or m[1] not in self.repos:
             return httpx.Response(404, json={"message": "Not Found"})

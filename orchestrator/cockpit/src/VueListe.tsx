@@ -58,6 +58,14 @@ function Ligne({ repo }: { repo: Repo }) {
     <tr className={repo.erreur ? "en-erreur" : undefined}>
       <td>
         <a href={`/repos/${repo.slug}`}>{nomAffiche(repo)}</a>
+        {repo.session && (
+          <>
+            {" "}
+            <a className="badge session" href={repo.session.url}>
+              Session en cours
+            </a>
+          </>
+        )}
       </td>
       {repo.erreur ? (
         <td colSpan={3} className="erreur">

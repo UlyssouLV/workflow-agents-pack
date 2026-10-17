@@ -190,4 +190,18 @@ describe("vue liste", () => {
       expect(cursor).not.toHaveTextContent("sudo");
     });
   });
+
+  it("badge « Session en cours » sur le repo de la session ouverte, lié à sa page", async () => {
+    simulerApi({
+      "/api/repos": liste({
+        repos: [repo({ slug: "o/a" }), repo({ slug: "o/b", session: { id: "x", url: "/sessions/x", repo: "o/b" } })],
+      }),
+    });
+
+    render(<VueListe />);
+
+    const [a, b] = await lignes();
+    expect(within(a).queryByText("Session en cours")).toBeNull();
+    expect(within(b).getByRole("link", { name: "Session en cours" })).toHaveAttribute("href", "/sessions/x");
+  });
 });

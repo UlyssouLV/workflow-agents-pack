@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 from wap_runtime import __version__
+from wap_runtime.runner import PORT_RUNNER
 
 NOM_INSTANCE = ".wap-runtime"
 DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
@@ -126,6 +127,7 @@ services:
       - secrets.env
     environment:
       WAP_INSTANCE: {INSTANCE_CONTENEUR}
+      WAP_RUNNER: http://runner:{PORT_RUNNER}
     # Le dossier et non `repos.toml` seul : absent, ce fichier deviendrait un dossier
     # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur.
     volumes:
@@ -140,12 +142,15 @@ services:
       context: {CONTEXTE_RUNTIME}
       dockerfile: runner/Dockerfile
     image: wap-runner:local
+    command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "{PORT_RUNNER}"]
     user: "{uid}:{gid}"
     init: true
     env_file:
       - secrets.env
     environment:
       HOME: {HOME_RUNNER}
+      WAP_CLONES: /clones
+      WAP_JOBS: /jobs
     volumes:
       - "./clones:/clones"
       - "./jobs:/jobs"

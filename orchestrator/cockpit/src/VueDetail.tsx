@@ -1,4 +1,6 @@
-import type { Auth, Bug, Detail, EtatCi, Version } from "./api";
+import { useState } from "react";
+import type { Agent, Auth, Bug, Detail, Enfant, EtatCi, LienSession, Version } from "./api";
+import { ErreurApi, lancerSession } from "./api";
 import { BadgeHumain, BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
 
@@ -28,6 +30,20 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
 }
 
 function Contenu({ detail }: { detail: Detail }) {
+  const [agent, setAgent] = useState<Agent["id"]>(
+    () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
+  );
+  const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
+
+  const lancer = (ticket: number) => {
+    setRefus(null);
+    lancerSession(detail.slug, ticket, agent).then(
+      (session) => window.location.assign(session.url),
+      (erreur: Error) =>
+        setRefus({ message: erreur.message, session: erreur instanceof ErreurApi ? erreur.session : null }),
+    );
+  };
+
   return (
     <>
       <h1>{nomAffiche(detail)}</h1>
@@ -41,8 +57,40 @@ function Contenu({ detail }: { detail: Detail }) {
           <p>
             Étape : <strong>{detail.etape?.libelle}</strong> {detail.humain_requis && <BadgeHumain />}
           </p>
+          {detail.session && (
+            <p>
+              <a className="badge session" href={detail.session.url}>
+                Session en cours
+              </a>{" "}
+              sur {detail.session.repo}
+            </p>
+          )}
+          <p>
+            <label>
+              Agent{" "}
+              <select value={agent} onChange={(e) => setAgent(e.target.value as Agent["id"])}>
+                {detail.agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.nom}
+                    {!a.connecte && " (non connecté)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </p>
+          {refus && (
+            <p role="alert" className="erreur">
+              Lancement refusé : {refus.message}
+              {refus.session && (
+                <>
+                  {" "}
+                  — <a href={refus.session.url}>voir la session ouverte</a>
+                </>
+              )}
+            </p>
+          )}
           {detail.versions.map((v) => (
-            <SectionVersion key={v.numero} version={v} />
+            <SectionVersion key={v.numero} version={v} agent={agent} lancer={lancer} />
           ))}
           <Bugs bugs={detail.bugs} />
         </>
@@ -51,7 +99,12 @@ function Contenu({ detail }: { detail: Detail }) {
   );
 }
 
-function SectionVersion({ version }: { version: Version }) {
+interface Lanceur {
+  agent: Agent["id"];
+  lancer: (ticket: number) => void;
+}
+
+function SectionVersion({ version, agent, lancer }: { version: Version } & Lanceur) {
   const nom = `#${version.numero} ${version.titre}`;
   const { pr } = version;
   return (
@@ -72,6 +125,7 @@ function SectionVersion({ version }: { version: Version }) {
             <th>Enfant</th>
             <th>État</th>
             <th>Labels</th>
+            <th>Agent</th>
           </tr>
         </thead>
         <tbody>
@@ -87,6 +141,7 @@ function SectionVersion({ version }: { version: Version }) {
                 {e.bloque && ", bloqué"}
               </td>
               <td>{e.labels.join(", ")}</td>
+              <td>{e.ouvert && <BoutonImplement enfant={e} agent={agent} lancer={lancer} />}</td>
             </tr>
           ))}
         </tbody>
@@ -113,6 +168,19 @@ function SectionVersion({ version }: { version: Version }) {
         </>
       )}
     </section>
+  );
+}
+
+/** `/implement #n`, grisé avec la raison rendue par le runtime pour l’agent choisi. */
+function BoutonImplement({ enfant, agent, lancer }: { enfant: Enfant } & Lanceur) {
+  const raison = enfant.lancement[agent];
+  return (
+    <>
+      <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer(enfant.numero)}>
+        /implement #{enfant.numero}
+      </button>
+      {raison && <span className="raison">{raison}</span>}
+    </>
   );
 }
 

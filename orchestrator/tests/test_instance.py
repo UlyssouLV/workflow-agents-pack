@@ -305,6 +305,25 @@ def test_compose_ajoute_runner_borne(home, depot_pack):
     assert "restart: unless-stopped" in runner
 
 
+def test_runner_sert_son_api_interne_au_runtime(home, depot_pack):
+    compose = (passe(home, depot_pack) / "compose.yaml").read_text()
+
+    runner = service(compose, "runner")
+    assert 'command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "8788"]' in runner
+    assert "WAP_CLONES: /clones" in runner
+    assert "WAP_JOBS: /jobs" in runner
+    assert "WAP_RUNNER: http://runner:8788" in service(compose, "runtime")
+
+
+def test_dockerfile_du_runner_installe_wap_runtime_verrouille():
+    from wap_runtime import instance as module
+
+    dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
+    assert "--require-hashes" in dockerfile
+    assert "requirements.txt" in dockerfile
+    assert "sleep" not in dockerfile
+
+
 def test_runtime_inchange_par_le_runner(home, depot_pack):
     instance = passe(home, depot_pack, WAP_PORT="9003")
 

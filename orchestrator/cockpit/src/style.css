@@ -48,3 +48,14 @@ code {
 .agents .non-connecte {
   color: #59636e;
 }
+.badge.session {
+  background: #ddf4ff;
+  border-color: #54aeff;
+  color: inherit;
+  text-decoration: none;
+}
+.raison {
+  color: #59636e;
+  font-size: 0.85rem;
+  margin-left: 0.4rem;
+}

@@ -138,6 +138,8 @@ def lire_versions(client: ClientGitHub, slug: str, issues: list[dict]) -> list[d
                     "titre": pr["title"],
                     "url": pr["html_url"],
                     "brouillon": pr.get("draft", False),
+                    # Branche où le runner lance les sessions.
+                    "branche": pr["head"]["ref"],
                     "ci": ci,
                     "checks": checks,
                 },

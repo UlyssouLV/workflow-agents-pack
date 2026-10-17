@@ -1,5 +1,14 @@
 # Service `runner` : sessions des agents (ADR 0004). Image construite localement par
 # `wap-runtime setup`, contexte `orchestrator/` comme `runtime`.
+FROM python:3.12-slim AS build
+
+WORKDIR /src
+COPY requirements-build.txt ./
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-build.txt
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /dist .
+
 FROM node:24-slim
 
 # Versions épinglées : changer l’une d’elles = relancer `setup` pour reconstruire l’image.
@@ -42,11 +51,22 @@ RUN git clone --quiet https://github.com/mattpocock/skills /tmp/skills-matt \
     && rm -rf /tmp/skills-matt /root/.npm \
     && chmod -R a+rX "${SQUELETTE}"
 
+# API interne du runner (`wap-runtime runner`) : son venv, hors du `PATH` des agents (seul
+# `wap-runtime` y est lié). Le verrou liste les wheels de toutes les versions de Python.
+COPY requirements.txt /tmp/requirements.txt
+COPY --from=build /dist /dist
+RUN python3 -m venv /opt/wap-runtime \
+    && /opt/wap-runtime/bin/pip install --no-cache-dir --require-hashes --only-binary :all: \
+        -r /tmp/requirements.txt \
+    && /opt/wap-runtime/bin/pip install --no-cache-dir --no-index --no-deps --only-binary :all: /dist/*.whl \
+    && ln -s /opt/wap-runtime/bin/wap-runtime /usr/local/bin/wap-runtime \
+    && rm -rf /dist /tmp/requirements.txt
+
 ENV WAP_RUNNER_SQUELETTE=${SQUELETTE}
 COPY runner/entrypoint.sh /usr/local/bin/wap-runner-entrypoint
 RUN chmod 0755 /usr/local/bin/wap-runner-entrypoint
 
 WORKDIR /clones
 ENTRYPOINT ["wap-runner-entrypoint"]
-# L’API interne du runner (sessions tmux) remplacera cette attente.
-CMD ["sleep", "infinity"]
+# Compose passe la même commande ; port non publié, joint par le `runtime` seul.
+CMD ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "8788"]

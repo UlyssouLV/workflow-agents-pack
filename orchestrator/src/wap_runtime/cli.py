@@ -17,6 +17,7 @@ from wap_runtime.registry import (
     lire_registry,
     retirer,
 )
+from wap_runtime.runner import PORT_RUNNER
 from wap_runtime.sante import sonder
 from wap_runtime.socle import HOME_UTILISATEUR, UTILISATEUR
 
@@ -61,6 +62,19 @@ def _serve(hote: str, port: int) -> int:
         return 1
     print(f"wap-runtime écoute sur {hote}:{port}", flush=True)
     servir(hote, port)
+    return 0
+
+
+def _runner(hote: str, port: int) -> int:
+    try:
+        import uvicorn  # noqa: F401
+
+        from wap_runtime.runner import servir_runner
+    except ImportError as erreur:
+        print(f"KO — service runner indisponible ({erreur}) : `pip install 'wap-runtime[serve]'`")
+        return 1
+    print(f"wap-runtime runner écoute sur {hote}:{port}", flush=True)
+    servir_runner(hote, port)
     return 0
 
 
@@ -170,6 +184,10 @@ def main(argv=None) -> int:
     serve = sous.add_parser("serve", help="lance le service HTTP du runtime")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=PORT_PAR_DEFAUT)
+    # Service `runner` de l’instance (dans son image) : API interne des sessions.
+    runner = sous.add_parser("runner", help=argparse.SUPPRESS)
+    runner.add_argument("--host", default="127.0.0.1")
+    runner.add_argument("--port", type=int, default=PORT_RUNNER)
     uninstall = sous.add_parser(
         "uninstall", help="arrête et retire le Compose de l’instance"
     )
@@ -211,6 +229,8 @@ def main(argv=None) -> int:
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
         return _serve(args.host, args.port)
+    if args.commande == "runner":
+        return _runner(args.host, args.port)
     if args.commande == "uninstall":
         return _uninstall(args.purge)
     return _health(args.port)

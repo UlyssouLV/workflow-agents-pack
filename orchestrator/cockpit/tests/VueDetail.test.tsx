@@ -1,8 +1,8 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VueDetail } from "../src/VueDetail";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { CONNECTE, QUESTION, detail, simulerApi } from "./donnees";
+import { CONNECTE, QUESTION, detail, session, simulerApi } from "./donnees";
 
 function rendre(routes: Record<string, unknown>) {
   const fetch = simulerApi({ "/api/auth": CONNECTE, ...routes });
@@ -38,7 +38,7 @@ describe("vue détail", () => {
     expect(enfants[1]).toHaveTextContent("ouvert");
     expect(enfants[1]).toHaveTextContent("ready-for-agent");
     expect(enfants[1]).toHaveTextContent("bloqué");
-    expect(within(enfants[1]).getByRole("link")).toHaveAttribute("href", "https://github.com/o/r/issues/22");
+    expect(within(enfants[1]).getAllByRole("link")[0]).toHaveAttribute("href", "https://github.com/o/r/issues/22");
   });
 
   it("montre tous les signaux de la version, même un seul", async () => {
@@ -120,5 +120,105 @@ describe("vue détail", () => {
 
     expect(fetch.mock.calls.filter(([chemin]) => chemin === "/api/repos/o/r")).toHaveLength(2);
     expect(screen.queryByRole("link", { name: "#30 Plantage" })).toBeNull();
+  });
+
+  describe("lancement de /implement", () => {
+    async function boutons() {
+      const version = await screen.findByRole("region", { name: /#17/ });
+      return within(version).getAllByRole("button", { name: /^\/implement #/ });
+    }
+
+    it("propose les agents dans un sélecteur, le premier connecté choisi", async () => {
+      rendre({ "/api/repos/o/r": detail() });
+
+      const selecteur = await screen.findByRole("combobox", { name: "Agent" });
+      expect(within(selecteur).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Claude Code",
+        "Cursor (non connecté)",
+      ]);
+      expect(selecteur).toHaveValue("claude");
+    });
+
+    it("un bouton par enfant ouvert : actif si éligible, sinon grisé avec la raison", async () => {
+      rendre({ "/api/repos/o/r": detail() });
+
+      const [bloque, eligible] = await boutons();
+      expect(bloque).toHaveTextContent("/implement #22");
+      expect(bloque).toBeDisabled();
+      expect(bloque).toHaveAttribute("title", "enfant bloqué");
+      expect(screen.getByText("enfant bloqué")).toBeInTheDocument();
+      expect(eligible).toHaveTextContent("/implement #23");
+      expect(eligible).toBeEnabled();
+    });
+
+    it("la raison suit l’agent choisi", async () => {
+      rendre({ "/api/repos/o/r": detail() });
+      const selecteur = await screen.findByRole("combobox", { name: "Agent" });
+
+      fireEvent.change(selecteur, { target: { value: "cursor" } });
+
+      const [, eligible] = await boutons();
+      expect(eligible).toBeDisabled();
+      expect(eligible).toHaveAttribute("title", "agent non connecté");
+    });
+
+    it("le clic lance la session avec l’agent choisi puis ouvre sa page", async () => {
+      const assign = vi.fn();
+      vi.stubGlobal("location", { ...window.location, assign });
+      const corps: unknown[] = [];
+      const fetch = rendre({
+        "/api/repos/o/r": detail(),
+        "POST /api/sessions": (init?: RequestInit) => {
+          corps.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify(session()), { status: 201 });
+        },
+      });
+      const [, eligible] = await boutons();
+
+      fireEvent.click(eligible);
+
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("/sessions/20261017-090000-abcdef"));
+      expect(corps).toEqual([{ repo: "o/r", ticket: 23, agent: "claude" }]);
+      const [, init] = fetch.mock.calls.find(([, i]) => i?.method === "POST")!;
+      expect(init?.headers).toMatchObject({ "Content-Type": "application/json" });
+    });
+
+    it("un refus 409 montre le lien vers la session ouverte", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        "POST /api/sessions": new Response(
+          JSON.stringify({
+            detail: "une session est déjà ouverte : /sessions/x",
+            session: { id: "x", url: "/sessions/x", repo: "o/autre" },
+          }),
+          { status: 409 },
+        ),
+      });
+      const [, eligible] = await boutons();
+
+      fireEvent.click(eligible);
+
+      const lien = await screen.findByRole("link", { name: /session ouverte/i });
+      expect(lien).toHaveAttribute("href", "/sessions/x");
+    });
+
+    it("un autre refus affiche son message", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        "POST /api/sessions": new Response(JSON.stringify({ detail: "git fetch a échoué" }), { status: 422 }),
+      });
+      const [, eligible] = await boutons();
+
+      fireEvent.click(eligible);
+
+      expect(await screen.findByText(/git fetch a échoué/)).toBeInTheDocument();
+    });
+
+    it("montre la session ouverte de l’instance", async () => {
+      rendre({ "/api/repos/o/r": detail({ session: { id: "x", url: "/sessions/x", repo: "o/r" } }) });
+
+      const lien = await screen.findByRole("link", { name: /session en cours/i });
+      expect(lien).toHaveAttribute("href", "/sessions/x");
+    });
   });
 });
