@@ -9,9 +9,12 @@ Cette branche développe l’**orchestrateur** self-hosted : un runtime install�
 | 0.1.0 | Frontière pack / runtime : le pack est un outil installé, `orchestrator/` est la zone de code |
 | 0.2.0 | Provisionning de la machine hôte (Linux + CLIs, Docker Compose, healthcheck) |
 | 0.3.0 | Registry des repos métier + cockpit en lecture seule |
-| 0.4.0 | Runner distant borné : lancer une action agent depuis le cockpit |
-| 0.5.0 | FSM et blocages humains (`running` / `needs-human` / `failed` / `done`) |
-| 0.6.0 | Autopilot borné : enchaîner les enfants `ready-for-agent` tant que rien ne bloque |
+| 0.4.0 | Runner distant borné : lancer `/implement` depuis le cockpit dans un terminal, sessions enregistrées et rejouables |
+| 0.4.1 | Correctifs du runner distant (tests humains 0.4.0) |
+| 0.4.2 | Catalogue d’actions et réponse attendue |
+| 0.5.0 | Autopilot borné : enchaîner les enfants `ready-for-agent` tant que rien ne bloque |
+| 0.6.0 | Instances multiples isolées sur un même serveur |
+| 0.7.0 | Accès web authentifié |
 
 Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-route/feuille-de-route-dev.md).
 
