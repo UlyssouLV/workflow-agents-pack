@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
-import { terminerSession } from "./api";
+import { ID_SESSION, terminerSession } from "./api";
 import { LIBELLES_ETAT_SESSION, LiensChaine, lienSession } from "./commun";
 import { useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
@@ -21,7 +21,9 @@ interface Enchainement {
 function lireEnchainement(): Enchainement | null {
   try {
     const lu = JSON.parse(sessionStorage.getItem(ENCHAINEMENT) ?? "null");
-    return typeof lu?.depuis === "string" ? { depuis: lu.depuis, main: lu.main === true } : null;
+    return typeof lu?.depuis === "string" && ID_SESSION.test(lu.depuis)
+      ? { depuis: lu.depuis, main: lu.main === true }
+      : null;
   } catch {
     return null;
   }
@@ -29,7 +31,12 @@ function lireEnchainement(): Enchainement | null {
 
 function ecrireEnchainement(enchainement: Enchainement | null) {
   try {
-    if (enchainement) sessionStorage.setItem(ENCHAINEMENT, JSON.stringify(enchainement));
+    // Seul un id de session bien formé est écrit : l’onglet ne garde rien d’autre de l’API.
+    if (enchainement && ID_SESSION.test(enchainement.depuis))
+      sessionStorage.setItem(
+        ENCHAINEMENT,
+        JSON.stringify({ depuis: enchainement.depuis, main: enchainement.main === true }),
+      );
     else sessionStorage.removeItem(ENCHAINEMENT);
   } catch {
     // Stockage indisponible : la bascule se fait sans bandeau ni reprise de la main.
