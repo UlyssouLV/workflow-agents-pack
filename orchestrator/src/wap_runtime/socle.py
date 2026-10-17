@@ -19,6 +19,8 @@ UTILISATEUR = "orchestrator"
 HOME_UTILISATEUR = Path("/home") / UTILISATEUR
 VERSIONS_MINIMALES = {"debian": (12,), "ubuntu": (22, 4)}
 PLATEFORMES = "Debian 12+ / Ubuntu 22.04+"
+# Dans le `secure_path` de sudo : `sudo wap-runtime …` se lance tel quel.
+LIEN_COMMANDE = Path("/usr/local/bin/wap-runtime")
 # Absents du PATH qu’un `sudo` peut laisser à root ; `runuser` y vit.
 REPERTOIRES_SYSTEME = ("/usr/local/sbin", "/usr/sbin", "/sbin")
 
@@ -124,6 +126,30 @@ def path_hote(env: Mapping[str, str], home_orchestrator: Path) -> str:
 def resoudre(binaire: str, env: Mapping[str, str], home_orchestrator: Path) -> str | None:
     """Chemin absolu de `binaire` sur `path_hote` : ce que `setup` voit installé, `auth` le lance."""
     return shutil.which(binaire, path=path_hote(env, home_orchestrator))
+
+
+def cible_commande(home_orchestrator: Path) -> Path:
+    """Le binaire que `install.sh` installe par pipx pour l’utilisateur d’instance."""
+    return home_orchestrator / ".local" / "bin" / "wap-runtime"
+
+
+def lier_commande(lien: Path, cible: Path) -> str | None:
+    """Crée `lien → cible` s’il manque ; rend le motif du refus si un autre fichier occupe `lien`."""
+    if lien.is_symlink() and lien.readlink() == cible:
+        return None
+    if lien.exists() or lien.is_symlink():
+        return f"{lien} existe et n’est pas le lien vers {cible} : laissé tel quel"
+    lien.parent.mkdir(parents=True, exist_ok=True)
+    lien.symlink_to(cible)
+    return None
+
+
+def retirer_lien_commande(lien: Path, cible: Path) -> bool:
+    """Retire `lien` seulement s’il pointe vers `cible` ; rend `True` s’il l’a retiré."""
+    if not (lien.is_symlink() and lien.readlink() == cible):
+        return False
+    lien.unlink()
+    return True
 
 
 def mode_debug(env: Mapping[str, str]) -> bool:

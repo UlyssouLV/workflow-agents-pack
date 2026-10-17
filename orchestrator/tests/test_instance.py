@@ -258,6 +258,54 @@ def test_uninstall_en_root_retire_l_instance_d_orchestrator(
     assert not instance.exists()
 
 
+@pytest.fixture
+def lien_root(tmp_path, home, monkeypatch) -> Path:
+    """`uninstall` en root, avec `/usr/local/bin/wap-runtime` joué par un chemin temporaire."""
+    from wap_runtime import cli
+
+    lien = tmp_path / "usr-local-bin" / "wap-runtime"
+    lien.parent.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
+    monkeypatch.setattr(cli, "LIEN_COMMANDE", lien)
+    return lien
+
+
+def test_uninstall_retire_le_lien_de_la_commande(home, depot_pack, faux_docker, lien_root):
+    from wap_runtime.cli import main
+
+    passe(home, depot_pack)
+    lien_root.symlink_to(home / ".local" / "bin" / "wap-runtime")
+
+    assert main(["uninstall"]) == 0
+
+    assert not lien_root.is_symlink()
+
+
+def test_uninstall_garde_un_wap_runtime_qui_n_est_pas_le_notre(
+    home, depot_pack, faux_docker, lien_root
+):
+    from wap_runtime.cli import main
+
+    passe(home, depot_pack)
+    lien_root.symlink_to("/opt/ailleurs/wap-runtime")
+
+    assert main(["uninstall"]) == 0
+
+    assert lien_root.readlink() == Path("/opt/ailleurs/wap-runtime")
+
+
+def test_uninstall_garde_un_fichier_wap_runtime(home, faux_docker, lien_root):
+    from wap_runtime.cli import main
+
+    lien_root.write_text("à garder\n")
+
+    assert main(["uninstall"]) == 0
+
+    assert lien_root.read_text() == "à garder\n"
+
+
 def test_compose_monte_l_instance_et_donc_repos_toml_en_lecture_seule(home, depot_pack):
     instance = passe(home, depot_pack)
 

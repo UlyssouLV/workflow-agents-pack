@@ -19,7 +19,13 @@ from wap_runtime.registry import (
 )
 from wap_runtime.runner import PORT_RUNNER
 from wap_runtime.sante import sonder
-from wap_runtime.socle import HOME_UTILISATEUR, UTILISATEUR
+from wap_runtime.socle import (
+    HOME_UTILISATEUR,
+    LIEN_COMMANDE,
+    UTILISATEUR,
+    cible_commande,
+    retirer_lien_commande,
+)
 
 PORT_PAR_DEFAUT = 8787
 
@@ -79,10 +85,17 @@ def _runner(hote: str, port: int) -> int:
 
 
 def _uninstall(purge: bool) -> int:
+    home = _home_instance()
     try:
-        instance = desinstaller(_home_instance(), purge)
+        instance = desinstaller(home, purge)
     except (OSError, subprocess.CalledProcessError) as erreur:
         print(f"KO — `docker compose down` a échoué ({erreur}) ; instance conservée")
+        return 1
+    try:
+        if retirer_lien_commande(LIEN_COMMANDE, cible_commande(home)):
+            print(f"Lien {LIEN_COMMANDE} retiré.")
+    except OSError as erreur:
+        print(f"KO — lien {LIEN_COMMANDE} non retiré ({erreur})")
         return 1
     if instance is None:
         print("Aucune instance à désinstaller.")
