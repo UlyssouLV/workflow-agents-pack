@@ -1,5 +1,6 @@
 """Lecture de l’API REST GitHub avec le `GH_TOKEN` de l’instance (pas de `gh` dans l’image)."""
 
+import base64
 from datetime import datetime, timezone
 
 import httpx
@@ -53,6 +54,23 @@ class ClientGitHub:
 
     def prs_ouvertes(self, slug: str) -> list[dict]:
         return self._paginer(f"/repos/{slug}/pulls", state="open")
+
+    def depot(self, slug: str) -> dict:
+        """Métadonnées du repo (`default_branch`, …)."""
+        return self._lire(f"/repos/{slug}")
+
+    def fichier(self, slug: str, chemin: str) -> str | None:
+        """Contenu texte d’un fichier du défaut ; `None` s’il n’existe pas."""
+        try:
+            corps = self._lire(f"/repos/{slug}/contents/{chemin}")
+        except GitHubErreur as erreur:
+            if erreur.statut == 404:
+                return None
+            raise
+        brut = corps.get("content") or ""
+        if corps.get("encoding") == "base64":
+            return base64.b64decode(brut).decode()
+        return brut
 
     def check_runs(self, slug: str, sha: str) -> list[dict]:
         return self._lire(f"/repos/{slug}/commits/{sha}/check-runs", per_page=100)["check_runs"]

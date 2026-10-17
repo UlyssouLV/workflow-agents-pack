@@ -36,13 +36,22 @@ class Sessions:
         self.jobs = jobs
         self._horloge = horloge
 
-    def creer(self, repo: str, ticket: int, agent: str, commande: str, precedente: str | None = None) -> dict:
-        """`precedente` : la session enchaînée qui ouvre celle-ci."""
+    def creer(
+        self,
+        repo: str,
+        ticket: int | None,
+        agent: str,
+        commande: str,
+        precedente: str | None = None,
+        branche: str | None = None,
+    ) -> dict:
+        """`ticket` nul : session libre. `precedente` : la session enchaînée qui ouvre celle-ci."""
         debut = self._horloge()
         session = {
             "id": f"{debut:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}",
             "repo": repo,
             "ticket": ticket,
+            "branche": branche,
             "agent": agent,
             "commande": commande,
             "debut": debut.isoformat(),
@@ -64,8 +73,8 @@ class Sessions:
             lue = json.loads((self.jobs / id_ / "session.json").read_text())
         except (OSError, ValueError):
             return None
-        # Écrite avant la 0.4.1 : hors de toute chaîne.
-        return {"precedente": None, "suivante": None, **lue}
+        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche`.
+        return {"precedente": None, "suivante": None, "branche": None, **lue}
 
     def toutes(self) -> list[dict]:
         """De la plus récente à la plus ancienne (l’identifiant commence par le début)."""
@@ -123,14 +132,15 @@ def executer(jobs: Path, id_: str) -> int:
     """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
     une fois le terminal enregistré, la transcription copiée et la session close.
 
-    La commande se déduit de la session (agent connu, ticket) : rien de la ligne de commande
-    n’arrive aux arguments de l’agent."""
+    La commande se déduit de la session (agent connu, ticket s’il y en a) : rien de la ligne
+    de commande n’arrive aux arguments de l’agent."""
     if not ID_SESSION.fullmatch(id_):
         raise SystemExit(f"session invalide : {id_}")
     session = Sessions(jobs).lire(id_)
     if session is None or (agent := agent_par_id(session["agent"])) is None:
         raise SystemExit(f"session {id_} inconnue")
-    code = enregistrer(commande_agent(agent, int(session["ticket"])), jobs / id_ / CAST)
+    ticket = None if session["ticket"] is None else int(session["ticket"])
+    code = enregistrer(commande_agent(agent, ticket), jobs / id_ / CAST)
     depuis = datetime.fromisoformat(session["debut"]).timestamp()
     copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
     Sessions(jobs).clore(id_, code)

@@ -61,7 +61,10 @@ export interface Session {
   id: string;
   url: string;
   repo: string;
-  ticket: number;
+  /** `null` : session libre ; un numéro : session `/implement #n` (enchaînée). */
+  ticket: number | null;
+  /** Branche du clone au lancement ; `null` sur une session d’avant 0.4.2. */
+  branche: string | null;
   agent: Agent["id"];
   commande: string;
   debut: string;
@@ -125,12 +128,18 @@ export interface Bug {
   labels: string[];
 }
 
+export interface BranchesSession {
+  proposees: string[];
+  defaut: string;
+}
+
 /** `GET /api/repos/{owner}/{name}`. */
 export interface Detail extends Omit<Repo<Version>, "session"> {
   bugs: Bug[];
   agents: Agent[];
   /** Session ouverte de l’instance, quel que soit son repo. */
   session: LienSession | null;
+  branches: BranchesSession;
 }
 
 /** Changement non commité du clone géré (`git status --porcelain` : `M`, `??`…). */
@@ -144,6 +153,8 @@ export interface CloneSale {
   fichiers: FichierModifie[];
   /** `git diff HEAD` et les fichiers non suivis. */
   diff: string;
+  /** Branche actuelle du clone (celle de **Reprendre**). */
+  branche: string;
 }
 
 /** Réponse au clone sale : **Reprendre** sur l’arbre tel quel, ou **Jeter** (patch gardé). */
@@ -189,14 +200,14 @@ export async function lireEnregistrement(id: string): Promise<string> {
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
 export async function lancerSession(
   repo: string,
-  ticket: number,
   agent: Agent["id"],
+  branche: string,
   choix?: ChoixClone,
 ): Promise<Session> {
   const reponse = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ repo, ticket, agent, ...(choix && { choix }) }),
+    body: JSON.stringify({ repo, agent, branche, ...(choix && { choix }) }),
   });
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {

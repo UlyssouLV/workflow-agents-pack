@@ -20,7 +20,7 @@ from wap_runtime import __version__
 from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
-from wap_runtime.eligibilite import enfant_de_version, lancements, raison_grisee
+from wap_runtime.eligibilite import lancements
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
 from wap_runtime.registry import RegistryErreur, chemin_registry
@@ -40,8 +40,8 @@ from wap_runtime.terminal import relayer_runner
 
 class Lancement(BaseModel):
     repo: str
-    ticket: int
     agent: str
+    branche: str
     # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
     choix: Choix | None = None
 
@@ -177,22 +177,20 @@ def creer_app(
         agent = next((a for a in agents if a["id"] == demande.agent), None)
         if agent is None:
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
+        if not agent["connecte"]:
+            raise HTTPException(422, "agent non connecté")
         if (ouverte := sessions.ouverte()) is not None:
             return _deja_ouverte(ouverte)
         detail = _detail(demande.repo)
         if detail["erreur"]:
             raise HTTPException(502, detail["erreur"])
-        trouve = enfant_de_version(detail["versions"], demande.ticket)
-        if trouve is None:
-            raise HTTPException(404, f"#{demande.ticket} n’est l’enfant d’aucune version ouverte")
-        enfant, pr = trouve
-        if raison := raison_grisee(enfant, pr, None, agent["connecte"]):
-            raise HTTPException(422, raison)
+        if demande.branche not in detail["branches"]["proposees"]:
+            raise HTTPException(422, f"branche {demande.branche} non proposée")
         try:
             compte = client.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
             lancee = client_runner.lancer(
-                detail["slug"], demande.ticket, demande.agent, pr["branche"], identite, demande.choix
+                detail["slug"], None, demande.agent, demande.branche, identite, demande.choix
             )
         except GitHubErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur

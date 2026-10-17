@@ -110,8 +110,8 @@ def appels(log: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
-def lancer(runner, agent="claude", ticket=30):
-    return runner.lancer(SLUG, ticket, agent, BRANCHE, IDENTITE)
+def lancer(runner, agent="claude", ticket=30, branche=BRANCHE):
+    return runner.lancer(SLUG, ticket, agent, branche, IDENTITE)
 
 
 def test_premier_lancement_clone_sur_la_branche_de_la_pr_avec_l_identite(runner, instance, faux_bin):
@@ -305,6 +305,7 @@ def test_clone_sale_sans_choix_ne_lance_rien_et_rend_fichiers_et_diff(runner, in
         lancer(runner)
 
     assert refus.value.fichiers == [{"statut": "M", "chemin": "suivi.txt"}, {"statut": "??", "chemin": "nouveau.txt"}]
+    assert refus.value.branche == BRANCHE
     assert "+après" in refus.value.diff and "+non suivi" in refus.value.diff
     assert Sessions(instance / "jobs").toutes() == avant
     assert (clone_sale / "nouveau.txt").exists()
@@ -316,6 +317,7 @@ def test_reprendre_lance_la_session_sur_l_arbre_tel_quel_sans_changer_de_branche
     session = runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE, choix="reprendre")
 
     assert session["ticket"] == 30
+    assert session["branche"] == "travail-en-cours"
     assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone_sale) == "travail-en-cours"
     assert (clone_sale / "suivi.txt").read_text() == "après\n"
     assert (clone_sale / "nouveau.txt").exists()
@@ -342,6 +344,7 @@ def test_clone_propre_aucun_choix_demande(runner, instance, choix):
     session = runner.lancer(SLUG, 31, "claude", BRANCHE, IDENTITE, choix=choix)
 
     assert session["ticket"] == 31
+    assert session["branche"] == BRANCHE
     assert not (instance / "jobs" / session["id"] / "abandon.patch").exists()
 
 
@@ -354,6 +357,7 @@ def test_api_interne_409_avec_le_clone_sale(runner, clone_sale):
 
     assert reponse.status_code == 409
     assert reponse.json()["clone"]["fichiers"][0] == {"statut": "M", "chemin": "suivi.txt"}
+    assert reponse.json()["clone"]["branche"] == BRANCHE
     assert "+après" in reponse.json()["clone"]["diff"]
 
     assert client.post("/sessions", json={**demande, "choix": "jeter"}).status_code == 201
@@ -469,6 +473,18 @@ def test_reprendre_dispatch_sans_compter_les_changements_deja_la(runner, instanc
     assert (clone / "README.md").read_text() == "en cours\n"
 
 
+def test_session_libre_lance_l_agent_sans_argument_sur_la_branche(runner, instance, faux_bin):
+    session = runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    clone = instance / "clones" / "o" / "r"
+    lancee = next(l for l in appels(faux_bin) if l.startswith("claude "))
+    assert lancee == (
+        f"claude  @ {clone.resolve()} @ octocat <583231+octocat@users.noreply.github.com>"
+    )
+    assert (session["ticket"], session["branche"], session["commande"]) == (None, BRANCHE, "claude")
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone) == BRANCHE
+
+
 def test_l_agent_recoit_l_enchaineur_et_un_jeton_propre_a_la_session(runner, tmp_path):
     premiere, seconde = lancer(runner), lancer(runner, ticket=31)
 
@@ -532,6 +548,36 @@ def chaine(instance, tmp_path, faux_bin, github, faux_gh):
         github=ClientGitHub(JETON, transport=faux_gh.transport()),
     )
     return Chaine(runner, lances, arretes)
+
+
+def test_session_sur_la_base_acceptee_sans_pr_de_version(chaine, faux_gh):
+    faux_gh.repo(SLUG).pulls.clear()
+
+    session = chaine.runner.lancer(SLUG, None, "claude", "main", IDENTITE)
+
+    assert session["branche"] == "main"
+    assert session["ticket"] is None
+
+
+def test_branche_hors_liste_refusee_sans_session(chaine, instance):
+    from wap_runtime.runner import RunnerErreur
+
+    with pytest.raises(RunnerErreur, match="non proposée"):
+        chaine.runner.lancer(SLUG, None, "claude", "travail-en-cours", IDENTITE)
+
+    assert Sessions(instance / "jobs").toutes() == []
+
+
+def test_enchaînement_depuis_une_session_libre_sur_la_branche_de_pr(chaine, github):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    suivante = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    assert (courante := chaine.runner.session(courante["id"]))["etat"] == "enchaînée"
+    assert courante["ticket"] is None
+    assert (suivante["ticket"], suivante["commande"], suivante["branche"]) == (
+        31, 'claude "/implement #31"', BRANCHE,
+    )
 
 
 def test_suivante_acceptee_enchaine_sur_le_meme_agent_et_la_meme_branche(chaine, instance, github):

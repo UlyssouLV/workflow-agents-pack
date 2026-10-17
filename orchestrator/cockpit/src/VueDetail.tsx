@@ -6,7 +6,6 @@ import type {
   ChoixClone,
   CloneSale,
   Detail,
-  Enfant,
   EtatCi,
   LienSession,
   SessionsDuRepo,
@@ -102,21 +101,29 @@ function Contenu({ detail }: { detail: Detail }) {
   const [agent, setAgent] = useState<Agent["id"]>(
     () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
   );
+  const [branche, setBranche] = useState(() => detail.branches.defaut);
   const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
   // Clone sale au lancement : rien n’est lancé tant que l’utilisateur n’a pas choisi.
-  const [sale, setSale] = useState<{ ticket: number; clone: CloneSale } | null>(null);
+  const [sale, setSale] = useState<CloneSale | null>(null);
 
-  const lancer = (ticket: number, choix?: ChoixClone) => {
+  const choisi = detail.agents.find((a) => a.id === agent);
+  const raison = !choisi?.connecte
+    ? "agent non connecté"
+    : detail.session
+      ? "session déjà ouverte"
+      : null;
+
+  const lancer = (choix?: ChoixClone) => {
     setRefus(null);
     setSale(null);
-    lancerSession(detail.slug, ticket, agent, choix).then(
+    lancerSession(detail.slug, agent, branche, choix).then(
       (session) => {
         // Page bâtie ici, pas l’URL de la réponse : on ne quitte pas le cockpit.
         if (ID_SESSION.test(session.id)) window.location.assign(`/sessions/${session.id}`);
       },
       (erreur: Error) => {
         if (erreur instanceof ErreurApi && erreur.clone) {
-          setSale({ ticket, clone: erreur.clone });
+          setSale(erreur.clone);
         } else {
           setRefus({ message: erreur.message, session: erreur instanceof ErreurApi ? erreur.session : null });
         }
@@ -156,7 +163,31 @@ function Contenu({ detail }: { detail: Detail }) {
                   </option>
                 ))}
               </select>
-            </label>
+            </label>{" "}
+            <label>
+              Branche{" "}
+              <select value={branche} onChange={(e) => setBranche(e.target.value)}>
+                {detail.branches.proposees.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </label>{" "}
+            <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer()}>
+              Nouvelle session
+            </button>
+            {raison && (
+              <span className="raison">
+                {raison}
+                {detail.session && raison === "session déjà ouverte" && (
+                  <>
+                    {" "}
+                    — <a href={detail.session.url}>voir la session ouverte</a>
+                  </>
+                )}
+              </span>
+            )}
           </p>
           {refus && (
             <p role="alert" className="erreur">
@@ -170,15 +201,10 @@ function Contenu({ detail }: { detail: Detail }) {
             </p>
           )}
           {sale && (
-            <ChoixCloneSale
-              ticket={sale.ticket}
-              clone={sale.clone}
-              choisir={(choix) => lancer(sale.ticket, choix)}
-              annuler={() => setSale(null)}
-            />
+            <ChoixCloneSale clone={sale} choisir={(choix) => lancer(choix)} annuler={() => setSale(null)} />
           )}
           {detail.versions.map((v) => (
-            <SectionVersion key={v.numero} version={v} agent={agent} lancer={lancer} />
+            <SectionVersion key={v.numero} version={v} />
           ))}
           <Bugs bugs={detail.bugs} />
         </>
@@ -187,12 +213,7 @@ function Contenu({ detail }: { detail: Detail }) {
   );
 }
 
-interface Lanceur {
-  agent: Agent["id"];
-  lancer: (ticket: number) => void;
-}
-
-function SectionVersion({ version, agent, lancer }: { version: Version } & Lanceur) {
+function SectionVersion({ version }: { version: Version }) {
   const nom = `#${version.numero} ${version.titre}`;
   const { pr } = version;
   return (
@@ -213,7 +234,6 @@ function SectionVersion({ version, agent, lancer }: { version: Version } & Lance
             <th>Enfant</th>
             <th>État</th>
             <th>Labels</th>
-            <th>Agent</th>
           </tr>
         </thead>
         <tbody>
@@ -229,7 +249,6 @@ function SectionVersion({ version, agent, lancer }: { version: Version } & Lance
                 {e.bloque && ", bloqué"}
               </td>
               <td>{e.labels.join(", ")}</td>
-              <td>{e.ouvert && <BoutonImplement enfant={e} agent={agent} lancer={lancer} />}</td>
             </tr>
           ))}
         </tbody>
@@ -259,27 +278,12 @@ function SectionVersion({ version, agent, lancer }: { version: Version } & Lance
   );
 }
 
-/** `/implement #n`, grisé avec la raison rendue par le runtime pour l’agent choisi. */
-function BoutonImplement({ enfant, agent, lancer }: { enfant: Enfant } & Lanceur) {
-  const raison = enfant.lancement[agent];
-  return (
-    <>
-      <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer(enfant.numero)}>
-        /implement #{enfant.numero}
-      </button>
-      {raison && <span className="raison">{raison}</span>}
-    </>
-  );
-}
-
 /** Clone sale : les changements laissés par une session précédente, à reprendre ou jeter. */
 function ChoixCloneSale({
-  ticket,
   clone,
   choisir,
   annuler,
 }: {
-  ticket: number;
   clone: CloneSale;
   choisir: (choix: ChoixClone) => void;
   annuler: () => void;
@@ -288,9 +292,9 @@ function ChoixCloneSale({
     <section role="dialog" aria-labelledby="titre-clone-sale" className="clone-sale">
       <h2 id="titre-clone-sale">Le clone a des changements non commités</h2>
       <p>
-        Une session précédente les a laissés. <strong>Reprendre</strong> lance /implement #{ticket} sur cet arbre,
-        sans changer de branche ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de la session,
-        remet le clone à zéro puis lance.
+        Une session précédente les a laissés sur <code>{clone.branche}</code>. <strong>Reprendre</strong> lance
+        sur cette branche, sans la changer ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de
+        la session, remet le clone à zéro puis passe sur la branche choisie.
       </p>
       <ul aria-label="Fichiers modifiés">
         {clone.fichiers.map((f) => (

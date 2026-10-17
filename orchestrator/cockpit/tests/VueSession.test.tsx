@@ -28,6 +28,12 @@ describe("page de session", () => {
     expect(screen.getByText('claude "/implement #23"')).toBeInTheDocument();
   });
 
+  it("session libre : le titre reprend la commande", async () => {
+    rendre(session({ ticket: null, commande: "claude" }));
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session claude");
+  });
+
   it("session ouverte : état et durée depuis le début", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date("2026-10-17T09:12:05Z") });
     rendre();

@@ -94,7 +94,7 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
 
   return (
     <>
-      <h1>Session /implement #{session.ticket}</h1>
+      <h1>{session.ticket != null ? `Session /implement #${session.ticket}` : `Session ${session.commande}`}</h1>
       {arrivee && (
         <p role="status" className="enchainee">
           Session enchaînée : /implement #{session.ticket}

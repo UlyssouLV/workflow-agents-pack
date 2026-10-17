@@ -122,47 +122,58 @@ describe("vue détail", () => {
     expect(screen.queryByRole("link", { name: "#30 Plantage" })).toBeNull();
   });
 
-  describe("lancement de /implement", () => {
-    async function boutons() {
-      const version = await screen.findByRole("region", { name: /#17/ });
-      return within(version).getAllByRole("button", { name: /^\/implement #/ });
+  describe("nouvelle session", () => {
+    async function boutonNouvelle() {
+      await screen.findByRole("heading", { level: 1 });
+      return screen.getByRole("button", { name: "Nouvelle session" });
     }
 
-    it("propose les agents dans un sélecteur, le premier connecté choisi", async () => {
+    it("propose les agents et les branches, PR de version par défaut", async () => {
       rendre({ "/api/repos/o/r": detail() });
 
-      const selecteur = await screen.findByRole("combobox", { name: "Agent" });
-      expect(within(selecteur).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      const agents = await screen.findByRole("combobox", { name: "Agent" });
+      expect(within(agents).getAllByRole("option").map((o) => o.textContent)).toEqual([
         "Claude Code",
         "Cursor (non connecté)",
       ]);
-      expect(selecteur).toHaveValue("claude");
+      expect(agents).toHaveValue("claude");
+      const branches = screen.getByRole("combobox", { name: "Branche" });
+      expect(within(branches).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "main",
+        "v0.3.0-registry",
+      ]);
+      expect(branches).toHaveValue("v0.3.0-registry");
     });
 
-    it("un bouton par enfant ouvert : actif si éligible, sinon grisé avec la raison", async () => {
+    it("n’affiche plus de bouton /implement par ticket", async () => {
       rendre({ "/api/repos/o/r": detail() });
 
-      const [bloque, eligible] = await boutons();
-      expect(bloque).toHaveTextContent("/implement #22");
-      expect(bloque).toBeDisabled();
-      expect(bloque).toHaveAttribute("title", "enfant bloqué");
-      expect(screen.getByText("enfant bloqué")).toBeInTheDocument();
-      expect(eligible).toHaveTextContent("/implement #23");
-      expect(eligible).toBeEnabled();
+      await screen.findByRole("link", { name: "#23 Lancer une session" });
+      expect(screen.queryByRole("button", { name: /^\/implement #/ })).toBeNull();
     });
 
-    it("la raison suit l’agent choisi", async () => {
+    it("bouton grisé si l’agent n’est pas connecté", async () => {
       rendre({ "/api/repos/o/r": detail() });
       const selecteur = await screen.findByRole("combobox", { name: "Agent" });
 
       fireEvent.change(selecteur, { target: { value: "cursor" } });
 
-      const [, eligible] = await boutons();
-      expect(eligible).toBeDisabled();
-      expect(eligible).toHaveAttribute("title", "agent non connecté");
+      const bouton = await boutonNouvelle();
+      expect(bouton).toBeDisabled();
+      expect(bouton).toHaveAttribute("title", "agent non connecté");
+      expect(screen.getByText("agent non connecté")).toBeInTheDocument();
     });
 
-    it("le clic lance la session avec l’agent choisi puis ouvre sa page", async () => {
+    it("bouton grisé avec le lien si une session est déjà ouverte", async () => {
+      rendre({ "/api/repos/o/r": detail({ session: { id: "x", url: "/sessions/x", repo: "o/r" } }) });
+
+      const bouton = await boutonNouvelle();
+      expect(bouton).toBeDisabled();
+      expect(bouton).toHaveAttribute("title", "session déjà ouverte");
+      expect(screen.getByRole("link", { name: /session ouverte/i })).toHaveAttribute("href", "/sessions/x");
+    });
+
+    it("le clic lance la session avec l’agent et la branche puis ouvre sa page", async () => {
       const assign = vi.fn();
       vi.stubGlobal("location", { ...window.location, assign });
       const corps: unknown[] = [];
@@ -170,15 +181,13 @@ describe("vue détail", () => {
         "/api/repos/o/r": detail(),
         "POST /api/sessions": (init?: RequestInit) => {
           corps.push(JSON.parse(String(init?.body)));
-          return new Response(JSON.stringify(session()), { status: 201 });
+          return new Response(JSON.stringify(session({ ticket: null, commande: "claude" })), { status: 201 });
         },
       });
-      const [, eligible] = await boutons();
-
-      fireEvent.click(eligible);
+      fireEvent.click(await boutonNouvelle());
 
       await waitFor(() => expect(assign).toHaveBeenCalledWith("/sessions/20261017-090000-abcdef"));
-      expect(corps).toEqual([{ repo: "o/r", ticket: 23, agent: "claude" }]);
+      expect(corps).toEqual([{ repo: "o/r", agent: "claude", branche: "v0.3.0-registry" }]);
       const [, init] = fetch.mock.calls.find(([, i]) => i?.method === "POST")!;
       expect(init?.headers).toMatchObject({ "Content-Type": "application/json" });
     });
@@ -191,31 +200,10 @@ describe("vue détail", () => {
         "/api/repos/o/r": detail(),
         "POST /api/sessions": () => new Response(JSON.stringify(rendue), { status: 201 }),
       });
-      const [, eligible] = await boutons();
-
-      fireEvent.click(eligible);
+      fireEvent.click(await boutonNouvelle());
 
       await new Promise((r) => setTimeout(r, 20));
       expect(assign).not.toHaveBeenCalled();
-    });
-
-    it("un refus 409 montre le lien vers la session ouverte", async () => {
-      rendre({
-        "/api/repos/o/r": detail(),
-        "POST /api/sessions": new Response(
-          JSON.stringify({
-            detail: "une session est déjà ouverte : /sessions/x",
-            session: { id: "x", url: "/sessions/x", repo: "o/autre" },
-          }),
-          { status: 409 },
-        ),
-      });
-      const [, eligible] = await boutons();
-
-      fireEvent.click(eligible);
-
-      const lien = await screen.findByRole("link", { name: /session ouverte/i });
-      expect(lien).toHaveAttribute("href", "/sessions/x");
     });
 
     describe("clone sale", () => {
@@ -227,6 +215,7 @@ describe("vue détail", () => {
             { statut: "??", chemin: "notes.txt" },
           ],
           diff: "--- a/src/a.py\n+++ b/src/a.py\n-avant\n+après\n",
+          branche: "travail-en-cours",
         },
       };
 
@@ -238,20 +227,19 @@ describe("vue détail", () => {
             const demande = JSON.parse(String(init?.body));
             corps.push(demande);
             return demande.choix
-              ? new Response(JSON.stringify(session()), { status: 201 })
+              ? new Response(JSON.stringify(session({ ticket: null })), { status: 201 })
               : new Response(JSON.stringify(SALE), { status: 409 });
           },
         });
         return assign;
       }
 
-      it("montre les fichiers modifiés et le diff, sans lancer", async () => {
+      it("montre la branche actuelle, les fichiers et le diff, sans lancer", async () => {
         const assign = rendreSale([]);
-        const [, eligible] = await boutons();
-
-        fireEvent.click(eligible);
+        fireEvent.click(await boutonNouvelle());
 
         const choix = await screen.findByRole("dialog", { name: /changements non commités/i });
+        expect(choix).toHaveTextContent("travail-en-cours");
         expect(within(choix).getByRole("list", { name: "Fichiers modifiés" })).toHaveTextContent(
           /M src\/a\.py.*\?\? notes\.txt/,
         );
@@ -264,24 +252,22 @@ describe("vue détail", () => {
       it.each(["reprendre", "jeter"])("%s relance avec ce choix puis ouvre la session", async (choix) => {
         const corps: unknown[] = [];
         const assign = rendreSale(corps);
-        const [, eligible] = await boutons();
-        fireEvent.click(eligible);
+        fireEvent.click(await boutonNouvelle());
         const ecran = await screen.findByRole("dialog");
 
         fireEvent.click(within(ecran).getByRole("button", { name: choix === "jeter" ? "Jeter" : "Reprendre" }));
 
         await waitFor(() => expect(assign).toHaveBeenCalledWith("/sessions/20261017-090000-abcdef"));
         expect(corps).toEqual([
-          { repo: "o/r", ticket: 23, agent: "claude" },
-          { repo: "o/r", ticket: 23, agent: "claude", choix },
+          { repo: "o/r", agent: "claude", branche: "v0.3.0-registry" },
+          { repo: "o/r", agent: "claude", branche: "v0.3.0-registry", choix },
         ]);
       });
 
       it("Annuler ferme l’écran sans rien lancer", async () => {
         const corps: unknown[] = [];
         rendreSale(corps);
-        const [, eligible] = await boutons();
-        fireEvent.click(eligible);
+        fireEvent.click(await boutonNouvelle());
         const ecran = await screen.findByRole("dialog");
 
         fireEvent.click(within(ecran).getByRole("button", { name: "Annuler" }));
@@ -296,9 +282,7 @@ describe("vue détail", () => {
         "/api/repos/o/r": detail(),
         "POST /api/sessions": new Response(JSON.stringify({ detail: "git fetch a échoué" }), { status: 422 }),
       });
-      const [, eligible] = await boutons();
-
-      fireEvent.click(eligible);
+      fireEvent.click(await boutonNouvelle());
 
       expect(await screen.findByText(/git fetch a échoué/)).toBeInTheDocument();
     });

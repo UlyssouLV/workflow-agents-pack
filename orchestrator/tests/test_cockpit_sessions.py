@@ -28,6 +28,7 @@ class FauxRunner:
         self.sessions = Sessions(jobs)
         self.demandes: list[dict] = []
         self.sale: dict | None = None
+        self.echec: str | None = None
 
     def client(self) -> httpx.Client:
         return httpx.Client(base_url="http://runner:8788", transport=httpx.MockTransport(self._repondre))
@@ -36,12 +37,14 @@ class FauxRunner:
         assert (requete.method, requete.url.path) == ("POST", "/sessions")
         demande = json.loads(requete.content)
         self.demandes.append(demande)
-        if demande["branche"] == "casse":
-            return httpx.Response(422, json={"detail": "git fetch a échoué"})
+        if self.echec:
+            return httpx.Response(422, json={"detail": self.echec})
         if self.sale and "choix" not in demande:
             return httpx.Response(409, json={"detail": "clone sale", "clone": self.sale})
+        ticket = demande.get("ticket")
+        commande = f'claude "/implement #{ticket}"' if ticket is not None else "claude"
         session = self.sessions.creer(
-            demande["repo"], demande["ticket"], demande["agent"], f'claude "/implement #{demande["ticket"]}"'
+            demande["repo"], ticket, demande["agent"], commande, branche=demande.get("branche")
         )
         return httpx.Response(201, json=session)
 
@@ -81,23 +84,24 @@ def api(tmp_path, github, jobs, runner):
     return TestClient(app)
 
 
-def lancer(api, ticket=30, agent="claude", origine=COCKPIT, repo=SLUG, **choix):
+def lancer(api, agent="claude", origine=COCKPIT, repo=SLUG, branche="v0.4.0", **choix):
     entetes = {"Origin": origine} if origine else {}
-    demande = {"repo": repo, "ticket": ticket, "agent": agent, **choix}
+    demande = {"repo": repo, "agent": agent, "branche": branche, **choix}
     return api.post("/api/sessions", json=demande, headers=entetes)
 
 
-def test_lancement_demande_au_runner_la_branche_de_la_pr_et_l_identite(api, runner):
+def test_lancement_demande_au_runner_agent_branche_et_identite_sans_ticket(api, runner):
     reponse = lancer(api)
 
     assert reponse.status_code == 201
     corps = reponse.json()
     assert corps["etat"] == "ouverte"
+    assert corps["ticket"] is None
+    assert corps["branche"] == "v0.4.0"
     assert corps["url"] == f"/sessions/{corps['id']}"
     assert runner.demandes == [
         {
             "repo": SLUG,
-            "ticket": 30,
             "agent": "claude",
             "branche": "v0.4.0",
             "login": "octocat",
@@ -126,41 +130,37 @@ def test_pas_de_cors(api):
 def test_deuxieme_session_409_avec_le_lien_de_la_session_ouverte(api, runner):
     premiere = lancer(api).json()
 
-    reponse = lancer(api, ticket=30)
+    reponse = lancer(api)
 
     assert reponse.status_code == 409
     assert reponse.json()["session"] == {"id": premiere["id"], "url": premiere["url"], "repo": SLUG}
     assert len(runner.demandes) == 1
 
 
-@pytest.mark.parametrize(
-    "ticket, agent, attendue",
-    [
-        (31, "claude", "enfant bloqué"),
-        (29, "claude", "enfant fermé"),
-        (30, "cursor", "agent non connecté"),
-    ],
-)
-def test_enfant_non_eligible_refuse_avec_la_raison(api, runner, ticket, agent, attendue):
-    reponse = lancer(api, ticket=ticket, agent=agent)
+def test_agent_non_connecte_refuse(api, runner):
+    reponse = lancer(api, agent="cursor")
 
     assert reponse.status_code == 422
-    assert reponse.json()["detail"] == attendue
+    assert reponse.json()["detail"] == "agent non connecté"
     assert runner.demandes == []
 
 
-def test_sans_pr_de_version_refuse(api, github, runner):
+def test_session_sur_la_base_sans_pr_de_version(api, github, runner):
     github.repo(SLUG).pulls.clear()
 
-    reponse = lancer(api)
+    reponse = lancer(api, branche="main")
+
+    assert reponse.status_code == 201
+    assert runner.demandes[-1]["branche"] == "main"
+    assert reponse.json()["ticket"] is None
+
+
+def test_branche_hors_liste_refusee(api, runner):
+    reponse = lancer(api, branche="hors-liste")
 
     assert reponse.status_code == 422
-    assert reponse.json()["detail"] == "pas de PR de version"
+    assert "non proposée" in reponse.json()["detail"]
     assert runner.demandes == []
-
-
-def test_ticket_hors_des_versions_ouvertes_404(api):
-    assert lancer(api, ticket=99).status_code == 404
 
 
 def test_repo_hors_registry_404(api):
@@ -171,8 +171,8 @@ def test_agent_inconnu_422(api):
     assert lancer(api, agent="vim").status_code == 422
 
 
-def test_refus_du_runner_relaye(api, github):
-    github.repo(SLUG).pulls[0]["head"]["ref"] = "casse"
+def test_refus_du_runner_relaye(api, runner):
+    runner.echec = "git fetch a échoué"
 
     reponse = lancer(api)
 
@@ -203,6 +203,7 @@ def test_detail_porte_l_eligibilite_par_agent_et_la_session_ouverte(api):
         29: {"claude": "enfant fermé", "cursor": "enfant fermé"},
     }
     assert detail["versions"][0]["pr"]["branche"] == "v0.4.0"
+    assert detail["branches"] == {"proposees": ["main", "v0.4.0"], "defaut": "v0.4.0"}
     assert [a["id"] for a in detail["agents"]] == ["claude", "cursor"]
     assert detail["session"] is None
 
@@ -223,7 +224,7 @@ def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, tmp_path):
     assert repos == {SLUG: {"id": session["id"], "url": session["url"], "repo": SLUG}, "o/autre": None}
 
 
-SALE = {"fichiers": [{"statut": "M", "chemin": "a.py"}], "diff": "-avant\n+après\n"}
+SALE = {"fichiers": [{"statut": "M", "chemin": "a.py"}], "diff": "-avant\n+après\n", "branche": "travail"}
 
 
 def test_clone_sale_sans_choix_409_avec_fichiers_et_diff_sans_session(api, runner, jobs):

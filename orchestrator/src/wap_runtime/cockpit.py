@@ -59,15 +59,17 @@ class Cockpit:
             return None
         lu_a = self._horloge()
         if self._client is None:
-            return {**_en_erreur(repo, lu_a, SANS_TOKEN), "bugs": []}
+            return {**_en_erreur(repo, lu_a, SANS_TOKEN), "bugs": [], "branches": _sans_branches()}
         try:
             issues = self._client.issues_ouvertes(repo.slug)
             versions = lire_versions(self._client, repo.slug, issues)
+            branches = branches_de_session(self._client, repo.slug, versions)
         except GitHubErreur as erreur:
-            return {**_en_erreur(repo, lu_a, str(erreur)), "bugs": []}
+            return {**_en_erreur(repo, lu_a, str(erreur)), "bugs": [], "branches": _sans_branches()}
         return {
             **_etat(repo, lu_a, versions),
             "bugs": [_bug(i) for i in issues if "bug" in etapes.noms_labels(i)],
+            "branches": branches,
         }
 
     def _entree(self, repo: RepoLie, auth: str) -> dict:
@@ -104,6 +106,32 @@ class Cockpit:
             return _en_erreur(repo, lu_a, str(erreur))
         etat = _etat(repo, lu_a, versions)
         return {**etat, "versions": [_resume(v) for v in etat["versions"]]}
+
+
+def branches_de_session(client: ClientGitHub, slug: str, versions: list[dict]) -> dict:
+    """Base d’intégration + branches des PR de version ; défaut = PR de version, sinon la base."""
+    base = base_d_integration(client, slug)
+    proposees = [base]
+    prs = []
+    for version in versions:
+        if version["pr"] and (branche := version["pr"]["branche"]) not in proposees:
+            proposees.append(branche)
+        if version["pr"]:
+            prs.append(version["pr"]["branche"])
+    return {"proposees": proposees, "defaut": prs[0] if prs else base}
+
+
+def base_d_integration(client: ClientGitHub, slug: str) -> str:
+    """`base_branch` de `agents/integration-channel.yml`, sinon la branche par défaut du repo."""
+    if texte := client.fichier(slug, "agents/integration-channel.yml"):
+        for ligne in texte.splitlines():
+            if (m := re.match(r"^base_branch:\s*[\"']?([^\"'#\s]+)", ligne)):
+                return m.group(1)
+    return client.depot(slug)["default_branch"]
+
+
+def _sans_branches() -> dict:
+    return {"proposees": [], "defaut": ""}
 
 
 def lire_versions(client: ClientGitHub, slug: str, issues: list[dict]) -> list[dict]:

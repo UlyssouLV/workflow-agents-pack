@@ -48,14 +48,18 @@ class RunnerErreur(Exception):
 class CloneSale(Exception):
     """Changements non commités dans le clone géré : le lancement attend **Reprendre** ou **Jeter**."""
 
-    def __init__(self, fichiers: list[dict], diff: str):
+    def __init__(self, fichiers: list[dict], diff: str, branche: str):
         super().__init__("le clone a des changements non commités : Reprendre ou Jeter")
         self.fichiers = fichiers
         self.diff = diff
+        self.branche = branche
 
     def corps(self) -> dict:
         """Le corps de la réponse `409`, côté runner comme côté cockpit."""
-        return {"detail": str(self), "clone": {"fichiers": self.fichiers, "diff": self.diff}}
+        return {
+            "detail": str(self),
+            "clone": {"fichiers": self.fichiers, "diff": self.diff, "branche": self.branche},
+        }
 
 
 class JetonRefuse(RunnerErreur):
@@ -149,15 +153,22 @@ class Runner:
         self._verrou = threading.Lock()
 
     def lancer(
-        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: Choix | None = None
+        self,
+        repo: str,
+        ticket: int | None,
+        agent: str,
+        branche: str,
+        identite: Identite,
+        choix: Choix | None = None,
     ) -> dict:
         """Lève `SessionOuverte` s’il y en a déjà une, `CloneSale` si le clone a des changements
         non commités et que `choix` ne dit pas quoi en faire, `RunnerErreur` si le clone ne se
-        prépare pas.
+        prépare pas ou si `branche` n’est pas proposée (base d’intégration ou PR de version).
 
-        `choix` (ignoré sur un clone propre) : `reprendre` lance sur l’arbre tel quel, sans
-        changer de branche ; `jeter` enregistre les changements dans `jobs/<id>/abandon.patch`,
-        puis `reset --hard` et `clean -fd` avant le lancement normal.
+        `ticket` nul : session libre (agent sans argument). `choix` (ignoré sur un clone propre) :
+        `reprendre` lance sur l’arbre tel quel, sans changer de branche ; `jeter` enregistre les
+        changements dans `jobs/<id>/abandon.patch`, puis `reset --hard` et `clean -fd` avant le
+        lancement sur `branche`.
         """
         if (connu := agent_par_id(agent)) is None:
             raise RunnerErreur(f"agent inconnu : {agent}")
@@ -172,11 +183,13 @@ class Runner:
         with self._verrou:
             if (ouverte := self._sessions.ouverte()) is not None:
                 raise SessionOuverte(ouverte)
+            self._verifier_branche(repo, branche)
             dossier = self.recuperer_clone(repo, branche)
             fichiers = changements(dossier)
             if fichiers and choix is None:
-                raise CloneSale(fichiers, diff_complet(dossier))
-            session = self._creer(repo, ticket, connu)
+                raise CloneSale(fichiers, diff_complet(dossier), _branche_courante(dossier))
+            branche_reelle = _branche_courante(dossier) if fichiers and choix == REPRENDRE else branche
+            session = self._creer(repo, ticket, connu, branche=branche_reelle)
             if fichiers and choix == JETER:
                 # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
                 patch = self._sessions.jobs / session["id"] / "abandon.patch"
@@ -188,7 +201,7 @@ class Runner:
                     self._sessions.clore(session["id"], CODE_NON_LANCE)
                     raise
             sur_place = bool(fichiers) and choix == REPRENDRE
-            return self._demarrer(session, dossier, _Lancement("", branche, identite), sur_place)
+            return self._demarrer(session, dossier, _Lancement("", branche_reelle, identite), sur_place)
 
     def enchainer(self, id_: str, ticket: int, jeton: str) -> Callable[[], dict]:
         """Demande de l’agent de la session `id_` (ADR 0006) : ouvrir `/implement #ticket` à sa suite.
@@ -246,14 +259,34 @@ class Runner:
         with self._verrou:
             if self._sessions.lire(courante["id"])["etat"] != OUVERTE:
                 raise RunnerErreur(f"session {courante['id']} close avant l’enchaînement")
-            suivante = self._creer(courante["repo"], ticket, agent_par_id(courante["agent"]), courante["id"])
+            suivante = self._creer(
+                courante["repo"], ticket, agent_par_id(courante["agent"]), courante["id"], lancement.branche
+            )
             self._sessions.enchainer(courante["id"], suivante["id"])
             self._arreteur(nom_tmux(courante["id"]))
             return self._demarrer(suivante, dossier, lancement)
 
-    def _creer(self, repo: str, ticket: int, agent: Agent, precedente: str | None = None) -> dict:
+    def _verifier_branche(self, repo: str, branche: str) -> None:
+        """Sans GitHub (tests de clone), toute branche présente sur `origin` reste possible."""
+        from wap_runtime.cockpit import branches_de_session, lire_versions
+        from wap_runtime.github import GitHubErreur
+
+        if self._github is None:
+            return
+        try:
+            versions = lire_versions(self._github, repo, self._github.issues_ouvertes(repo))
+            proposees = branches_de_session(self._github, repo, versions)["proposees"]
+        except GitHubErreur as erreur:
+            raise RunnerErreur(str(erreur)) from erreur
+        if branche not in proposees:
+            raise RunnerErreur(f"branche {branche} non proposée")
+
+    def _creer(
+        self, repo: str, ticket: int | None, agent: Agent, precedente: str | None = None, branche: str | None = None
+    ) -> dict:
         argv = commande_agent(agent, ticket)
-        return self._sessions.creer(repo, ticket, agent.id, f'{argv[0]} "{argv[1]}"', precedente)
+        commande = f'{argv[0]} "{argv[1]}"' if len(argv) > 1 else argv[0]
+        return self._sessions.creer(repo, ticket, agent.id, commande, precedente, branche)
 
     def _demarrer(self, session: dict, dossier: Path, lancement: _Lancement, sur_place: bool = False) -> dict:
         """Positionne le clone, y expose les skills et lance l’exécuteur dans tmux, avec un nouveau
@@ -327,6 +360,10 @@ class Runner:
             _git(dossier, "merge", "--quiet", "--ff-only", f"origin/{branche}")
         _git(dossier, "config", "user.name", identite.login)
         _git(dossier, "config", "user.email", identite.email)
+
+
+def _branche_courante(dossier: Path) -> str:
+    return _git(dossier, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
 def exposer_skills(dossier: Path) -> None:
@@ -414,11 +451,19 @@ class ClientRunner:
             raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
 
     def lancer(
-        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: Choix | None = None
+        self,
+        repo: str,
+        ticket: int | None,
+        agent: str,
+        branche: str,
+        identite: Identite,
+        choix: Choix | None = None,
     ) -> dict:
         """Mêmes erreurs que `Runner.lancer` ; `RunnerErreur` aussi si le runner est injoignable."""
-        demande = {"repo": repo, "ticket": ticket, "agent": agent, "branche": branche,
+        demande = {"repo": repo, "agent": agent, "branche": branche,
                    "login": identite.login, "email": identite.email}
+        if ticket is not None:
+            demande["ticket"] = ticket
         if choix is not None:
             demande["choix"] = choix
         # Le premier clone d’un gros repo peut être long.
@@ -426,7 +471,8 @@ class ClientRunner:
         if reponse.status_code == 409:
             corps = reponse.json()
             if "clone" in corps:
-                raise CloneSale(corps["clone"]["fichiers"], corps["clone"]["diff"])
+                clone = corps["clone"]
+                raise CloneSale(clone["fichiers"], clone["diff"], clone["branche"])
             raise SessionOuverte(corps["session"])
         if not reponse.is_success:
             try:
@@ -469,7 +515,7 @@ def creer_app_runner(runner: Runner):
 
     class Lancement(BaseModel):
         repo: str
-        ticket: int
+        ticket: int | None = None
         agent: str
         branche: str
         login: str

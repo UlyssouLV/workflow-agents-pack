@@ -56,6 +56,7 @@ export function detail(d: Partial<Detail> = {}): Detail {
   return {
     ...repo(),
     agents: [CLAUDE, CURSOR],
+    branches: { proposees: ["main", "v0.3.0-registry"], defaut: "v0.3.0-registry" },
     versions: [
       {
         ...version(),
@@ -111,6 +112,7 @@ export function session(s: Partial<Session> = {}): Session {
     url: "/sessions/20261017-090000-abcdef",
     repo: "o/r",
     ticket: 23,
+    branche: "v0.3.0-registry",
     agent: "claude",
     commande: 'claude "/implement #23"',
     debut: "2026-10-17T09:00:00+00:00",

@@ -33,8 +33,8 @@ def sessions(tmp_path, horloge):
     return Sessions(tmp_path / "jobs", horloge)
 
 
-def creer(sessions, repo="o/r", ticket=30):
-    return sessions.creer(repo, ticket, "claude", 'claude "/implement #30"')
+def creer(sessions, repo="o/r", ticket=30, branche="v0.4.0"):
+    return sessions.creer(repo, ticket, "claude", 'claude "/implement #30"', branche=branche)
 
 
 @pytest.fixture
@@ -66,6 +66,7 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "id": session["id"],
         "repo": "o/r",
         "ticket": 30,
+        "branche": "v0.4.0",
         "agent": "claude",
         "commande": 'claude "/implement #30"',
         "debut": DEBUT.isoformat(),
@@ -75,6 +76,24 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "precedente": None,
         "suivante": None,
     }
+
+
+def test_session_libre_ticket_null_et_branche(sessions):
+    session = sessions.creer("o/r", None, "claude", "claude", branche="main")
+
+    assert session["ticket"] is None
+    assert session["branche"] == "main"
+    assert session["commande"] == "claude"
+
+
+def test_session_d_avant_la_branche_sans_branche(sessions, tmp_path):
+    """Un `session.json` écrit par une 0.4.1 n’a pas `branche`."""
+    session = creer(sessions)
+    chemin = tmp_path / "jobs" / session["id"] / "session.json"
+    ancien = {k: v for k, v in json.loads(chemin.read_text()).items() if k != "branche"}
+    chemin.write_text(json.dumps(ancien))
+
+    assert sessions.lire(session["id"])["branche"] is None
 
 
 def test_ouverte_rend_la_session_ouverte_de_l_instance(sessions):
@@ -143,6 +162,16 @@ def test_l_executeur_lance_l_agent_de_la_session_sur_son_ticket(sessions, tmp_pa
     subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
 
     assert json.loads(recu.read_text()) == ["/implement #42"]
+
+
+def test_l_executeur_lance_l_agent_sans_argument_pour_une_session_libre(sessions, tmp_path, faux_claude):
+    session = sessions.creer("o/r", None, "claude", "claude", branche="main")
+    recu = tmp_path / "recu"
+    faux_claude(f"import json, pathlib, sys; pathlib.Path({str(recu)!r}).write_text(json.dumps(sys.argv[1:]))")
+
+    subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
+
+    assert json.loads(recu.read_text()) == []
 
 
 @pytest.mark.parametrize("id_", ["../x", "20261017-090000-zzzzzz"])
