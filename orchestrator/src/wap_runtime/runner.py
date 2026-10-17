@@ -18,7 +18,6 @@ from urllib.parse import quote
 
 from wap_runtime.agents import agent_par_id, commande_agent
 from wap_runtime.enregistrement import CODE_NON_LANCE
-from wap_runtime.registry import SLUG
 from wap_runtime.sessions import CODE_ARRETEE, ID_SESSION, OUVERTE, Sessions
 
 DEPOT_GITHUB = "https://github.com/{slug}.git"
@@ -27,6 +26,8 @@ PORT_RUNNER = 8788
 Choix = Literal["reprendre", "jeter"]
 REPRENDRE, JETER = get_args(Choix)
 # Ce qui arrive de la requête et finit en argument de `git` : jamais une option (`-…`).
+# `owner/name` : chacun commence par un alphanumérique, donc ni `-`, ni `.`/`..` hors de `clones/`.
+_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_][A-Za-z0-9._-]*")
 _BRANCHE = re.compile(r"(?!.*\.\.)[\w][\w.+/-]*")
 _LOGIN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 _EMAIL = re.compile(r"[\w.+][\w.+@-]*")
@@ -133,7 +134,7 @@ class Runner:
             raise RunnerErreur(f"agent inconnu : {agent}")
         if choix is not None and choix not in (REPRENDRE, JETER):
             raise RunnerErreur(f"choix inconnu : {choix}")
-        if not SLUG.fullmatch(repo):
+        if not _REPO.fullmatch(repo):
             raise RunnerErreur(f"repo invalide : {repo}")
         if not _BRANCHE.fullmatch(branche):
             raise RunnerErreur(f"branche invalide : {branche}")

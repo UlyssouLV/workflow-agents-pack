@@ -20,7 +20,7 @@ NOM_REGISTRY = "repos.toml"
 # 39 caractères au plus ; name en alphanumériques, `.`, `_`, `-`, hors `.` et `..`.
 _OWNER = r"(?=[A-Za-z0-9-]{1,39}/)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"
 _NAME = r"(?!\.\.?$)[A-Za-z0-9._-]{1,100}"
-SLUG = re.compile(rf"{_OWNER}/{_NAME}")
+_SLUG = re.compile(rf"{_OWNER}/{_NAME}")
 
 
 class RegistryErreur(Exception):
@@ -58,7 +58,7 @@ def lire_registry(chemin: Path) -> list[RepoLie]:
 
 
 def ajouter(chemin: Path, slug: str, nom: str | None = None) -> RepoLie:
-    if not SLUG.fullmatch(slug):
+    if not _SLUG.fullmatch(slug):
         raise RegistryErreur(f"{slug!r} invalide : attendu owner/name GitHub")
     repos = lire_registry(chemin)
     if any(r.designe(slug) for r in repos):
