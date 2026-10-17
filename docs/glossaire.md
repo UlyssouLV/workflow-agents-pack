@@ -6,7 +6,7 @@
 
 **Orchestrateur** — le produit développé sur `feat/runtime-orchestrator` : runtime + cockpit.
 
-**Cockpit** — l’interface locale de l’orchestrateur qui montre l’état des repos métier et, plus tard, déclenche des actions agent.
+**Cockpit** — l’interface locale de l’orchestrateur qui montre l’état des repos métier et lance des sessions agents.
 
 **Machine hôte** — la machine de l’utilisateur (Linux) qui fait tourner le runtime. Pas un VPS imposé.
 
@@ -27,3 +27,9 @@
 **Étape** — ce que le cockpit affiche pour une version ouverte d’un repo lié, déduite du tracker (labels, sub-issues, checks de la PR) : une seule par version, choisie par priorité. L’étape d’un repo est celle de ses versions qui attend quelqu’un, sinon la plus prioritaire.
 
 **Intervention humaine** — une étape qui attend quelqu’un (question en attente, CI en échec, tests humains, code review / Finalise) ; le cockpit la signale par un badge.
+
+**Runner** — le service de l’instance qui exécute les sessions agents sur les clones gérés, dans un conteneur sans accès à l’hôte (ADR 0004).
+
+**Clone géré** — le clone d’un repo lié tenu par l’instance (`~/.wap-runtime/clones/<owner>/<name>/`), sur lequel travaillent les sessions du runner.
+
+**Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable.

@@ -4,7 +4,7 @@ Runtime self-hosted (monorepo) : pack syncé vers les repos métier ; orchestrat
 
 Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integration-channel.yml` (cycle version et releases `orchestrator-v*` vers cette base, pas `main`). Mis en place **hors semver** (bootstrap), pas une version numérotée.
 
-Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.7.0) restent une affaire de provisionnement.
+Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.6.0) restent une affaire de provisionnement.
 
 ## Déjà livré
 
@@ -14,29 +14,29 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 
 ## Prochaine : 0.4.0 — Runner distant borné
 
-Objectif. Depuis le cockpit, lancer une action agent sur un clone local géré par la machine hôte, avec logs visibles.
+Objectif. Depuis le cockpit, lancer `/implement #n` sur un enfant éligible avec l’agent de son choix (Claude Code ou Cursor), sur un clone géré par la machine hôte, dans un vrai terminal ouvert dans le navigateur : on y suit et on y tape le workflow des skills comme en local ; chaque session est enregistrée et se rejoue depuis le cockpit.
 
-Hors périmètre : enchaînement autopilot, parallélisme multi-jobs avancé.
+Hors périmètre : autres skills que `/implement`, états « en train de travailler » / « réponse attendue », plusieurs sessions ouvertes à la fois, pose des labels d’état (hook du pack, #24), enchaînement automatique des tickets.
 
-## Ensuite : 0.5.0 — FSM et blocages humains
+## Ensuite : 0.4.1 — Catalogue d’actions et réponse attendue
 
-Objectif. Une machine d’états (`running` / `needs-human` / `failed` / `done`) dérivée du tracker rend visibles les blocages (tests humains, erreur, coupure) et le progrès (enfants X/Y, étape).
+Objectif. Lancer depuis le cockpit tout le cycle du pack selon l’étape de la version (Ouvre la version, `/th`, `/code-review`, Finalise, `/cqg`, session libre), et voir quand une session du serveur travaille ou attend une réponse (ex. « réponse attendue — Ouvre la version / grilling »), pour lancer une autre session pendant qu’une attend.
 
-Hors périmètre : enchaînement automatique des tickets sans validation humaine aux points de blocage.
+Hors périmètre : enchaînement automatique, parallélisme de plusieurs sessions qui travaillent.
 
-## Ensuite : 0.6.0 — Autopilot borné
+## Ensuite : 0.5.0 — Autopilot borné
 
 Objectif. Enchaîner les enfants `ready-for-agent` tant que rien ne bloque ; s’arrêter net sur besoin humain ou erreur.
 
 Hors périmètre : SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
 
-## Ensuite : 0.7.0 — Instances multiples isolées
+## Ensuite : 0.6.0 — Instances multiples isolées
 
 Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
 
 Hors périmètre : accès au cockpit depuis Internet.
 
-## Ensuite : 0.8.0 — Accès web authentifié
+## Ensuite : 0.7.0 — Accès web authentifié
 
 Objectif. Chaque personne joint son cockpit depuis Internet de façon sûre : TLS, identifiants propres à l’instance, aucune instance accessible par une autre, aucun port runtime exposé en clair sur le réseau du serveur.
 
@@ -55,3 +55,11 @@ Chaque instance choisit quels labels déclenchent quelle étape (ex. un autre la
 ### Workers parallèles multi-repos
 
 Plusieurs jobs agents en parallèle sur la même machine hôte, avec isolation et quotas.
+
+### Plusieurs sessions ouvertes
+
+Plusieurs sessions du runner ouvertes en même temps sur une instance (la 0.4.0 en autorise une, la 0.4.1 une seule qui travaille).
+
+### Labels d’état posés par le pack (#24)
+
+Un hook du pack, versionné dans les repos métier et compatible macOS / Windows / Linux, pose et retire `in-agent-test` / `in-human-test` (Claude Code et Cursor, sur les postes comme dans le runner). Chantier du pack sur `main` ([#24](https://github.com/UlyssouLV/workflow-agents-pack/issues/24)).
