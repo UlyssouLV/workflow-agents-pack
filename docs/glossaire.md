@@ -32,7 +32,11 @@
 
 **Clone géré** — le clone d’un repo lié tenu par l’instance (`~/.wap-runtime/clones/<owner>/<name>/`), sur lequel travaillent les sessions du runner.
 
-**Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable.
+**Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur, sur une branche du clone géré ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable. Au plus une session ouverte par repo (ADR 0007).
+
+**Session libre** — une session lancée par **Nouvelle session** sur un repo : l’agent démarre sans commande et l’humain y tape ce qu’il veut (`/implement #n`, « Ouvre la version », `/th`…).
+
+**Activité** — ce que fait une session ouverte, remonté par les hooks de l’agent : *travaille*, *réponse attendue* (avec le dernier skill chargé quand il est connu) ou *inconnue* (agent sans hooks) (ADR 0007).
 
 **Main** — le droit de taper dans le terminal d’une session ouverte : un seul onglet du cockpit l’a à la fois ; les autres sont en lecture seule et peuvent la **prendre**. Quitter la page de session la libère.
 

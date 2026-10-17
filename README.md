@@ -12,7 +12,7 @@ Cette branche développe l’**orchestrateur** self-hosted : un runtime install�
 | 0.4.0 | Runner distant borné : lancer `/implement` depuis le cockpit dans un terminal, sessions enregistrées et rejouables |
 | 0.4.1 | Correctifs du runner distant (tests humains 0.4.0) |
 | 0.4.2 | Session libre et réponse attendue |
-| 0.5.0 | Autopilot borné : enchaîner les enfants `ready-for-agent` tant que rien ne bloque |
+| 0.5.0 | Chaîne surveillée : permissions bornées, arrêt net et alerte quand la chaîne s’arrête |
 | 0.6.0 | Instances multiples isolées sur un même serveur |
 | 0.7.0 | Accès web authentifié |
 
