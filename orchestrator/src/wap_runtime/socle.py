@@ -19,6 +19,10 @@ UTILISATEUR = "orchestrator"
 HOME_UTILISATEUR = Path("/home") / UTILISATEUR
 VERSIONS_MINIMALES = {"debian": (12,), "ubuntu": (22, 4)}
 PLATEFORMES = "Debian 12+ / Ubuntu 22.04+"
+# Dans le `secure_path` de sudo : `sudo wap-runtime …` se lance tel quel.
+LIEN_COMMANDE = Path("/usr/local/bin/wap-runtime")
+# Absents du PATH qu’un `sudo` peut laisser à root ; `runuser` y vit.
+REPERTOIRES_SYSTEME = ("/usr/local/sbin", "/usr/sbin", "/sbin")
 
 
 class PlateformeNonSupportee(Exception):
@@ -112,6 +116,42 @@ def installer_socle(
     return 0
 
 
+def path_hote(env: Mapping[str, str], home_orchestrator: Path) -> str:
+    """PATH de l’appelant, répertoires système et `~orchestrator/.local/bin`, où `setup`
+    installe `claude` et `agent`."""
+    repertoires = [env.get("PATH", ""), *REPERTOIRES_SYSTEME, str(home_orchestrator / ".local" / "bin")]
+    return os.pathsep.join(r for r in repertoires if r)
+
+
+def resoudre(binaire: str, env: Mapping[str, str], home_orchestrator: Path) -> str | None:
+    """Chemin absolu de `binaire` sur `path_hote` : ce que `setup` voit installé, `auth` le lance."""
+    return shutil.which(binaire, path=path_hote(env, home_orchestrator))
+
+
+def cible_commande(home_orchestrator: Path) -> Path:
+    """Le binaire que `install.sh` installe par pipx pour l’utilisateur d’instance."""
+    return home_orchestrator / ".local" / "bin" / "wap-runtime"
+
+
+def lier_commande(lien: Path, cible: Path) -> str | None:
+    """Crée `lien → cible` s’il manque ; rend le motif du refus si un autre fichier occupe `lien`."""
+    if lien.is_symlink() and lien.readlink() == cible:
+        return None
+    if lien.exists() or lien.is_symlink():
+        return f"{lien} existe et n’est pas le lien vers {cible} : laissé tel quel"
+    lien.parent.mkdir(parents=True, exist_ok=True)
+    lien.symlink_to(cible)
+    return None
+
+
+def retirer_lien_commande(lien: Path, cible: Path) -> bool:
+    """Retire `lien` seulement s’il pointe vers `cible` ; rend `True` s’il l’a retiré."""
+    if not (lien.is_symlink() and lien.readlink() == cible):
+        return False
+    lien.unlink()
+    return True
+
+
 def mode_debug(env: Mapping[str, str]) -> bool:
     return env.get("WAP_DEBUG") == "1"
 
@@ -122,7 +162,6 @@ def _version(texte: str) -> tuple[int, ...]:
 
 def _detecter(env: Mapping[str, str], home_orchestrator: Path) -> dict[str, bool]:
     path = env.get("PATH", "")
-    chez_orchestrator = os.pathsep.join([path, str(home_orchestrator / ".local" / "bin")])
     groupes = _sortie(["id", "-nG", UTILISATEUR], path)
     return {
         "git": _present("git", path),
@@ -131,8 +170,8 @@ def _detecter(env: Mapping[str, str], home_orchestrator: Path) -> dict[str, bool
         "docker activé": _reussit(["systemctl", "is-enabled", "docker"], path),
         "gh": _present("gh", path),
         "curl": _present("curl", path),
-        "claude": _present("claude", chez_orchestrator),
-        "agent": _present("agent", chez_orchestrator),
+        "claude": resoudre("claude", env, home_orchestrator) is not None,
+        "agent": resoudre("agent", env, home_orchestrator) is not None,
         "utilisateur": groupes is not None,
         "groupe docker": groupes is not None and "docker" in groupes.split(),
     }

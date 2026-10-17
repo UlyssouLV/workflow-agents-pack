@@ -1,7 +1,8 @@
 """`wap-runtime setup` : socle → instance → `docker compose up -d --build` → `/health`
 → connexion GitHub.
 
-`setup` tourne en root (lancé par `install.sh`) : il installe le socle, puis relance
+`setup` tourne en root (lancé par `install.sh`) : il installe le socle, lie
+`/usr/local/bin/wap-runtime` au binaire de l’utilisateur d’instance, puis relance
 `wap-runtime setup --instance-seule` en utilisateur d’instance `orchestrator` pour
 le reste (ADR 0002) et recopie sa sortie dans le journal. Il finit par la connexion
 GitHub de l’instance, seule étape qui peut interagir (ADR 0003), et indique l’auth
@@ -22,10 +23,13 @@ from wap_runtime.sante import sonder
 from wap_runtime.socle import (
     HOME_UTILISATEUR,
     JOURNAL,
+    LIEN_COMMANDE,
     OS_RELEASE,
     UTILISATEUR,
+    cible_commande,
     installer_socle,
     journaliser,
+    lier_commande,
     mode_debug,
 )
 
@@ -42,11 +46,19 @@ def setup(
     env: Mapping[str, str] = os.environ,
     home_orchestrator: Path = HOME_UTILISATEUR,
     terminal: Path = TERMINAL,
+    lien_commande: Path = LIEN_COMMANDE,
 ) -> int:
     """Une passe complète, idempotente ; rend le code de sortie."""
     code = installer_socle(os_release, journal, env, home_orchestrator)
     if code != 0:
         return code
+    try:
+        refus = lier_commande(lien_commande, cible_commande(home_orchestrator))
+    except OSError as erreur:
+        refus = f"lien {lien_commande} impossible ({erreur})"
+    if refus:
+        print(f"KO — {refus}", flush=True)
+        return 1
     commande = [
         "runuser", "-u", UTILISATEUR, "--",
         sys.executable, "-m", "wap_runtime", "setup", "--instance-seule",

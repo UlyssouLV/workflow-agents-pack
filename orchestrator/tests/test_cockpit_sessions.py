@@ -288,3 +288,32 @@ def test_cast_absent_ou_session_inconnue_404(api, jobs):
 
     assert api.get(f"/api/sessions/{session['id']}/terminal.cast").status_code == 404
     assert api.get("/api/sessions/20261017-090000-ffffff/terminal.cast").status_code == 404
+
+
+def test_chaine_de_sessions_exposee_dans_la_session_et_la_liste(api, jobs):
+    sessions = Sessions(jobs)
+    premiere = sessions.creer(SLUG, 30, "claude", 'claude "/implement #30"')
+    seconde = sessions.creer(SLUG, 31, "claude", 'claude "/implement #31"', precedente=premiere["id"])
+    sessions.enchainer(premiere["id"], seconde["id"])
+
+    lue = api.get(f"/api/sessions/{premiere['id']}").json()
+    liste = {s["id"]: s for s in api.get("/api/repos/o/r/sessions").json()["sessions"]}
+
+    assert (lue["etat"], lue["precedente"], lue["suivante"]) == ("enchaînée", None, seconde["id"])
+    assert liste[premiere["id"]] == lue
+    assert (liste[seconde["id"]]["etat"], liste[seconde["id"]]["precedente"]) == ("ouverte", premiere["id"])
+    assert liste[seconde["id"]]["suivante"] is None
+
+
+def test_session_d_avant_la_chaine_sans_precedente_ni_suivante(api, jobs):
+    """Un `session.json` écrit par une 0.4.0 n’a pas ces champs."""
+    session = Sessions(jobs).creer(SLUG, 30, "claude", 'claude "/implement #30"')
+    chemin = jobs / session["id"] / "session.json"
+    ancien = {k: v for k, v in json.loads(chemin.read_text()).items() if k not in ("precedente", "suivante")}
+    chemin.write_text(json.dumps(ancien))
+
+    lue = api.get(f"/api/sessions/{session['id']}").json()
+    (listee,) = api.get("/api/repos/o/r/sessions").json()["sessions"]
+
+    assert (lue["precedente"], lue["suivante"]) == (None, None)
+    assert listee == lue

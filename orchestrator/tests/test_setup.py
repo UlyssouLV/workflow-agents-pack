@@ -44,6 +44,7 @@ class Hote:
         self.port = port_libre()
         self.env = {"PATH": str(self.bin), "WAP_PORT": str(self.port)}
         self.terminal = tmp_path / "pas-de-terminal"
+        self.lien = tmp_path / "usr-local-bin" / "wap-runtime"
         self.binaire("gh", FAUX_GH)
         for nom in ("systemctl", "curl", "claude", "agent", "useradd", "usermod"):
             self.binaire(nom)
@@ -90,6 +91,7 @@ class Hote:
             env={**self.env, **env},
             home_orchestrator=self.home,
             terminal=self.terminal,
+            lien_commande=self.lien,
         )
 
     def avec_terminal(self) -> None:
@@ -174,6 +176,44 @@ def test_second_setup_sur_une_machine_prete_ne_touche_ni_au_socle_ni_aux_secrets
     assert secrets.read_text() == "GH_TOKEN=garde-moi\n"
     assert secrets.stat().st_mtime_ns == avant
     assert any(" up -d --build" in ligne for ligne in lignes)
+
+
+def test_setup_lie_la_commande_dans_le_path_de_sudo(hote):
+    assert hote.setup() == 0
+
+    assert hote.lien.is_symlink()
+    assert hote.lien.readlink() == hote.home / ".local" / "bin" / "wap-runtime"
+
+
+def test_setup_relance_ne_touche_pas_au_lien(hote):
+    assert hote.setup() == 0
+    hote.arreter()
+    avant = hote.lien.lstat()
+
+    assert hote.setup() == 0
+
+    apres = hote.lien.lstat()
+    assert (apres.st_ino, apres.st_mtime_ns) == (avant.st_ino, avant.st_mtime_ns)
+
+
+@pytest.mark.parametrize("autre", ["fichier", "lien"])
+def test_setup_n_ecrase_pas_un_autre_wap_runtime(hote, capsys, autre):
+    hote.lien.parent.mkdir()
+    if autre == "fichier":
+        hote.lien.write_text("à garder\n")
+    else:
+        hote.lien.symlink_to("/opt/ailleurs/wap-runtime")
+
+    code = hote.setup()
+
+    sortie = capsys.readouterr().out
+    assert code != 0
+    assert f"KO — {hote.lien} existe" in sortie
+    if autre == "fichier":
+        assert hote.lien.read_text() == "à garder\n"
+    else:
+        assert hote.lien.readlink() == Path("/opt/ailleurs/wap-runtime")
+    assert not (hote.home / ".wap-runtime").exists()
 
 
 def test_echec_du_socle_arrete_avant_l_instance(hote, capsys):

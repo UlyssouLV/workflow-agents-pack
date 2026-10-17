@@ -33,3 +33,7 @@
 **Clone géré** — le clone d’un repo lié tenu par l’instance (`~/.wap-runtime/clones/<owner>/<name>/`), sur lequel travaillent les sessions du runner.
 
 **Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable.
+
+**Main** — le droit de taper dans le terminal d’une session ouverte : un seul onglet du cockpit l’a à la fois ; les autres sont en lecture seule et peuvent la **prendre**. Quitter la page de session la libère.
+
+**Session enchaînée** — une session qui a demandé au runner d’ouvrir la suivante (`/implement #m` sur un enfant éligible du même repo, même agent, contexte vierge) et s’est fermée ; ses liens `precedente` / `suivante` forment la chaîne (ADR 0006).

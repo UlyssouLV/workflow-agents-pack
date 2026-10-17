@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provisionnement en une commande (ADR 0002) :
 #   curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
-# Options sans interaction : WAP_PORT, WAP_PACK_REF, WAP_DEBUG=1, GH_TOKEN, WAP_SKIP_AUTH=1
+# Options sans interaction : WAP_REF, WAP_PORT, WAP_PACK_REF, WAP_DEBUG=1, GH_TOKEN, WAP_SKIP_AUTH=1
 # (passées par l’environnement, ex. `| sudo WAP_PORT=9000 bash`) et transmises à
 # `wap-runtime setup`. Seule la connexion GitHub peut interagir, sur /dev/tty (ADR 0003).
 set -euo pipefail
@@ -18,7 +18,9 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 UTILISATEUR=orchestrator
 HOME_UTILISATEUR="/home/$UTILISATEUR"
-PAQUET="git+https://github.com/UlyssouLV/workflow-agents-pack@feat/runtime-orchestrator#subdirectory=orchestrator"
+# Ref du paquet (branche, tag ou commit) ; `setup` construit les images au même commit (ADR 0005).
+WAP_REF="${WAP_REF:-feat/runtime-orchestrator}"
+PAQUET="git+https://github.com/UlyssouLV/workflow-agents-pack@$WAP_REF#subdirectory=orchestrator"
 JOURNAL=/var/log/wap-runtime/install.log
 
 mkdir -p "$(dirname "$JOURNAL")"
@@ -67,7 +69,7 @@ creer_utilisateur() {
 }
 
 installer_wap_runtime() {
-  # --force : réinstalle depuis la branche de base, donc met à niveau un paquet existant.
+  # --force : réinstalle depuis WAP_REF, donc met à niveau ou change de ref un paquet existant.
   runuser -u "$UTILISATEUR" -- env HOME="$HOME_UTILISATEUR" pipx install --force "$PAQUET"
 }
 

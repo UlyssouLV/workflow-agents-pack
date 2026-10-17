@@ -52,8 +52,9 @@ export interface LienSession {
   repo: string;
 }
 
-/** `interrompue` : le runner a redémarré pendant la session. */
-export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue";
+/** `interrompue` : le runner a redémarré pendant la session. `enchaînée` : close par l’ouverture
+ * de sa `suivante`, à la demande de son agent (ADR 0006). */
+export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue" | "enchaînée";
 
 /** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
 export interface Session {
@@ -67,6 +68,9 @@ export interface Session {
   fin: string | null;
   etat: EtatSession;
   code_sortie: number | null;
+  /** Identifiants des sessions voisines dans la chaîne ; `null` hors chaîne. */
+  precedente: string | null;
+  suivante: string | null;
 }
 
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */

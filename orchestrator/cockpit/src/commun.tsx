@@ -1,4 +1,5 @@
-import type { Agent, Auth, Etape, EtatSession, Repo } from "./api";
+import type { Agent, Auth, Etape, EtatSession, Repo, Session } from "./api";
+import { ID_SESSION } from "./api";
 
 const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
   sans_token: "GitHub non connecté",
@@ -66,7 +67,31 @@ export const LIBELLES_ETAT_SESSION: Record<EtatSession, string> = {
   terminée: "Terminée",
   échouée: "Échouée",
   interrompue: "Interrompue",
+  enchaînée: "Enchaînée",
 };
+
+/** `/sessions/<id>` d’une voisine de la chaîne ; seul un identifiant valide bâtit l’URL. */
+export function lienSession(id: string | null): string | null {
+  return id && ID_SESSION.test(id) ? `/sessions/${id}` : null;
+}
+
+/** Liens vers la précédente et la suivante d’une session enchaînée ; rien hors chaîne. */
+export function LiensChaine({
+  session,
+  libelles,
+}: {
+  session: Pick<Session, "precedente" | "suivante">;
+  libelles: [precedente: string, suivante: string];
+}) {
+  const [precedente, suivante] = [lienSession(session.precedente), lienSession(session.suivante)];
+  return (
+    <>
+      {precedente && <a href={precedente}>{libelles[0]}</a>}
+      {precedente && suivante && " · "}
+      {suivante && <a href={suivante}>{libelles[1]}</a>}
+    </>
+  );
+}
 
 /** Date et heure, au fuseau du navigateur, sans les secondes. */
 export function dateHeure(iso: string): string {

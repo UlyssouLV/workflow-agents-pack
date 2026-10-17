@@ -2,14 +2,16 @@
 
 Chaque client websocket du runner est un client `tmux attach` dans son propre pseudo-terminal :
 tmux redessine l’écran courant à chaque attache (on retrouve l’écran en revenant) et la session
-survit au départ du client. Un seul client écrit, le premier connecté ; les autres s’attachent en
-lecture seule et leur saisie est jetée. Quand celui qui écrit part, le plus ancien des autres
-prend la main (un onglet rechargé n’attend pas que le runner ait vu partir l’ancien).
+survit au départ du client. Un seul client écrit (il a la *main*), d’abord le premier connecté ;
+les autres s’attachent en lecture seule et leur saisie est jetée. Un lecteur peut prendre la
+main : celui qui écrivait repasse en lecture seule. Quand celui qui écrit part, le plus ancien des
+autres prend la main (un onglet rechargé n’attend pas que le runner ait vu partir l’ancien).
 
 Messages du websocket :
 - serveur → client : la sortie du terminal en binaire ; `{"role": "ecriture"|"lecture"}` au début
-  et quand le client prend la main.
-- client → serveur : `{"saisie": "<texte>"}`, `{"taille": {"colonnes": n, "lignes": n}}`.
+  et à chaque changement de main.
+- client → serveur : `{"saisie": "<texte>"}`, `{"taille": {"colonnes": n, "lignes": n}}` (écrivain
+  seulement), `{"prendre": true}`.
 """
 
 import asyncio
@@ -93,46 +95,72 @@ class Pty:
         if self._processus.poll() is None:
             with suppress(ProcessLookupError):
                 os.killpg(self._processus.pid, signal.SIGHUP)
-            try:
-                self._processus.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._processus.kill()
-                self._processus.wait()
+        # Avant d’attendre : sur macOS, un client qui sort reste bloqué à la fermeture de son
+        # terminal tant que sa sortie non lue y attend, même tué.
         os.close(self.maitre)
+        try:
+            self._processus.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._processus.kill()
+            self._processus.wait()
+
+
+class Main:
+    """La place d’un client dans la file de sa session : le premier de la file écrit."""
+
+    def __init__(self, file: list["Main"]):
+        self._file = file
+        # Posé quand ce client gagne ou perd la main.
+        self.changee = asyncio.Event()
+
+    @property
+    def ecrit(self) -> bool:
+        return self._file[0] is self
+
+    def prendre(self) -> None:
+        """Passe en tête ; l’ancien écrivain garde son rang parmi les autres (il est le plus
+        ancien d’entre eux et reprendra la main au départ de ce client)."""
+        if self.ecrit:
+            return
+        ancien = self._file[0]
+        self._file.remove(self)
+        self._file.insert(0, self)
+        ancien.changee.set()
+        self.changee.set()
 
 
 class Ecrivains:
-    """Par session, les clients dans l’ordre d’arrivée : le premier écrit."""
+    """Par session, les clients dans l’ordre d’arrivée, sauf celui qui a pris la main en tête."""
 
     def __init__(self):
-        self._files: dict[str, list[asyncio.Event]] = {}
+        self._files: dict[str, list[Main]] = {}
 
     @contextmanager
-    def connexion(self, id_: str) -> Iterator[asyncio.Event]:
-        """L’événement est posé quand ce client écrit : tout de suite s’il est seul, sinon au
-        départ de ceux arrivés avant lui."""
+    def connexion(self, id_: str) -> Iterator[Main]:
         file = self._files.setdefault(id_, [])
-        ecrit = asyncio.Event()
-        file.append(ecrit)
-        file[0].set()
+        main = Main(file)
+        file.append(main)
         try:
-            yield ecrit
+            yield main
         finally:
-            file.remove(ecrit)
-            if file:
-                file[0].set()
-            else:
+            ecrivait = main.ecrit
+            file.remove(main)
+            if not file:
                 del self._files[id_]
+            elif ecrivait:
+                file[0].changee.set()
 
 
-async def relayer(websocket, nom: str, ecrit: asyncio.Event) -> None:
+async def relayer(websocket, nom: str, main: Main) -> None:
     """Relaie le websocket (Starlette, déjà accepté) et la session tmux `nom` jusqu’à ce que
     l’un des deux s’arrête ; ferme le websocket si c’est la session.
 
-    Un lecteur qui prend la main est rattaché en écriture (tmux redessine l’écran).
+    À chaque changement de main, le client est rattaché dans son nouveau rôle (tmux redessine
+    l’écran).
     """
     while True:
-        ecriture = ecrit.is_set()
+        main.changee.clear()
+        ecriture = main.ecrit
         await websocket.send_json({"role": ECRITURE if ecriture else LECTURE})
         terminal = Pty(commande_attache(nom, lecture_seule=not ecriture))
 
@@ -146,12 +174,15 @@ async def relayer(websocket, nom: str, ecrit: asyncio.Event) -> None:
                 message = await websocket.receive()
                 if message["type"] == "websocket.disconnect":
                     return
-                if ecriture and message.get("text") is not None:
-                    await _appliquer(terminal, message["text"])
+                if (texte := message.get("text")) is None:
+                    continue
+                if _lire(texte).get("prendre") is True:
+                    main.prendre()
+                elif ecriture:
+                    await _appliquer(terminal, texte)
 
-        taches = [descendre(), monter()] if ecriture else [descendre(), monter(), ecrit.wait()]
         try:
-            premiere = await premier_fini(*taches)
+            premiere = await premier_fini(descendre(), monter(), main.changee.wait())
         finally:
             await asyncio.to_thread(terminal.fermer)
         if premiere != 2:
@@ -183,13 +214,17 @@ async def relayer_runner(websocket, amont) -> None:
     await premier_fini(descendre(), monter())
 
 
-async def _appliquer(terminal: Pty, texte: str) -> None:
+def _lire(texte: str) -> dict:
+    """Le message JSON d’un client ; `{}` s’il n’en est pas un."""
     try:
         message = json.loads(texte)
     except ValueError:
-        return
-    if not isinstance(message, dict):
-        return
+        return {}
+    return message if isinstance(message, dict) else {}
+
+
+async def _appliquer(terminal: Pty, texte: str) -> None:
+    message = _lire(texte)
     if isinstance(saisie := message.get("saisie"), str):
         await terminal.ecrire(saisie.encode())
     elif isinstance(taille := message.get("taille"), dict):

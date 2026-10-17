@@ -9,6 +9,7 @@ vi.mock("@xterm/addon-fit", async () => ({ FitAddon: (await import("./simulation
 beforeEach(() => {
   FauxTerminal.instances = [];
   FauxWebSocket.instances = [];
+  sessionStorage.clear();
   vi.stubGlobal("WebSocket", FauxWebSocket);
 });
 

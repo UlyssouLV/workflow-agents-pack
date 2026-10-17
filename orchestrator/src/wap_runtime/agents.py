@@ -18,6 +18,7 @@ from typing import Mapping
 
 from wap_runtime.auth import AuthErreur, ecrire_secret
 from wap_runtime.pseudo_terminal import brut, controler, restaurer
+from wap_runtime.socle import path_hote, resoudre
 
 ETAPE_SETUP_TOKEN = "claude setup-token"
 ETAPE_SECRETS = "secrets.env"
@@ -146,12 +147,20 @@ def _ecrire(
 def _setup_token(home: Path, utilisateur: str | None, env: Mapping[str, str]) -> str:
     """Lance `claude setup-token` dans un pseudo-terminal relié à celui de l’utilisateur :
     il y voit l’URL et y colle le code ; le token est relevé dans la sortie."""
-    commande = ["claude", "setup-token"]
+    # Par chemins absolus : le PATH de root sous `sudo` ne contient ni l’un ni l’autre (#41).
+    claude = resoudre("claude", env, home)
+    if claude is None:
+        raise AuthErreur(ETAPE_SETUP_TOKEN, "claude introuvable : relance `sudo wap-runtime setup`")
+    commande = [claude, "setup-token"]
     if utilisateur:
-        commande = ["runuser", "-u", utilisateur, "--", *commande]
+        runuser = resoudre("runuser", env, home)
+        if runuser is None:
+            raise AuthErreur(ETAPE_SETUP_TOKEN, "runuser introuvable")
+        commande = [runuser, "-u", utilisateur, "--", *commande]
     # Une identité Claude dans l’environnement court-circuiterait la connexion.
     env_claude = {k: v for k, v in env.items() if k not in CLAUDE.cles}
     env_claude["HOME"] = str(home)
+    env_claude["PATH"] = path_hote(env, home)
     maitre, esclave = os.openpty()
     fcntl.ioctl(esclave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, _COLONNES, 0, 0))
     try:

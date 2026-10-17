@@ -1,9 +1,13 @@
 """Point d’entrée console `wap-runtime`."""
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from wap_runtime.agents import AGENTS, CURSOR, connecte, lancer_auth_agent
@@ -19,7 +23,13 @@ from wap_runtime.registry import (
 )
 from wap_runtime.runner import PORT_RUNNER
 from wap_runtime.sante import sonder
-from wap_runtime.socle import HOME_UTILISATEUR, UTILISATEUR
+from wap_runtime.socle import (
+    HOME_UTILISATEUR,
+    LIEN_COMMANDE,
+    UTILISATEUR,
+    cible_commande,
+    retirer_lien_commande,
+)
 
 PORT_PAR_DEFAUT = 8787
 
@@ -78,11 +88,47 @@ def _runner(hote: str, port: int) -> int:
     return 0
 
 
-def _uninstall(purge: bool) -> int:
+def _enchainer(ticket: int) -> int:
+    """Dans une session du runner (ADR 0006) : demande `/implement #ticket` à sa suite."""
+    id_, jeton = os.environ.get("WAP_SESSION"), os.environ.get("WAP_SESSION_JETON")
+    if not (id_ and jeton):
+        print("KO — hors d’une session du runner (WAP_SESSION ou WAP_SESSION_JETON absent)")
+        return 1
+    # Le runner et l’agent partagent le conteneur.
+    base = os.environ.get("WAP_RUNNER", f"http://127.0.0.1:{PORT_RUNNER}").rstrip("/")
+    requete = urllib.request.Request(
+        f"{base}/sessions/{urllib.parse.quote(id_, safe='')}/suivante",
+        data=json.dumps({"ticket": ticket, "jeton": jeton}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        instance = desinstaller(_home_instance(), purge)
+        with urllib.request.urlopen(requete, timeout=120) as reponse:
+            print(f"OK — {json.loads(reponse.read())['detail']}")
+            return 0
+    except urllib.error.HTTPError as refus:
+        try:
+            detail = json.loads(refus.read())["detail"]
+        except (ValueError, KeyError, TypeError):
+            detail = f"le runner a répondu {refus.code}"
+        print(f"KO — {detail}")
+    except (OSError, ValueError, KeyError) as erreur:
+        print(f"KO — runner injoignable ({erreur})")
+    return 1
+
+
+def _uninstall(purge: bool) -> int:
+    home = _home_instance()
+    try:
+        instance = desinstaller(home, purge)
     except (OSError, subprocess.CalledProcessError) as erreur:
         print(f"KO — `docker compose down` a échoué ({erreur}) ; instance conservée")
+        return 1
+    try:
+        if retirer_lien_commande(LIEN_COMMANDE, cible_commande(home)):
+            print(f"Lien {LIEN_COMMANDE} retiré.")
+    except OSError as erreur:
+        print(f"KO — lien {LIEN_COMMANDE} non retiré ({erreur})")
         return 1
     if instance is None:
         print("Aucune instance à désinstaller.")
@@ -188,6 +234,9 @@ def main(argv=None) -> int:
     runner = sous.add_parser("runner", help=argparse.SUPPRESS)
     runner.add_argument("--host", default="127.0.0.1")
     runner.add_argument("--port", type=int, default=PORT_RUNNER)
+    # Lancé par l’agent d’une session du runner, via `WAP_ENCHAINER`.
+    enchainer = sous.add_parser("enchainer", help="dans une session du runner : ouvre /implement #n à sa suite")
+    enchainer.add_argument("ticket", type=int)
     uninstall = sous.add_parser(
         "uninstall", help="arrête et retire le Compose de l’instance"
     )
@@ -231,6 +280,8 @@ def main(argv=None) -> int:
         return _serve(args.host, args.port)
     if args.commande == "runner":
         return _runner(args.host, args.port)
+    if args.commande == "enchainer":
+        return _enchainer(args.ticket)
     if args.commande == "uninstall":
         return _uninstall(args.purge)
     return _health(args.port)

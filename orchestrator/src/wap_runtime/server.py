@@ -20,7 +20,7 @@ from wap_runtime import __version__
 from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
-from wap_runtime.eligibilite import lancements, raison_grisee
+from wap_runtime.eligibilite import enfant_de_version, lancements, raison_grisee
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
 from wap_runtime.registry import RegistryErreur, chemin_registry
@@ -182,10 +182,7 @@ def creer_app(
         detail = _detail(demande.repo)
         if detail["erreur"]:
             raise HTTPException(502, detail["erreur"])
-        trouve = next(
-            ((e, v["pr"]) for v in detail["versions"] for e in v["enfants"] if e["numero"] == demande.ticket),
-            None,
-        )
+        trouve = enfant_de_version(detail["versions"], demande.ticket)
         if trouve is None:
             raise HTTPException(404, f"#{demande.ticket} n’est l’enfant d’aucune version ouverte")
         enfant, pr = trouve

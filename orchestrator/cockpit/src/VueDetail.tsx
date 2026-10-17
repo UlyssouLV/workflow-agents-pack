@@ -13,7 +13,16 @@ import type {
   Version,
 } from "./api";
 import { ErreurApi, ID_SESSION, lancerSession } from "./api";
-import { BadgeHumain, BandeauAuth, LIBELLES_ETAT_SESSION, LibelleEtape, dateHeure, heure, nomAffiche } from "./commun";
+import {
+  BadgeHumain,
+  BandeauAuth,
+  LIBELLES_ETAT_SESSION,
+  LibelleEtape,
+  LiensChaine,
+  dateHeure,
+  heure,
+  nomAffiche,
+} from "./commun";
 import { useRafraichi } from "./rafraichi";
 import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
 
@@ -63,6 +72,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
                 <th>Agent</th>
                 <th>Commande</th>
                 <th>État</th>
+                <th>Chaîne</th>
               </tr>
             </thead>
             <tbody>
@@ -76,6 +86,9 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
                     <code>{s.commande}</code>
                   </td>
                   <td>{LIBELLES_ETAT_SESSION[s.etat]}</td>
+                  <td>
+                    <LiensChaine session={s} libelles={["précédente", "suivante"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -18,6 +18,12 @@ def raison_grisee(
     return next((raison for tenue, raison in regles if not tenue), None)
 
 
+def enfant_de_version(versions: list[dict], ticket: int) -> tuple[dict, dict | None] | None:
+    """L’enfant `#ticket` et la PR de sa version, parmi `versions` (API du cockpit) ; `None` s’il
+    n’est l’enfant d’aucune."""
+    return next(((e, v["pr"]) for v in versions for e in v["enfants"] if e["numero"] == ticket), None)
+
+
 def lancements(detail: dict, session_ouverte: dict | None, agents: list[dict]) -> dict:
     """`detail` (API du cockpit) dont chaque enfant porte `lancement` : la raison par agent,
     `None` si `/implement #n` est possible."""

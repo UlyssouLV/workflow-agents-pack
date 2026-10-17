@@ -117,6 +117,8 @@ export function session(s: Partial<Session> = {}): Session {
     fin: null,
     etat: "ouverte",
     code_sortie: null,
+    precedente: null,
+    suivante: null,
     ...s,
   };
 }
