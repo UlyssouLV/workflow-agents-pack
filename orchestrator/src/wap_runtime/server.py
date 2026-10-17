@@ -53,7 +53,9 @@ def _instance_par_defaut() -> Path:
 
 
 def _runner_par_defaut() -> httpx.Client:
-    return httpx.Client(base_url=os.environ.get("WAP_RUNNER", f"http://runner:{PORT_RUNNER}"))
+    # Réseau Compose interne à l’instance, port non publié (ADR 0004) : pas de TLS entre services.
+    defaut = httpx.URL(scheme="http", host="runner", port=PORT_RUNNER)
+    return httpx.Client(base_url=os.environ.get("WAP_RUNNER", defaut))
 
 
 def _lien(session: dict) -> dict:

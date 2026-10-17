@@ -345,16 +345,32 @@ def test_dockerfile_du_runner_existe_dans_le_contexte_de_build(home, depot_pack)
     assert (contexte / chemin).is_file()
 
 
-def test_dockerfile_du_runner_epingle_claude_et_les_skills_de_matt():
+def test_dockerfile_du_runner_epingle_claude_cursor_et_les_skills_de_matt():
     from wap_runtime import instance as module
 
     dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
     assert re.search(r"^ARG CLAUDE_VERSION=\d+\.\d+\.\d+$", dockerfile, re.MULTILINE)
     assert "@anthropic-ai/claude-code@${CLAUDE_VERSION}" in dockerfile
+    assert re.search(r"^ARG CURSOR_VERSION=\S+$", dockerfile, re.MULTILINE)
+    for arch in ("X64", "ARM64"):
+        assert re.search(rf"^ARG CURSOR_SHA256_{arch}=[0-9a-f]{{64}}$", dockerfile, re.MULTILINE), arch
+    assert "sha256sum --check" in dockerfile
     assert re.search(r"^ARG SKILLS_MATT_COMMIT=[0-9a-f]{40}$", dockerfile, re.MULTILINE)
     assert 'checkout --quiet "${SKILLS_MATT_COMMIT}"' in dockerfile
-    for outil in ("git", "gh", "tmux", "python3-venv", "https://cursor.com/install"):
+    for outil in ("git", "gh", "tmux", "python3-venv"):
         assert outil in dockerfile, outil
+
+
+def test_dockerfile_du_runner_n_execute_rien_de_non_verifie():
+    """Pas de script téléchargé passé à un shell, pas de scripts npm des dépendances, pas de root."""
+    from wap_runtime import instance as module
+
+    dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
+    assert not re.search(r"\|\s*(?:\S+=\S+\s+)*(?:ba)?sh\b", dockerfile)
+    assert "npx" not in dockerfile
+    assert all("--ignore-scripts" in l for l in dockerfile.splitlines() if "npm install" in l)
+    assert all("--proto '=https'" in l for l in dockerfile.splitlines() if "curl -" in l)
+    assert re.search(r"^USER (?!root)\S+$", dockerfile, re.MULTILINE)
 
 
 def test_setup_cree_les_dossiers_du_runner_sans_les_ecraser(home, depot_pack):

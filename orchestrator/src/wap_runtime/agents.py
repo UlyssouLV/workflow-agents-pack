@@ -59,6 +59,10 @@ def agent_par_id(id_: str) -> Agent | None:
     return next((a for a in AGENTS if a.id == id_), None)
 
 
+def commande_agent(agent: Agent, ticket: int) -> list[str]:
+    return [agent.programme, f"/implement #{ticket}"]
+
+
 def connecte(agent: Agent, valeurs: Mapping[str, str]) -> bool:
     return any((valeurs.get(cle) or "").strip() for cle in agent.cles)
 

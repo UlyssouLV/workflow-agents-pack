@@ -145,6 +145,9 @@ export interface CloneSale {
 /** Réponse au clone sale : **Reprendre** sur l’arbre tel quel, ou **Jeter** (patch gardé). */
 export type ChoixClone = "reprendre" | "jeter";
 
+/** Identifiant de session du runtime (`wap_runtime.sessions`) : seul ce motif sert à bâtir une URL. */
+export const ID_SESSION = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
+
 export class ErreurApi extends Error {
   /** `409` : la session déjà ouverte. */
   session: LienSession | null = null;
@@ -169,6 +172,7 @@ export interface SessionsDuRepo {
 
 /** `GET /api/sessions/{id}/terminal.cast` : le terminal enregistré (asciinema v2), en texte. */
 export async function lireEnregistrement(id: string): Promise<string> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const chemin = `/api/sessions/${encodeURIComponent(id)}/terminal.cast`;
   const reponse = await fetch(chemin);
   if (!reponse.ok) {
@@ -202,6 +206,7 @@ export async function lancerSession(
 
 /** **Terminer** : `POST /api/sessions/{id}/terminer`, la session rendue avec son état final. */
 export async function terminerSession(id: string): Promise<Session> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const reponse = await fetch(`/api/sessions/${encodeURIComponent(id)}/terminer`, {
     method: "POST",
     headers: { Accept: "application/json" },
@@ -215,6 +220,7 @@ export async function terminerSession(id: string): Promise<Session> {
 
 /** Websocket du terminal en direct, sur le cockpit servi (le runtime vérifie son `Origin`). */
 export function urlTerminal(id: string): string {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const { protocol, host } = window.location;
   return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
 }

@@ -5,6 +5,7 @@ aucun label.
 """
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -13,16 +14,22 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, get_args
+from urllib.parse import quote
 
-from wap_runtime.agents import Agent, agent_par_id
+from wap_runtime.agents import agent_par_id, commande_agent
 from wap_runtime.enregistrement import CODE_NON_LANCE
-from wap_runtime.sessions import CODE_ARRETEE, OUVERTE, Sessions
+from wap_runtime.registry import SLUG
+from wap_runtime.sessions import CODE_ARRETEE, ID_SESSION, OUVERTE, Sessions
 
 DEPOT_GITHUB = "https://github.com/{slug}.git"
 PORT_RUNNER = 8788
 # Réponses au clone sale ; sans l’une d’elles, rien n’est lancé (pas de remise à zéro automatique).
 Choix = Literal["reprendre", "jeter"]
 REPRENDRE, JETER = get_args(Choix)
+# Ce qui arrive de la requête et finit en argument de `git` : jamais une option (`-…`).
+_BRANCHE = re.compile(r"(?!.*\.\.)[\w][\w.+/-]*")
+_LOGIN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+_EMAIL = re.compile(r"[\w.+][\w.+@-]*")
 
 
 class RunnerErreur(Exception):
@@ -58,10 +65,6 @@ class Identite:
 
 def email_noreply(login: str, id_: int) -> str:
     return f"{id_}+{login}@users.noreply.github.com"
-
-
-def commande_agent(agent: Agent, ticket: int) -> list[str]:
-    return [agent.programme, f"/implement #{ticket}"]
 
 
 def lanceur_tmux(nom: str, commande: list[str], dossier: Path) -> None:
@@ -130,6 +133,12 @@ class Runner:
             raise RunnerErreur(f"agent inconnu : {agent}")
         if choix is not None and choix not in (REPRENDRE, JETER):
             raise RunnerErreur(f"choix inconnu : {choix}")
+        if not SLUG.fullmatch(repo):
+            raise RunnerErreur(f"repo invalide : {repo}")
+        if not _BRANCHE.fullmatch(branche):
+            raise RunnerErreur(f"branche invalide : {branche}")
+        if not (_LOGIN.fullmatch(identite.login) and _EMAIL.fullmatch(identite.email)):
+            raise RunnerErreur(f"identité git invalide : {identite.login} <{identite.email}>")
         with self._verrou:
             if (ouverte := self._sessions.ouverte()) is not None:
                 raise SessionOuverte(ouverte)
@@ -150,9 +159,10 @@ class Runner:
             except RunnerErreur:
                 self._sessions.clore(session["id"], CODE_NON_LANCE)
                 raise
+            # L’exécuteur relit l’agent et le ticket dans `session.json`.
             executeur = [sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), session["id"]]
             try:
-                self._lanceur(nom_tmux(session["id"]), [*executeur, *argv], dossier)
+                self._lanceur(nom_tmux(session["id"]), executeur, dossier)
             except (OSError, subprocess.CalledProcessError) as erreur:
                 self._sessions.clore(session["id"], CODE_NON_LANCE)
                 raise RunnerErreur(f"tmux : {erreur}") from erreur
@@ -298,15 +308,19 @@ class ClientRunner:
 
     def terminer(self, id_: str) -> dict:
         """`RunnerErreur` si le runner est injoignable ou ne connaît pas la session."""
-        reponse = self._poster(f"/sessions/{id_}/terminer", timeout=60)
+        if not ID_SESSION.fullmatch(id_):
+            raise RunnerErreur(f"session {id_} inconnue")
+        reponse = self._poster(f"/sessions/{quote(id_, safe='')}/terminer", timeout=60)
         if not reponse.is_success:
             raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
         return reponse.json()
 
     def url_terminal(self, id_: str) -> str:
         """Websocket du terminal de la session, sur le réseau Compose."""
+        if not ID_SESSION.fullmatch(id_):
+            raise RunnerErreur(f"session {id_} inconnue")
         base = str(self._http.base_url).rstrip("/")
-        return f"ws{base.removeprefix('http')}/sessions/{id_}/terminal"
+        return f"ws{base.removeprefix('http')}/sessions/{quote(id_, safe='')}/terminal"
 
 
 def creer_app_runner(runner: Runner):
@@ -355,7 +369,7 @@ def creer_app_runner(runner: Runner):
 
     @app.post("/sessions/{id_}/terminer")
     def terminer(id_: str) -> dict:
-        if (session := runner.terminer(id_)) is None:
+        if not ID_SESSION.fullmatch(id_) or (session := runner.terminer(id_)) is None:
             raise HTTPException(404, f"session {id_} inconnue")
         return session
 
@@ -363,14 +377,14 @@ def creer_app_runner(runner: Runner):
 
     @app.websocket("/sessions/{id_}/terminal")
     async def terminal(websocket: WebSocket, id_: str) -> None:
-        session = runner.session(id_)
+        session = runner.session(id_) if ID_SESSION.fullmatch(id_) else None
         if session is None or session["etat"] != OUVERTE:
             # Avant `accept` : la poignée de main est refusée.
             await websocket.close()
             return
         await websocket.accept()
         with ecrivains.connexion(id_) as ecrit:
-            await relayer(websocket, nom_tmux(id_), ecrit)
+            await relayer(websocket, nom_tmux(session["id"]), ecrit)
 
     return app
 

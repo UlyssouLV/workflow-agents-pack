@@ -144,6 +144,27 @@ def test_branche_absente_sur_github_refusee_sans_session(runner, instance):
     assert Sessions(instance / "jobs").toutes() == []
 
 
+@pytest.mark.parametrize(
+    "repo, branche, identite, motif",
+    [
+        ("../o/r", BRANCHE, IDENTITE, "repo invalide"),
+        (SLUG, "--upload-pack=x", IDENTITE, "branche invalide"),
+        (SLUG, "v1/../main", IDENTITE, "branche invalide"),
+        (SLUG, BRANCHE, Identite("--global", IDENTITE.email), "identité git invalide"),
+        (SLUG, BRANCHE, Identite("octocat", "-e"), "identité git invalide"),
+    ],
+)
+def test_arguments_de_git_refuses_s_ils_ressemblent_a_une_option(runner, instance, faux_bin, repo, branche, identite, motif):
+    """Rien de la requête n’arrive à `git` sous forme d’option, ni hors de `clones/`."""
+    from wap_runtime.runner import RunnerErreur
+
+    with pytest.raises(RunnerErreur, match=motif):
+        runner.lancer(repo, 30, "claude", branche, identite)
+
+    assert appels(faux_bin) == []
+    assert Sessions(instance / "jobs").toutes() == []
+
+
 @pytest.mark.parametrize("agent, programme", [("claude", "claude"), ("cursor", "agent")])
 def test_commande_lancee_selon_l_agent_dans_le_clone_et_dans_tmux(
     runner, instance, faux_bin, agent, programme

@@ -12,7 +12,7 @@ import type {
   SessionsDuRepo,
   Version,
 } from "./api";
-import { ErreurApi, lancerSession } from "./api";
+import { ErreurApi, ID_SESSION, lancerSession } from "./api";
 import { BadgeHumain, BandeauAuth, LIBELLES_ETAT_SESSION, LibelleEtape, dateHeure, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
 import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
@@ -97,7 +97,10 @@ function Contenu({ detail }: { detail: Detail }) {
     setRefus(null);
     setSale(null);
     lancerSession(detail.slug, ticket, agent, choix).then(
-      (session) => window.location.assign(session.url),
+      (session) => {
+        // Page bâtie ici, pas l’URL de la réponse : on ne quitte pas le cockpit.
+        if (ID_SESSION.test(session.id)) window.location.assign(`/sessions/${session.id}`);
+      },
       (erreur: Error) => {
         if (erreur instanceof ErreurApi && erreur.clone) {
           setSale({ ticket, clone: erreur.clone });

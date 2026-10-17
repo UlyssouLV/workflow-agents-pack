@@ -3,8 +3,8 @@
 Le runner les crée et les clôt ; le `runtime` les lit (l’instance lui est montée en lecture
 seule). Rien n’est supprimé automatiquement.
 
-`python -m wap_runtime.sessions <jobs> <id> <commande…>` : lancé dans la session tmux, exécute
-l’agent en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription puis clôt la
+`python -m wap_runtime.sessions <jobs> <id>` : lancé dans la session tmux, exécute l’agent de
+la session sur son ticket en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription puis clôt la
 session selon son code de sortie.
 """
 
@@ -17,13 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from wap_runtime.agents import agent_par_id, commande_agent
 from wap_runtime.enregistrement import CAST, TRANSCRIPTION, copier_transcription, enregistrer
 from wap_runtime.fichiers import remplacer
 
 OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
-_ID = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
 
 
 class Sessions:
@@ -52,7 +53,7 @@ class Sessions:
 
     def lire(self, id_: str) -> dict | None:
         """`None` si `id_` n’est pas un identifiant de session ou n’existe pas."""
-        if not _ID.fullmatch(id_):
+        if not ID_SESSION.fullmatch(id_):
             return None
         try:
             return json.loads((self.jobs / id_ / "session.json").read_text())
@@ -104,11 +105,18 @@ class Sessions:
         remplacer(self.jobs / session["id"] / "session.json", contenu, 0o644)
 
 
-def executer(jobs: Path, id_: str, commande: list[str]) -> int:
+def executer(jobs: Path, id_: str) -> int:
     """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
-    une fois le terminal enregistré, la transcription copiée et la session close."""
+    une fois le terminal enregistré, la transcription copiée et la session close.
+
+    La commande se déduit de la session (agent connu, ticket) : rien de la ligne de commande
+    n’arrive aux arguments de l’agent."""
+    if not ID_SESSION.fullmatch(id_):
+        raise SystemExit(f"session invalide : {id_}")
     session = Sessions(jobs).lire(id_)
-    code = enregistrer(commande, jobs / id_ / CAST)
+    if session is None or (agent := agent_par_id(session["agent"])) is None:
+        raise SystemExit(f"session {id_} inconnue")
+    code = enregistrer(commande_agent(agent, int(session["ticket"])), jobs / id_ / CAST)
     depuis = datetime.fromisoformat(session["debut"]).timestamp()
     copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
     Sessions(jobs).clore(id_, code)
@@ -116,4 +124,4 @@ def executer(jobs: Path, id_: str, commande: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(executer(Path(sys.argv[1]), sys.argv[2], sys.argv[3:]))
+    sys.exit(executer(Path(sys.argv[1]), sys.argv[2]))

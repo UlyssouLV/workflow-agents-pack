@@ -37,6 +37,26 @@ def creer(sessions, repo="o/r", ticket=30):
     return sessions.creer(repo, ticket, "claude", 'claude "/implement #30"')
 
 
+@pytest.fixture
+def faux_claude(tmp_path, monkeypatch):
+    """`faux_claude(code)` : un `claude` dans le `PATH` qui exécute ce code Python ; l’exécuteur
+    le lance avec les arguments de la session."""
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    monkeypatch.setenv("PATH", f"{bin_}{os.pathsep}{os.environ['PATH']}")
+
+    def ecrire(code: str) -> None:
+        chemin = bin_ / "claude"
+        chemin.write_text(f"#!{sys.executable}\n{code}\n")
+        chemin.chmod(0o755)
+
+    return ecrire
+
+
+def executeur(tmp_path, session) -> list[str]:
+    return [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"]]
+
+
 def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
     session = creer(sessions)
 
@@ -97,12 +117,12 @@ def test_jobs_absent_aucune_session(tmp_path, horloge):
 
 
 @pytest.mark.parametrize("code, etat", [(0, "terminée"), (2, "échouée")])
-def test_l_executeur_lance_la_commande_puis_clot_la_session(sessions, tmp_path, code, etat):
+def test_l_executeur_lance_la_commande_puis_clot_la_session(sessions, tmp_path, faux_claude, code, etat):
     session = creer(sessions)
+    faux_claude(f"import sys; sys.exit({code})")
 
     sortie = subprocess.run(
-        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
-         sys.executable, "-c", f"import sys; sys.exit({code})"],
+        executeur(tmp_path, session),
         stdin=subprocess.DEVNULL,
     ).returncode
 
@@ -110,6 +130,27 @@ def test_l_executeur_lance_la_commande_puis_clot_la_session(sessions, tmp_path, 
     close = sessions.lire(session["id"])
     assert (close["etat"], close["code_sortie"]) == (etat, code)
     assert close["fin"] is not None
+
+
+def test_l_executeur_lance_l_agent_de_la_session_sur_son_ticket(sessions, tmp_path, faux_claude):
+    """La commande se déduit de `session.json` : l’exécuteur ne prend pas d’arguments d’agent."""
+    session = sessions.creer("o/r", 42, "claude", 'claude "/implement #42"')
+    recu = tmp_path / "recu"
+    faux_claude(f"import json, pathlib, sys; pathlib.Path({str(recu)!r}).write_text(json.dumps(sys.argv[1:]))")
+
+    subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
+
+    assert json.loads(recu.read_text()) == ["/implement #42"]
+
+
+@pytest.mark.parametrize("id_", ["../x", "20261017-090000-zzzzzz"])
+def test_l_executeur_refuse_une_session_invalide_ou_inconnue(tmp_path, id_):
+    sortie = subprocess.run(
+        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), id_],
+        stdin=subprocess.DEVNULL, capture_output=True,
+    )
+
+    assert sortie.returncode != 0
 
 
 def test_une_session_close_garde_son_etat_final(sessions, horloge):
@@ -121,35 +162,33 @@ def test_une_session_close_garde_son_etat_final(sessions, horloge):
     assert sessions.lire(session["id"]) == close
 
 
-def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path):
+def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path, faux_claude):
     """**Terminer** : la session tmux se ferme, l’exécuteur et l’agent reçoivent SIGHUP."""
     session = creer(sessions)
     pret = tmp_path / "pret"
-    agent = f"import pathlib, time; pathlib.Path({str(pret)!r}).touch(); time.sleep(30)"
-    executeur = subprocess.Popen(
-        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
-         sys.executable, "-c", agent],
+    faux_claude(f"import pathlib, time; pathlib.Path({str(pret)!r}).touch(); time.sleep(30)")
+    processus = subprocess.Popen(
+        executeur(tmp_path, session),
         start_new_session=True,
         stdin=subprocess.DEVNULL,
     )
     while not pret.exists():
         time.sleep(0.02)
 
-    os.killpg(executeur.pid, signal.SIGHUP)
+    os.killpg(processus.pid, signal.SIGHUP)
 
-    assert executeur.wait(timeout=10) == 129
+    assert processus.wait(timeout=10) == 129
     close = sessions.lire(session["id"])
     assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
 
 
-def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path):
+def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path, faux_claude):
     """L’agent écrit dans un vrai terminal ; ce qu’il affiche va aussi dans `terminal.cast`."""
     session = creer(sessions)
-    agent = "import os, sys; print('tty' if os.isatty(1) else 'pas de tty'); print('fini é')"
+    faux_claude("import os, sys; print('tty' if os.isatty(1) else 'pas de tty'); print('fini é')")
 
     sortie = subprocess.run(
-        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
-         sys.executable, "-c", agent],
+        executeur(tmp_path, session),
         stdin=subprocess.DEVNULL, capture_output=True,
     )
 
@@ -163,18 +202,17 @@ def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path):
     assert "tty\r\nfini é" in ecran
 
 
-def test_l_executeur_copie_la_transcription_avant_de_clore(tmp_path):
+def test_l_executeur_copie_la_transcription_avant_de_clore(tmp_path, faux_claude):
     # Horloge réelle : seuls les fichiers écrits depuis le début de la session sont copiés.
     session = creer(Sessions(tmp_path / "jobs"))
     home = tmp_path / "home"
-    agent = (
+    faux_claude(
         "import pathlib; p = pathlib.Path.home() / '.claude/projects/-c/s.jsonl';"
         "p.parent.mkdir(parents=True); p.write_text('{}')"
     )
 
     subprocess.run(
-        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
-         sys.executable, "-c", agent],
+        executeur(tmp_path, session),
         stdin=subprocess.DEVNULL, env={**os.environ, "HOME": str(home)}, check=True,
     )
 

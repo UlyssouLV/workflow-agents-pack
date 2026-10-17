@@ -183,6 +183,22 @@ describe("vue détail", () => {
       expect(init?.headers).toMatchObject({ "Content-Type": "application/json" });
     });
 
+    it("ne quitte pas le cockpit sur l’URL rendue par le serveur", async () => {
+      const assign = vi.fn();
+      vi.stubGlobal("location", { ...window.location, assign });
+      const rendue = session({ id: "//ailleurs.example", url: "https://ailleurs.example/" });
+      rendre({
+        "/api/repos/o/r": detail(),
+        "POST /api/sessions": () => new Response(JSON.stringify(rendue), { status: 201 }),
+      });
+      const [, eligible] = await boutons();
+
+      fireEvent.click(eligible);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(assign).not.toHaveBeenCalled();
+    });
+
     it("un refus 409 montre le lien vers la session ouverte", async () => {
       rendre({
         "/api/repos/o/r": detail(),
