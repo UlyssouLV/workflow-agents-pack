@@ -15,25 +15,26 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 
 ## Prochaine : 0.4.1 — Correctifs du runner distant (tests humains 0.4.0)
 
-Objectif. Une session lancée depuis le cockpit suit le workflow du pack et l’instance s’installe et se connecte avec les commandes affichées : corriger les bugs relevés par les tests humains de la 0.4.0 ([#34](https://github.com/UlyssouLV/workflow-agents-pack/issues/34)).
+Objectif. Une session lancée depuis le cockpit suit le workflow du pack, y compris l’enchaînement d’un ticket au suivant dans une nouvelle session, et l’instance s’installe et se connecte avec les commandes affichées : corriger les bugs relevés par les tests humains de la 0.4.0 ([#34](https://github.com/UlyssouLV/workflow-agents-pack/issues/34)).
 
 - **Bug — les agents du runner n’ont pas les skills du pack ([#40](https://github.com/UlyssouLV/workflow-agents-pack/issues/40))** : le clone géré expose les skills du pack à l’agent choisi, à la version du repo, sans modifier de fichier suivi.
 - **Bug — auth claude ne trouve pas la CLI claude ([#41](https://github.com/UlyssouLV/workflow-agents-pack/issues/41))** : `auth claude` trouve la CLI installée par `setup`, quel que soit le PATH de l’appelant.
 - **Bug — branche de build figée en dur, version non testable avant fusion ([#42](https://github.com/UlyssouLV/workflow-agents-pack/issues/42))** : paquet et images s’installent depuis un ref choisi (par défaut la base d’intégration).
 - **Bug — commande sudo wap-runtime introuvable ([#43](https://github.com/UlyssouLV/workflow-agents-pack/issues/43))** : les commandes affichées par le cockpit et `setup` se lancent telles quelles sur l’hôte.
 - **Bug — un onglet qui quitte la session garde la main sur le terminal ([#44](https://github.com/UlyssouLV/workflow-agents-pack/issues/44))** : quitter la page de session libère la main ; un onglet en lecture seule peut la prendre.
+- **Enchaînement** : quand `encadrer-implement` enchaîne `/implement #m`, la session ouvre la suivante sur le serveur (même repo, même agent, contexte vierge) au lieu d’échouer ; la partie pack (`enchainer-implement.sh`) est un bug sur `main`.
 
-Hors périmètre : catalogue d’actions (0.4.2), assistant de premier lancement de Claude Code, contenu des skills du pack.
+Hors périmètre : session libre et retrait du bouton par ticket (0.4.2), assistant de premier lancement de Claude Code, contenu des skills du pack (la partie `enchainer-implement.sh` est un bug sur `main`).
 
-## Ensuite : 0.4.2 — Catalogue d’actions et réponse attendue
+## Ensuite : 0.4.2 — Session libre et réponse attendue
 
-Objectif. Lancer depuis le cockpit tout le cycle du pack selon l’étape de la version (Ouvre la version, `/th`, `/code-review`, Finalise, `/cqg`, session libre), et voir quand une session du serveur travaille ou attend une réponse (ex. « réponse attendue — Ouvre la version / grilling »), pour lancer une autre session pendant qu’une attend.
+Objectif. Depuis un repo du cockpit, ouvrir une nouvelle session (agent choisi, l’humain tape ce qu’il veut : `/implement #n`, « Ouvre la version », `/th`…) à la place du bouton `/implement #n` par ticket, retrouver la liste des sessions passées, et voir quand une session travaille ou attend une réponse (ex. « réponse attendue — grilling »), pour en lancer une autre pendant qu’une attend.
 
-Hors périmètre : enchaînement automatique, parallélisme de plusieurs sessions qui travaillent.
+Hors périmètre : catalogue de boutons par étape, parallélisme de plusieurs sessions qui travaillent.
 
 ## Ensuite : 0.5.0 — Autopilot borné
 
-Objectif. Enchaîner les enfants `ready-for-agent` tant que rien ne bloque ; s’arrêter net sur besoin humain ou erreur.
+Objectif. Démarrer et surveiller sans humain la chaîne des enfants `ready-for-agent` tant que rien ne bloque (la 0.4.1 enchaîne déjà depuis la session) ; s’arrêter net sur besoin humain ou erreur.
 
 Hors périmètre : SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
 
