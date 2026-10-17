@@ -32,6 +32,7 @@ from wap_runtime.runner import (
     Identite,
     RunnerErreur,
     SessionOuverte,
+    SessionQuiTravaille,
     email_noreply,
 )
 from wap_runtime.sessions import OUVERTE, Sessions, publique
@@ -189,6 +190,8 @@ def creer_app(
             raise HTTPException(422, "agent non connecté")
         if (ouverte := sessions.ouverte(demande.repo)) is not None:
             return _deja_ouverte(ouverte)
+        if (autre := sessions.qui_travaille(sauf=demande.repo)) is not None:
+            return _session_qui_travaille(autre)
         detail = _detail(demande.repo)
         if detail["erreur"]:
             raise HTTPException(502, detail["erreur"])
@@ -204,6 +207,8 @@ def creer_app(
             raise HTTPException(502, str(erreur)) from erreur
         except SessionOuverte as refus:
             return _deja_ouverte(refus.session)
+        except SessionQuiTravaille as refus:
+            return _session_qui_travaille(refus.session)
         except CloneSale as refus:
             return JSONResponse(refus.corps(), status_code=409)
         except RunnerErreur as erreur:
@@ -251,6 +256,17 @@ def _deja_ouverte(session: dict) -> JSONResponse:
     lien = _lien(session)
     return JSONResponse(
         {"detail": f"une session est déjà ouverte : {lien['url']}", "session": lien}, status_code=409
+    )
+
+
+def _session_qui_travaille(session: dict) -> JSONResponse:
+    lien = _lien(session)
+    return JSONResponse(
+        {
+            "detail": f"une session travaille sur {lien['repo']} : {lien['url']}",
+            "session": lien,
+        },
+        status_code=409,
     )
 
 

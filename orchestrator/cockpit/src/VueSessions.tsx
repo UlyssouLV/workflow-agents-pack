@@ -1,7 +1,6 @@
 import type { Agent, SessionsDuRepo } from "./api";
-import { Entete, LIBELLES_ETAT_SESSION } from "./commun";
-import { useRafraichi } from "./rafraichi";
-import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
+import { Entete, LIBELLES_ETAT_SESSION, libelleActivite } from "./commun";
+import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 /** `/sessions` : toutes les sessions de l’instance, plus récentes d’abord. */
 export function VueSessions() {
@@ -26,6 +25,7 @@ export function VueSessions() {
                 <th>Branche</th>
                 <th>Titre</th>
                 <th>État</th>
+                <th>Activité</th>
               </tr>
             </thead>
             <tbody>
@@ -38,6 +38,7 @@ export function VueSessions() {
                     <a href={s.url}>{s.titre}</a>
                   </td>
                   <td>{LIBELLES_ETAT_SESSION[s.etat]}</td>
+                  <td>{s.etat === "ouverte" ? libelleActivite(s) : "—"}</td>
                 </tr>
               ))}
             </tbody>

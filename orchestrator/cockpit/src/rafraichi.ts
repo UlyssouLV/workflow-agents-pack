@@ -3,6 +3,8 @@ import { lire } from "./api";
 
 /** Même cadence que le cache de la liste côté runtime (`CACHE_SECONDES`). */
 export const RAFRAICHISSEMENT_MS = 60_000;
+/** L’état d’une session ouverte change sans GitHub : relu plus souvent que les repos. */
+export const RAFRAICHISSEMENT_SESSION_MS = 5_000;
 
 export interface Lecture<T> {
   donnees: T | null;

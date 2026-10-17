@@ -142,6 +142,39 @@ def test_deuxieme_session_409_avec_le_lien_de_la_session_ouverte(api, runner):
     assert len(runner.demandes) == 1
 
 
+def test_lancement_409_si_un_autre_repo_travaille(api, github, tmp_path, jobs, runner):
+    github.repo("o/autre")
+    ajouter(tmp_path / "repos.toml", "o/autre", None)
+    autre = lancer(api, repo="o/autre", branche="main").json()
+    Sessions(jobs).enregistrer_etat(autre["id"], "travaille")
+
+    reponse = lancer(api)
+
+    assert reponse.status_code == 409
+    assert len(runner.demandes) == 1
+    assert reponse.json()["session"] == {
+        "id": autre["id"],
+        "url": autre["url"],
+        "repo": "o/autre",
+        "activite": "travaille",
+    }
+    assert "une session travaille sur o/autre" in reponse.json()["detail"]
+
+
+@pytest.mark.parametrize("activite", ["attend", "inconnue"])
+def test_lancement_accepte_si_un_autre_repo_attend_ou_inconnue(api, github, tmp_path, jobs, activite):
+    github.repo("o/autre")
+    ajouter(tmp_path / "repos.toml", "o/autre", None)
+    autre = lancer(api, repo="o/autre", branche="main").json()
+    if activite != "inconnue":
+        Sessions(jobs).enregistrer_etat(autre["id"], activite)
+
+    reponse = lancer(api)
+
+    assert reponse.status_code == 201
+    assert reponse.json()["repo"] == SLUG
+
+
 def test_lancement_sur_un_autre_repo_accepte(api, github, tmp_path, runner):
     github.repo("o/autre")
     ajouter(tmp_path / "repos.toml", "o/autre", None)

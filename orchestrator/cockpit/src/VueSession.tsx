@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
 import { Entete, LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
-import { useRafraichi } from "./rafraichi";
+import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
 
-/** L’état d’une session ouverte change sans GitHub : relu plus souvent que les repos. */
-export const RAFRAICHISSEMENT_SESSION_MS = 5_000;
+export { RAFRAICHISSEMENT_SESSION_MS } from "./rafraichi";
 
 /** Clé du `sessionStorage` de l’onglet : la page qui bascule vers la suivante y laisse d’où elle
  * vient et si elle avait la main ; la page de la suivante la lit au chargement. */

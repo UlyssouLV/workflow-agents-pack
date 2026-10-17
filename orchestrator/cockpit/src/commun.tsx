@@ -1,5 +1,9 @@
-import type { ActiviteSession, Agent, Auth, Etape, EtatSession, LienSession, Repo, Session } from "./api";
+import { useEffect } from "react";
+import type { ActiviteSession, Agent, Auth, Etape, EtatSession, LienSession, Repo, Session, SessionsDuRepo } from "./api";
 import { ID_SESSION } from "./api";
+import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
+
+const TITRE_ONGLET = "Cockpit wap-runtime";
 
 const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
   sans_token: "GitHub non connecté",
@@ -7,14 +11,23 @@ const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
   injoignable: "GitHub injoignable",
 };
 
-/** En-tête du cockpit : liste des repos et page Sessions. */
+/** En-tête du cockpit : liste des repos, page Sessions, compteur de réponses attendues. */
 export function Entete() {
+  const { donnees } = useRafraichi<SessionsDuRepo>("/api/sessions", RAFRAICHISSEMENT_SESSION_MS);
+  const n = (donnees?.sessions ?? []).filter((s) => s.etat === "ouverte" && s.activite === "attend").length;
+  useEffect(() => {
+    document.title = n > 0 ? `(${n}) ${TITRE_ONGLET}` : TITRE_ONGLET;
+  }, [n]);
   return (
     <header>
       <nav>
         <a href="/">Cockpit</a>
         {" · "}
         <a href="/sessions">Sessions</a>
+        {" · "}
+        <a href="/sessions">
+          {n} réponse(s) attendue(s)
+        </a>
       </nav>
     </header>
   );

@@ -8,6 +8,7 @@ import type {
   Detail,
   EtatCi,
   LienSession,
+  Session,
   SessionsDuRepo,
   Version,
 } from "./api";
@@ -24,8 +25,7 @@ import {
   heure,
   nomAffiche,
 } from "./commun";
-import { useRafraichi } from "./rafraichi";
-import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
+import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 const LIBELLES_CI: Record<EtatCi, string> = {
   echec: "en échec",
@@ -39,13 +39,14 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
   const chemin = `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
   const { donnees, erreur } = useRafraichi<Detail>(chemin);
   const auth = useRafraichi<Auth>("/api/auth");
+  const toutes = useRafraichi<SessionsDuRepo>("/api/sessions", RAFRAICHISSEMENT_SESSION_MS);
 
   return (
     <main>
       <Entete />
       {auth.donnees && <BandeauAuth auth={auth.donnees} />}
       {erreur && <p className="erreur">{erreur}</p>}
-      {donnees && <Contenu detail={donnees} />}
+      {donnees && <Contenu detail={donnees} sessions={toutes.donnees?.sessions ?? []} />}
       <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
     </main>
   );
@@ -97,7 +98,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
   );
 }
 
-function Contenu({ detail }: { detail: Detail }) {
+function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) {
   const [agent, setAgent] = useState<Agent["id"]>(
     () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
   );
@@ -107,11 +108,19 @@ function Contenu({ detail }: { detail: Detail }) {
   const [sale, setSale] = useState<CloneSale | null>(null);
 
   const choisi = detail.agents.find((a) => a.id === agent);
+  const travaille = sessions.find(
+    (s) =>
+      s.etat === "ouverte" &&
+      s.activite === "travaille" &&
+      s.repo.toLowerCase() !== detail.slug.toLowerCase(),
+  );
   const raison = !choisi?.connecte
     ? "agent non connecté"
     : detail.session
       ? "session déjà ouverte sur ce repo"
-      : null;
+      : travaille
+        ? `une session travaille sur ${travaille.repo}`
+        : null;
 
   const lancer = (choix?: ChoixClone) => {
     setRefus(null);
@@ -181,6 +190,12 @@ function Contenu({ detail }: { detail: Detail }) {
                   <>
                     {" "}
                     — <a href={detail.session.url}>voir la session ouverte</a>
+                  </>
+                )}
+                {travaille && raison?.startsWith("une session travaille") && (
+                  <>
+                    {" "}
+                    — <a href={travaille.url}>voir la session ouverte</a>
                   </>
                 )}
               </span>

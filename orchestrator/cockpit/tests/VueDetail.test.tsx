@@ -174,10 +174,36 @@ describe("vue détail", () => {
     });
 
     it("bouton non grisé si la session ouverte est sur un autre repo", async () => {
-      rendre({ "/api/repos/o/r": detail({ session: null }) });
+      rendre({
+        "/api/repos/o/r": detail({ session: null }),
+        "/api/sessions": {
+          sessions: [session({ repo: "o/autre", activite: "attend", skill: "grilling" })],
+        },
+      });
 
       const bouton = await boutonNouvelle();
       expect(bouton).toBeEnabled();
+    });
+
+    it("bouton grisé si une session d’un autre repo travaille", async () => {
+      const autre = session({
+        id: "20261017-100000-bbbbbb",
+        url: "/sessions/20261017-100000-bbbbbb",
+        repo: "o/autre",
+        activite: "travaille",
+      });
+      rendre({
+        "/api/repos/o/r": detail({ session: null }),
+        "/api/sessions": { sessions: [autre] },
+      });
+
+      const bouton = await boutonNouvelle();
+      expect(bouton).toBeDisabled();
+      expect(bouton).toHaveAttribute("title", "une session travaille sur o/autre");
+      expect(screen.getByRole("link", { name: /session ouverte/i })).toHaveAttribute(
+        "href",
+        "/sessions/20261017-100000-bbbbbb",
+      );
     });
 
     it("le clic lance la session avec l’agent et la branche puis ouvre sa page", async () => {

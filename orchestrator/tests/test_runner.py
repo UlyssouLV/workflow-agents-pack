@@ -249,6 +249,33 @@ def test_session_sur_un_autre_repo_acceptee(runner, instance):
     assert lancee["etat"] == "terminée"
 
 
+def test_session_d_un_autre_repo_qui_travaille_refusee(runner, instance):
+    from wap_runtime.runner import SessionQuiTravaille
+
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+
+    with pytest.raises(SessionQuiTravaille) as refus:
+        lancer(runner)
+
+    assert refus.value.session["id"] == autre["id"]
+    assert Sessions(instance / "jobs").ouverte(SLUG) is None
+
+
+@pytest.mark.parametrize("activite", ["attend", "inconnue"])
+def test_session_d_un_autre_repo_attend_ou_inconnue_acceptee(runner, instance, activite):
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    if activite != "inconnue":
+        jobs.enregistrer_etat(autre["id"], activite)
+
+    lancee = lancer(runner)
+
+    assert lancee["repo"] == SLUG
+    assert lancee["etat"] == "terminée"
+
+
 def test_api_interne_lance_une_session(runner, instance):
     client = TestClient(creer_app_runner(runner))
 
@@ -294,6 +321,24 @@ def test_api_interne_accepte_un_autre_repo(runner, instance):
 
     assert reponse.status_code == 201
     assert reponse.json()["repo"] == SLUG
+
+
+def test_api_interne_409_quand_un_autre_repo_travaille(runner, instance):
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+    client = TestClient(creer_app_runner(runner))
+
+    reponse = client.post(
+        "/sessions",
+        json={"repo": SLUG, "ticket": 30, "agent": "claude", "branche": BRANCHE,
+              "login": IDENTITE.login, "email": IDENTITE.email},
+    )
+
+    assert reponse.status_code == 409
+    assert reponse.json()["session"]["id"] == autre["id"]
+    assert reponse.json()["travaille"] is True
+    assert Sessions(instance / "jobs").ouverte(SLUG) is None
 
 
 def test_api_interne_422_avec_le_message_du_runner(runner):
@@ -592,6 +637,18 @@ def test_branche_hors_liste_refusee_sans_session(chaine, instance):
         chaine.runner.lancer(SLUG, None, "claude", "travail-en-cours", IDENTITE)
 
     assert Sessions(instance / "jobs").toutes() == []
+
+
+def test_enchaînement_accepte_si_un_autre_repo_travaille(chaine, instance, github):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+
+    suivante = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    assert suivante["ticket"] == 31
+    assert jobs.lire(autre["id"])["etat"] == "ouverte"
 
 
 def test_enchaînement_depuis_une_session_libre_sur_la_branche_de_pr(chaine, github):

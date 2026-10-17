@@ -72,6 +72,14 @@ class SessionOuverte(Exception):
         self.session = session
 
 
+class SessionQuiTravaille(Exception):
+    """Lancement refusé : une session d’un autre repo a l’activité *travaille*."""
+
+    def __init__(self, session: dict):
+        super().__init__(f"une session travaille sur {session['repo']}")
+        self.session = session
+
+
 @dataclass(frozen=True)
 class Identite:
     """Identité git des commits : le compte de `GH_TOKEN` et son adresse noreply."""
@@ -161,7 +169,8 @@ class Runner:
         identite: Identite,
         choix: Choix | None = None,
     ) -> dict:
-        """Lève `SessionOuverte` s’il y en a déjà une sur `repo`, `CloneSale` si le clone a des changements
+        """Lève `SessionOuverte` s’il y en a déjà une sur `repo`, `SessionQuiTravaille` si une
+        session d’un autre repo a l’activité *travaille*, `CloneSale` si le clone a des changements
         non commités et que `choix` ne dit pas quoi en faire, `RunnerErreur` si le clone ne se
         prépare pas ou si `branche` n’est pas proposée (base d’intégration ou PR de version).
 
@@ -183,6 +192,8 @@ class Runner:
         with self._verrou:
             if (ouverte := self._sessions.ouverte(repo)) is not None:
                 raise SessionOuverte(ouverte)
+            if (autre := self._sessions.qui_travaille(sauf=repo)) is not None:
+                raise SessionQuiTravaille(autre)
             self._verifier_branche(repo, branche)
             dossier = self.recuperer_clone(repo, branche)
             fichiers = changements(dossier)
@@ -499,6 +510,8 @@ class ClientRunner:
             if "clone" in corps:
                 clone = corps["clone"]
                 raise CloneSale(clone["fichiers"], clone["diff"], clone["branche"])
+            if corps.get("travaille"):
+                raise SessionQuiTravaille(corps["session"])
             raise SessionOuverte(corps["session"])
         if not reponse.is_success:
             try:
@@ -574,6 +587,10 @@ def creer_app_runner(runner: Runner):
             )
         except SessionOuverte as refus:
             return JSONResponse({"detail": str(refus), "session": refus.session}, status_code=409)
+        except SessionQuiTravaille as refus:
+            return JSONResponse(
+                {"detail": str(refus), "session": refus.session, "travaille": True}, status_code=409
+            )
         except CloneSale as refus:
             return JSONResponse(refus.corps(), status_code=409)
         except RunnerErreur as erreur:

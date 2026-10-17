@@ -138,6 +138,20 @@ def test_enregistrer_etat_refuse_une_session_close(sessions):
         sessions.enregistrer_etat(session["id"], "travaille")
 
 
+def test_qui_travaille_ignore_le_repo_sauf_et_les_sessions_closes(sessions):
+    ici = creer(sessions)
+    sessions.enregistrer_etat(ici["id"], "travaille")
+    autre = creer(sessions, repo="o/autre")
+    sessions.enregistrer_etat(autre["id"], "travaille")
+    close = creer(sessions, repo="o/close")
+    sessions.enregistrer_etat(close["id"], "travaille")
+    sessions.clore(close["id"], 0)
+
+    assert sessions.qui_travaille(sauf="o/r")["id"] == autre["id"]
+    assert sessions.qui_travaille(sauf="o/autre")["id"] == ici["id"]
+    assert sessions.qui_travaille()["id"] in {ici["id"], autre["id"]}
+
+
 def test_ouverte_rend_la_session_ouverte_du_repo(sessions):
     assert sessions.ouverte("o/r") is None
     session = creer(sessions)

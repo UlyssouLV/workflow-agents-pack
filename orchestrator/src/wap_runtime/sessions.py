@@ -118,6 +118,19 @@ class Sessions:
             None,
         )
 
+    def qui_travaille(self, sauf: str | None = None) -> dict | None:
+        """Session ouverte d’activité *travaille*, hors `sauf` (lancement sur un autre repo)."""
+        return next(
+            (
+                s
+                for s in self.toutes()
+                if s["etat"] == OUVERTE
+                and s.get("activite") == TRAVAILLE
+                and (sauf is None or s["repo"].lower() != sauf.lower())
+            ),
+            None,
+        )
+
     def clore(self, id_: str, code: int) -> dict:
         """Une session déjà close garde son état final."""
         if (lue := self.lire(id_))["etat"] != OUVERTE:

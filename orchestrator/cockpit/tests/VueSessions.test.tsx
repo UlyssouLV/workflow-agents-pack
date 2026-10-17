@@ -17,6 +17,8 @@ describe("page Sessions", () => {
             branche: "feat",
             titre: "Ouvre la version",
             etat: "ouverte",
+            activite: "attend",
+            skill: "grilling",
           }),
           session({ etat: "terminée", fin: "2026-10-17T09:10:00+00:00", titre: "Claude Code" }),
         ],
@@ -35,6 +37,7 @@ describe("page Sessions", () => {
     expect(lignes[0]).toHaveTextContent("Cursor");
     expect(lignes[0]).toHaveTextContent("feat");
     expect(lignes[0]).toHaveTextContent("Ouverte");
+    expect(lignes[0]).toHaveTextContent("Réponse attendue — grilling");
     expect(within(lignes[1]).getByRole("link", { name: "Claude Code" })).toHaveAttribute(
       "href",
       "/sessions/20261017-090000-abcdef",
