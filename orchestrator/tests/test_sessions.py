@@ -72,6 +72,8 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "fin": None,
         "etat": "ouverte",
         "code_sortie": None,
+        "precedente": None,
+        "suivante": None,
     }
 
 

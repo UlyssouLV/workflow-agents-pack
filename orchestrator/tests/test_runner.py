@@ -9,6 +9,8 @@ import json
 import os
 import stat
 import subprocess
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -62,6 +64,7 @@ def faux_bin(tmp_path, monkeypatch):
             f' >> {log}\n'
             # Affiché dans son terminal, et sa transcription native sous `HOME`.
             f'echo "{agent} prêt : $*"\n'
+            f'echo "$WAP_ENCHAINER|$WAP_SESSION|$WAP_SESSION_JETON" >> {tmp_path / "env.log"}\n'
             f'mkdir -p "$HOME/{TRANSCRIPTIONS[agent]}"\n'
             f'echo \'{{"agent": "{agent}"}}\' > "$HOME/{TRANSCRIPTIONS[agent]}/t.jsonl"\n'
             'exit "${FAUX_CODE:-0}"\n',
@@ -464,3 +467,295 @@ def test_reprendre_dispatch_sans_compter_les_changements_deja_la(runner, instanc
     assert session["etat"] == "terminée"
     assert len(dispatchs(faux_dispatch)) == 2
     assert (clone / "README.md").read_text() == "en cours\n"
+
+
+def test_l_agent_recoit_l_enchaineur_et_un_jeton_propre_a_la_session(runner, tmp_path):
+    premiere, seconde = lancer(runner), lancer(runner, ticket=31)
+
+    lignes = [l.split("|") for l in (tmp_path / "env.log").read_text().splitlines()]
+    assert [(e, s) for e, s, _ in lignes] == [
+        ("wap-runtime enchainer", premiere["id"]), ("wap-runtime enchainer", seconde["id"])
+    ]
+    jetons = [j for _, _, j in lignes]
+    assert all(len(j) >= 32 for j in jetons) and jetons[0] != jetons[1]
+    # Le jeton n’est ni dans `session.json` ni rendu par l’API.
+    assert jetons[0] not in json.dumps(premiere)
+
+
+@pytest.fixture
+def faux_gh():
+    """`o/r` : version 17, PR 24 sur `BRANCHE` ; 31 éligible, 32 bloqué, 33 sans `ready-for-agent`.
+    `o/autre` : version 5, PR 6 sur `BRANCHE`, enfant 40 éligible. `o/r` : version 18, PR 25 sur
+    une autre branche, enfant 50 éligible."""
+    from faux_github import FauxGitHub
+
+    github = FauxGitHub()
+    repo = github.repo(SLUG)
+    repo.version(
+        17,
+        [(30, "closed", []), (31, "open", ["ready-for-agent"]), (32, "open", ["ready-for-agent"]),
+         (33, "open", [])],
+        bloques=(32,),
+    )
+    repo.pr(24, "Fixes #17", "sha24", branche=BRANCHE)
+    repo.version(18, [(50, "open", ["ready-for-agent"])])
+    repo.pr(25, "Fixes #18", "sha25", branche="v0.5.0")
+    autre = github.repo("o/autre")
+    autre.version(5, [(40, "open", ["ready-for-agent"])])
+    autre.pr(6, "Fixes #5", "sha6", branche=BRANCHE)
+    return github
+
+
+@dataclass
+class Chaine:
+    runner: Runner
+    # `(commande, dossier)` de chaque session lancée : tmux ne lance rien, la session reste ouverte.
+    lances: list
+    arretes: list
+
+    def jeton(self, index=-1) -> str:
+        return next(a.split("=", 1)[1] for a in self.lances[index][0] if a.startswith("WAP_SESSION_JETON="))
+
+
+@pytest.fixture
+def chaine(instance, tmp_path, faux_bin, github, faux_gh):
+    from faux_github import JETON
+    from wap_runtime.github import ClientGitHub
+
+    lances, arretes = [], []
+    runner = Runner(
+        instance / "clones",
+        instance / "jobs",
+        lanceur=lambda nom, commande, dossier: lances.append((commande, dossier)),
+        depot=str(tmp_path / "github" / "{slug}.git"),
+        arreteur=arretes.append,
+        github=ClientGitHub(JETON, transport=faux_gh.transport()),
+    )
+    return Chaine(runner, lances, arretes)
+
+
+def test_suivante_acceptee_enchaine_sur_le_meme_agent_et_la_meme_branche(chaine, instance, github):
+    courante = chaine.runner.lancer(SLUG, 30, "cursor", BRANCHE, IDENTITE)
+    git("commit", "--quiet", "--allow-empty", "-m", "poussé par l’agent", cwd=github)
+    git("push", "--quiet", "origin", BRANCHE, cwd=github)
+
+    ouvrir = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())
+    # Accepté, rien n’a encore bougé : l’agent reçoit la réponse avant.
+    assert chaine.runner.session(courante["id"])["etat"] == "ouverte"
+    assert chaine.arretes == []
+    suivante = ouvrir()
+
+    enchainee = chaine.runner.session(courante["id"])
+    assert (enchainee["etat"], enchainee["suivante"], enchainee["precedente"]) == ("enchaînée", suivante["id"], None)
+    assert enchainee["fin"] is not None
+    assert chaine.arretes == [f"wap-{courante['id']}"]
+    assert suivante["etat"] == "ouverte"
+    assert (suivante["repo"], suivante["ticket"], suivante["agent"]) == (SLUG, 31, "cursor")
+    assert suivante["commande"] == 'agent "/implement #31"'
+    assert (suivante["precedente"], suivante["suivante"]) == (courante["id"], None)
+    sur_disque = json.loads((instance / "jobs" / suivante["id"] / "session.json").read_text())
+    assert sur_disque["precedente"] == courante["id"]
+    clone = instance / "clones" / "o" / "r"
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone) == BRANCHE
+    assert git("log", "-1", "--format=%s", cwd=clone) == "poussé par l’agent"
+    assert git("config", "user.name", cwd=clone) == "octocat"
+    # Nouveau processus, nouveau jeton ; l’exécuteur relit la commande dans `session.json`.
+    commande, dossier = chaine.lances[-1]
+    assert dossier == clone
+    assert f"WAP_SESSION={suivante['id']}" in commande
+    assert chaine.jeton() != chaine.jeton(0)
+    assert commande[-2:] == [str(instance / "jobs"), suivante["id"]]
+    assert not any(option in " ".join(commande) for option in ("--continue", "--resume"))
+
+
+def test_l_executeur_lance_la_suivante_sans_reprise(chaine, instance, faux_bin):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+    chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    commande, dossier = chaine.lances[-1]
+    subprocess.run(commande, cwd=dossier, check=True, capture_output=True)
+
+    lancee = [l for l in appels(faux_bin) if l.startswith("claude ")]
+    assert lancee == [f"claude /implement #31 @ {dossier.resolve()} @ octocat <{IDENTITE.email}>"]
+
+
+def refus(chaine, courante, ticket=31, jeton=None):
+    from wap_runtime.runner import RunnerErreur
+
+    with pytest.raises(RunnerErreur) as erreur:
+        chaine.runner.enchainer(courante["id"], ticket, jeton or chaine.jeton())
+    return str(erreur.value)
+
+
+def rien_n_a_bouge(chaine, instance, courante, lances=1):
+    assert chaine.runner.session(courante["id"])["etat"] == "ouverte"
+    assert chaine.arretes == []
+    assert len(chaine.lances) == lances
+    assert len(Sessions(instance / "jobs").toutes()) == lances
+
+
+def test_mauvais_jeton_refuse(chaine, instance):
+    from wap_runtime.runner import JetonRefuse
+
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+
+    with pytest.raises(JetonRefuse, match="jeton refusé"):
+        chaine.runner.enchainer(courante["id"], 31, "pas-le-bon")
+
+    rien_n_a_bouge(chaine, instance, courante)
+
+
+def test_jeton_d_une_autre_session_refuse(chaine, instance):
+    from wap_runtime.runner import JetonRefuse
+
+    ancienne = chaine.runner.lancer(SLUG, 29, "claude", BRANCHE, IDENTITE)
+    jeton_ancien = chaine.jeton()
+    Sessions(instance / "jobs").clore(ancienne["id"], 0)
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+
+    with pytest.raises(JetonRefuse):
+        chaine.runner.enchainer(courante["id"], 31, jeton_ancien)
+    with pytest.raises(JetonRefuse):
+        chaine.runner.enchainer(ancienne["id"], 31, jeton_ancien)
+
+    rien_n_a_bouge(chaine, instance, courante, lances=2)
+
+
+def test_jeton_deja_utilise_refuse(chaine, instance):
+    from wap_runtime.runner import JetonRefuse
+
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+    jeton = chaine.jeton()
+    chaine.runner.enchainer(courante["id"], 31, jeton)
+
+    # Avant même l’ouverture de la suivante : usage unique.
+    with pytest.raises(JetonRefuse):
+        chaine.runner.enchainer(courante["id"], 31, jeton)
+
+    rien_n_a_bouge(chaine, instance, courante)
+
+
+@pytest.mark.parametrize(
+    "ticket, motif",
+    [
+        (30, "enfant fermé"),
+        (32, "enfant bloqué"),
+        (33, "pas `ready-for-agent`"),
+        (40, "aucune version ouverte de o/r"),
+        (50, "pas dans la version de la branche"),
+        (99, "aucune version ouverte de o/r"),
+    ],
+)
+def test_enfant_non_eligible_ou_d_un_autre_repo_refuse(chaine, instance, ticket, motif):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+
+    assert motif in refus(chaine, courante, ticket)
+
+    rien_n_a_bouge(chaine, instance, courante)
+    # Refusé, le jeton reste valable.
+    chaine.runner.enchainer(courante["id"], 31, chaine.jeton())
+
+
+def test_clone_sale_refuse(chaine, instance):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+    (instance / "clones" / "o" / "r" / "oublie.txt").write_text("non commité\n")
+
+    assert "clone sale" in refus(chaine, courante)
+
+    rien_n_a_bouge(chaine, instance, courante)
+
+
+def test_github_injoignable_refuse(chaine, instance, faux_gh):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+    faux_gh.repo(SLUG).panne = (500, {}, "panne")
+
+    assert "GitHub a répondu 500" in refus(chaine, courante)
+
+    rien_n_a_bouge(chaine, instance, courante)
+
+
+@pytest.fixture
+def client_chaine(chaine):
+    return TestClient(creer_app_runner(chaine.runner))
+
+
+def test_api_interne_suivante_202_puis_enchainement(chaine, client_chaine, instance):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/suivante", json={"ticket": 31, "jeton": chaine.jeton(0)}
+    )
+
+    assert reponse.status_code == 202
+    assert reponse.json()["detail"] == "session suivante : /implement #31"
+    enchainee = chaine.runner.session(courante["id"])
+    assert enchainee["etat"] == "enchaînée"
+    assert chaine.runner.session(enchainee["suivante"])["ticket"] == 31
+
+
+@pytest.mark.parametrize("jeton, ticket, code, motif", [("faux", 31, 403, "jeton refusé"), (None, 32, 422, "bloqué")])
+def test_api_interne_suivante_refusee_avec_la_raison(chaine, client_chaine, instance, jeton, ticket, code, motif):
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/suivante", json={"ticket": ticket, "jeton": jeton or chaine.jeton()}
+    )
+
+    assert reponse.status_code == code
+    assert motif in reponse.json()["detail"]
+    rien_n_a_bouge(chaine, instance, courante)
+
+
+def test_api_interne_suivante_session_inconnue_403(client_chaine):
+    reponse = client_chaine.post("/sessions/..%2Fx/suivante", json={"ticket": 31, "jeton": "j"})
+
+    assert reponse.status_code in (403, 404)
+
+
+@pytest.fixture
+def runner_servi(chaine):
+    import threading
+
+    import uvicorn
+
+    srv = uvicorn.Server(
+        uvicorn.Config(creer_app_runner(chaine.runner), host="127.0.0.1", port=0, log_level="warning")
+    )
+    fil = threading.Thread(target=srv.run, daemon=True)
+    fil.start()
+    while not srv.started:
+        time.sleep(0.01)
+    yield f"http://127.0.0.1:{srv.servers[0].sockets[0].getsockname()[1]}"
+    srv.should_exit = True
+    fil.join()
+
+
+@pytest.mark.parametrize("ticket, code, attendu", [(31, 0, "OK — session suivante : /implement #31"), (32, 1, "KO — #32 non éligible : enfant bloqué")])
+def test_wap_runtime_enchainer_relaie_la_reponse_du_runner(chaine, runner_servi, monkeypatch, capsys, ticket, code, attendu):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE)
+    commande, _ = chaine.lances[-1]
+    for affectation in commande[1:4]:
+        monkeypatch.setenv(*affectation.split("=", 1))
+    monkeypatch.setenv("WAP_RUNNER", runner_servi)
+
+    assert main(["enchainer", str(ticket)]) == code
+
+    assert capsys.readouterr().out.strip() == attendu
+    # L’enchaînement suit la réponse.
+    attendu_etat = "enchaînée" if code == 0 else "ouverte"
+    limite = time.monotonic() + 5
+    while chaine.runner.session(courante["id"])["etat"] != attendu_etat and time.monotonic() < limite:
+        time.sleep(0.05)
+    assert chaine.runner.session(courante["id"])["etat"] == attendu_etat
+
+
+def test_wap_runtime_enchainer_hors_session_ko(monkeypatch, capsys):
+    from wap_runtime.cli import main
+
+    monkeypatch.delenv("WAP_SESSION", raising=False)
+    monkeypatch.delenv("WAP_SESSION_JETON", raising=False)
+
+    assert main(["enchainer", "31"]) == 1
+    assert capsys.readouterr().out.startswith("KO — ")

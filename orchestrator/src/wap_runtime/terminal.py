@@ -95,12 +95,14 @@ class Pty:
         if self._processus.poll() is None:
             with suppress(ProcessLookupError):
                 os.killpg(self._processus.pid, signal.SIGHUP)
-            try:
-                self._processus.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._processus.kill()
-                self._processus.wait()
+        # Avant d’attendre : sur macOS, un client qui sort reste bloqué à la fermeture de son
+        # terminal tant que sa sortie non lue y attend, même tué.
         os.close(self.maitre)
+        try:
+            self._processus.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._processus.kill()
+            self._processus.wait()
 
 
 class Main:

@@ -6,22 +6,30 @@ aucun label.
 
 import os
 import re
+import secrets
 import shlex
 import subprocess
 import sys
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, get_args
+from typing import TYPE_CHECKING, Callable, Literal, get_args
 from urllib.parse import quote
 
-from wap_runtime.agents import agent_par_id, commande_agent
+from wap_runtime.agents import Agent, agent_par_id, commande_agent
+from wap_runtime.eligibilite import enfant_de_version, raison_grisee
 from wap_runtime.enregistrement import CODE_NON_LANCE
 from wap_runtime.sessions import CODE_ARRETEE, ID_SESSION, OUVERTE, Sessions
 
+if TYPE_CHECKING:
+    from wap_runtime.github import ClientGitHub
+
 DEPOT_GITHUB = "https://github.com/{slug}.git"
 PORT_RUNNER = 8788
+# Dans l’environnement de chaque agent (ADR 0006) : la commande qui ouvre la session suivante.
+ENCHAINER = "wap-runtime enchainer"
 # Réponses au clone sale ; sans l’une d’elles, rien n’est lancé (pas de remise à zéro automatique).
 Choix = Literal["reprendre", "jeter"]
 REPRENDRE, JETER = get_args(Choix)
@@ -50,6 +58,10 @@ class CloneSale(Exception):
         return {"detail": str(self), "clone": {"fichiers": self.fichiers, "diff": self.diff}}
 
 
+class JetonRefuse(RunnerErreur):
+    """La demande de session suivante ne vient pas de l’agent de la session ouverte."""
+
+
 class SessionOuverte(Exception):
     def __init__(self, session: dict):
         super().__init__(f"session {session['id']} déjà ouverte")
@@ -62,6 +74,16 @@ class Identite:
 
     login: str
     email: str
+
+
+@dataclass(frozen=True)
+class _Lancement:
+    """Ce que la session suivante reprend d’une session lancée, et le jeton de son agent. En
+    mémoire seulement : un runner qui redémarre interrompt ses sessions."""
+
+    jeton: str
+    branche: str
+    identite: Identite
 
 
 def email_noreply(login: str, id_: int) -> str:
@@ -101,10 +123,14 @@ class Runner:
         depot: str = DEPOT_GITHUB,
         arreteur: Callable[[str], None] = arreteur_tmux,
         attente: float = 10,
+        github: "ClientGitHub | None" = None,
     ):
         """`depot` : URL du dépôt, `{slug}` remplacé (les tests y mettent un dépôt local).
 
         `attente` : secondes laissées à l’agent pour sortir après **Terminer**.
+
+        `github` : de quoi vérifier l’éligibilité d’une session suivante ; sans lui, toute
+        demande est refusée.
 
         Un runner qui démarre n’a aucun agent en cours : les sessions restées ouvertes passent
         `interrompue`.
@@ -116,6 +142,9 @@ class Runner:
         self._depot = depot
         self._arreteur = arreteur
         self._attente = attente
+        self._github = github
+        # Par session lancée ; retiré quand son jeton a servi.
+        self._lancements: dict[str, _Lancement] = {}
         # Deux requêtes simultanées ne doivent pas ouvrir deux sessions.
         self._verrou = threading.Lock()
 
@@ -147,28 +176,110 @@ class Runner:
             fichiers = changements(dossier)
             if fichiers and choix is None:
                 raise CloneSale(fichiers, diff_complet(dossier))
-            argv = commande_agent(connu, ticket)
-            session = self._sessions.creer(repo, ticket, agent, f'{argv[0]} "{argv[1]}"')
-            try:
-                if fichiers and choix == JETER:
-                    # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
-                    patch = self._sessions.jobs / session["id"] / "abandon.patch"
-                    patch.write_text(diff_complet(dossier))
+            session = self._creer(repo, ticket, connu)
+            if fichiers and choix == JETER:
+                # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
+                patch = self._sessions.jobs / session["id"] / "abandon.patch"
+                patch.write_text(diff_complet(dossier))
+                try:
                     _git(dossier, "reset", "--quiet", "--hard")
                     _git(dossier, "clean", "--quiet", "-fd")
-                self.positionner_clone(dossier, branche, identite, sur_place=bool(fichiers) and choix == REPRENDRE)
-                exposer_skills(dossier)
-            except RunnerErreur:
-                self._sessions.clore(session["id"], CODE_NON_LANCE)
-                raise
-            # L’exécuteur relit l’agent et le ticket dans `session.json`.
-            executeur = [sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), session["id"]]
-            try:
-                self._lanceur(nom_tmux(session["id"]), executeur, dossier)
-            except (OSError, subprocess.CalledProcessError) as erreur:
-                self._sessions.clore(session["id"], CODE_NON_LANCE)
-                raise RunnerErreur(f"tmux : {erreur}") from erreur
-            return self._sessions.lire(session["id"])
+                except RunnerErreur:
+                    self._sessions.clore(session["id"], CODE_NON_LANCE)
+                    raise
+            sur_place = bool(fichiers) and choix == REPRENDRE
+            return self._demarrer(session, dossier, _Lancement("", branche, identite), sur_place)
+
+    def enchainer(self, id_: str, ticket: int, jeton: str) -> Callable[[], dict]:
+        """Demande de l’agent de la session `id_` (ADR 0006) : ouvrir `/implement #ticket` à sa suite.
+
+        Lève `JetonRefuse` si `jeton` n’est pas celui de la session ouverte `id_` ou a déjà servi ;
+        `RunnerErreur` si le clone est sale, ou si `#ticket` n’est pas un enfant éligible de la
+        version de la même branche, dans le même repo. Refusée, rien n’est lancé ni fermé et le
+        jeton reste valable.
+
+        Acceptée, le jeton est consommé ; rend l’ouverture, à appeler une fois l’agent prévenu : la
+        session passe `enchaînée` (tmux arrêté), puis la suivante démarre avec le même agent, sur la
+        même branche, dans un nouveau processus. Elle rend la suivante, ou lève `RunnerErreur`
+        (la suivante est alors close).
+        """
+        with self._verrou:
+            session = self._sessions.lire(id_)
+            lancement = self._lancements.get(id_)
+            if (
+                session is None
+                or session["etat"] != OUVERTE
+                or lancement is None
+                or not secrets.compare_digest(jeton.encode(), lancement.jeton.encode())
+            ):
+                raise JetonRefuse("jeton refusé : pas celui de la session ouverte, ou déjà utilisé")
+            dossier = self.recuperer_clone(session["repo"], lancement.branche)
+            if fichiers := changements(dossier):
+                raise RunnerErreur(
+                    f"clone sale ({len(fichiers)} fichier(s) non commité(s)) : commite et pousse avant d’enchaîner"
+                )
+            self._verifier_eligible(session["repo"], ticket, lancement.branche)
+            del self._lancements[id_]
+        return lambda: self._ouvrir_suivante(session, ticket, lancement, dossier)
+
+    def _verifier_eligible(self, repo: str, ticket: int, branche: str) -> None:
+        """Les règles du bouton `/implement #n` du cockpit, lues en direct sur GitHub."""
+        from wap_runtime.cockpit import lire_versions
+        from wap_runtime.github import GitHubErreur
+
+        if self._github is None:
+            raise RunnerErreur("GitHub non connecté : `sudo wap-runtime auth`")
+        try:
+            versions = lire_versions(self._github, repo, self._github.issues_ouvertes(repo))
+        except GitHubErreur as erreur:
+            raise RunnerErreur(str(erreur)) from erreur
+        if (trouve := enfant_de_version(versions, ticket)) is None:
+            raise RunnerErreur(f"#{ticket} n’est l’enfant d’aucune version ouverte de {repo}")
+        enfant, pr = trouve
+        # La session ouverte est celle qui demande ; son agent est connecté puisqu’il tourne.
+        if raison := raison_grisee(enfant, pr, None, True):
+            raise RunnerErreur(f"#{ticket} non éligible : {raison}")
+        if pr["branche"] != branche:
+            raise RunnerErreur(f"#{ticket} n’est pas dans la version de la branche {branche}")
+
+    def _ouvrir_suivante(self, courante: dict, ticket: int, lancement: _Lancement, dossier: Path) -> dict:
+        with self._verrou:
+            if self._sessions.lire(courante["id"])["etat"] != OUVERTE:
+                raise RunnerErreur(f"session {courante['id']} close avant l’enchaînement")
+            suivante = self._creer(courante["repo"], ticket, agent_par_id(courante["agent"]), courante["id"])
+            self._sessions.enchainer(courante["id"], suivante["id"])
+            self._arreteur(nom_tmux(courante["id"]))
+            return self._demarrer(suivante, dossier, lancement)
+
+    def _creer(self, repo: str, ticket: int, agent: Agent, precedente: str | None = None) -> dict:
+        argv = commande_agent(agent, ticket)
+        return self._sessions.creer(repo, ticket, agent.id, f'{argv[0]} "{argv[1]}"', precedente)
+
+    def _demarrer(self, session: dict, dossier: Path, lancement: _Lancement, sur_place: bool = False) -> dict:
+        """Positionne le clone, y expose les skills et lance l’exécuteur dans tmux, avec un nouveau
+        jeton ; un échec clôt la session et lève `RunnerErreur`."""
+        id_ = session["id"]
+        try:
+            self.positionner_clone(dossier, lancement.branche, lancement.identite, sur_place)
+            exposer_skills(dossier)
+        except RunnerErreur:
+            self._sessions.clore(id_, CODE_NON_LANCE)
+            raise
+        jeton = secrets.token_urlsafe(32)
+        self._lancements[id_] = _Lancement(jeton, lancement.branche, lancement.identite)
+        # L’exécuteur relit l’agent et le ticket dans `session.json` ; l’agent hérite de cet
+        # environnement, hors de `session.json` que le cockpit lit.
+        executeur = [
+            "env", f"WAP_ENCHAINER={ENCHAINER}", f"WAP_SESSION={id_}", f"WAP_SESSION_JETON={jeton}",
+            sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), id_,
+        ]
+        try:
+            self._lanceur(nom_tmux(id_), executeur, dossier)
+        except (OSError, subprocess.CalledProcessError) as erreur:
+            del self._lancements[id_]
+            self._sessions.clore(id_, CODE_NON_LANCE)
+            raise RunnerErreur(f"tmux : {erreur}") from erreur
+        return self._sessions.lire(id_)
 
     def session(self, id_: str) -> dict | None:
         return self._sessions.lire(id_)
@@ -349,7 +460,7 @@ def creer_app_runner(runner: Runner):
     `POST /sessions/{id}/terminer` : la session close ; websocket `/sessions/{id}/terminal` : le
     terminal en direct d’une session ouverte (`wap_runtime.terminal`).
     """
-    from fastapi import FastAPI, HTTPException, WebSocket
+    from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket
     from fastapi.responses import JSONResponse
     from pydantic import BaseModel
 
@@ -364,6 +475,10 @@ def creer_app_runner(runner: Runner):
         login: str
         email: str
         choix: Choix | None = None
+
+    class Suivante(BaseModel):
+        ticket: int
+        jeton: str
 
     app = FastAPI(title="wap-runner", version=__version__, docs_url=None, redoc_url=None)
 
@@ -392,6 +507,25 @@ def creer_app_runner(runner: Runner):
             raise HTTPException(404, f"session {id_} inconnue")
         return session
 
+    @app.post("/sessions/{id_}/suivante", status_code=202)
+    def suivante(id_: str, demande: Suivante, taches: BackgroundTasks):
+        """Depuis la session (`wap-runtime enchainer`) : 202, puis l’enchaînement une fois la
+        réponse partie ; 403 (jeton) ou 422 et la raison du refus."""
+        try:
+            ouvrir = runner.enchainer(id_, demande.ticket, demande.jeton)
+        except JetonRefuse as refus:
+            return JSONResponse({"detail": str(refus)}, status_code=403)
+        except RunnerErreur as erreur:
+            return JSONResponse({"detail": str(erreur)}, status_code=422)
+
+        def ouvrir_apres_la_reponse() -> None:
+            # Échouée, la suivante est close ; l’agent qui demandait n’est plus là pour le lire.
+            with suppress(RunnerErreur):
+                ouvrir()
+
+        taches.add_task(ouvrir_apres_la_reponse)
+        return {"detail": f"session suivante : /implement #{demande.ticket}"}
+
     ecrivains = Ecrivains()
 
     @app.websocket("/sessions/{id_}/terminal")
@@ -411,5 +545,13 @@ def creer_app_runner(runner: Runner):
 def servir_runner(hote: str, port: int) -> None:
     import uvicorn
 
-    runner = Runner(Path(os.environ.get("WAP_CLONES", "/clones")), Path(os.environ.get("WAP_JOBS", "/jobs")))
+    from wap_runtime.github import ClientGitHub
+
+    # `GH_TOKEN` de `secrets.env` (`env_file`) : une nouvelle connexion recrée le service.
+    jeton = os.environ.get("GH_TOKEN")
+    runner = Runner(
+        Path(os.environ.get("WAP_CLONES", "/clones")),
+        Path(os.environ.get("WAP_JOBS", "/jobs")),
+        github=ClientGitHub(jeton) if jeton else None,
+    )
     uvicorn.run(creer_app_runner(runner), host=hote, port=port, log_level="warning")

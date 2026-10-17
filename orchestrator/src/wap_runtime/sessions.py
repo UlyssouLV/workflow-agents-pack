@@ -22,6 +22,8 @@ from wap_runtime.enregistrement import CAST, TRANSCRIPTION, copier_transcription
 from wap_runtime.fichiers import remplacer
 
 OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
+# Close par l’ouverture de la suivante (ADR 0006) : `suivante` la désigne.
+ENCHAINEE = "enchaînée"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
 ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
@@ -34,7 +36,8 @@ class Sessions:
         self.jobs = jobs
         self._horloge = horloge
 
-    def creer(self, repo: str, ticket: int, agent: str, commande: str) -> dict:
+    def creer(self, repo: str, ticket: int, agent: str, commande: str, precedente: str | None = None) -> dict:
+        """`precedente` : la session enchaînée qui ouvre celle-ci."""
         debut = self._horloge()
         session = {
             "id": f"{debut:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}",
@@ -46,6 +49,8 @@ class Sessions:
             "fin": None,
             "etat": OUVERTE,
             "code_sortie": None,
+            "precedente": precedente,
+            "suivante": None,
         }
         (self.jobs / session["id"]).mkdir(parents=True)
         self._ecrire(session)
@@ -56,9 +61,11 @@ class Sessions:
         if not ID_SESSION.fullmatch(id_):
             return None
         try:
-            return json.loads((self.jobs / id_ / "session.json").read_text())
+            lue = json.loads((self.jobs / id_ / "session.json").read_text())
         except (OSError, ValueError):
             return None
+        # Écrite avant la 0.4.1 : hors de toute chaîne.
+        return {"precedente": None, "suivante": None, **lue}
 
     def toutes(self) -> list[dict]:
         """De la plus récente à la plus ancienne (l’identifiant commence par le début)."""
@@ -85,6 +92,13 @@ class Sessions:
             "etat": TERMINEE if code == 0 else ECHOUEE,
             "code_sortie": code,
         }
+        self._ecrire(session)
+        return session
+
+    def enchainer(self, id_: str, suivante: str) -> dict:
+        """La session ouverte `id_` passe `enchaînée` vers `suivante` ; l’exécuteur, en la clôturant
+        ensuite, lui laisse cet état."""
+        session = {**self.lire(id_), "fin": self._horloge().isoformat(), "etat": ENCHAINEE, "suivante": suivante}
         self._ecrire(session)
         return session
 
