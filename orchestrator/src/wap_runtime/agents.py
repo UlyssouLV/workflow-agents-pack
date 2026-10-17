@@ -12,13 +12,12 @@ import struct
 import subprocess
 import sys
 import termios
-import tty
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Mapping
+from typing import Mapping
 
 from wap_runtime.auth import AuthErreur, ecrire_secret
+from wap_runtime.pseudo_terminal import brut, controler, restaurer
 
 ETAPE_SETUP_TOKEN = "claude setup-token"
 ETAPE_SECRETS = "secrets.env"
@@ -39,14 +38,25 @@ class Agent:
     # La première est celle qu’écrit `auth` ; n’importe laquelle suffit à « connecté ».
     cles: tuple[str, ...]
     commande: str
+    # Lancé en mode interactif sur `/implement #n` ; aussi la cible de `wap-runtime auth`.
+    programme: str
+    # Racine de ses transcriptions sous `HOME`, et motif des fichiers à copier.
+    transcriptions: tuple[str, str]
 
 
 CLAUDE = Agent(
     "claude", "Claude Code", ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
-    "sudo wap-runtime auth claude",
+    "sudo wap-runtime auth claude", "claude", (".claude/projects", "**/*.jsonl"),
 )
-CURSOR = Agent("cursor", "Cursor", ("CURSOR_API_KEY",), "… | sudo wap-runtime auth agent --with-token")
+CURSOR = Agent(
+    "cursor", "Cursor", ("CURSOR_API_KEY",), "… | sudo wap-runtime auth agent --with-token",
+    "agent", (".cursor/projects", "*/agent-transcripts/**/*.jsonl"),
+)
 AGENTS = (CLAUDE, CURSOR)
+
+
+def agent_par_id(id_: str) -> Agent | None:
+    return next((a for a in AGENTS if a.id == id_), None)
 
 
 def connecte(agent: Agent, valeurs: Mapping[str, str]) -> bool:
@@ -143,7 +153,7 @@ def _setup_token(home: Path, utilisateur: str | None, env: Mapping[str, str]) ->
     try:
         processus = subprocess.Popen(
             commande, stdin=esclave, stdout=esclave, stderr=esclave, env=env_claude,
-            preexec_fn=_terminal_de_controle,
+            preexec_fn=controler,
         )
     except OSError as erreur:
         os.close(maitre)
@@ -166,18 +176,14 @@ def _setup_token(home: Path, utilisateur: str | None, env: Mapping[str, str]) ->
     return jetons[-1]
 
 
-def _terminal_de_controle() -> None:
-    """Dans l’enfant : le pseudo-terminal devient son terminal (Ctrl-C, taille)."""
-    os.setsid()
-    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-
-
 def _relayer(maitre: int) -> bytes:
     """Recopie la sortie du pseudo-terminal sur stdout et le clavier vers lui ; rend la sortie."""
     sortie = bytearray()
     entree = sys.stdin.fileno() if sys.stdin.isatty() else None
     sys.stdout.flush()
-    with _brut(entree):
+    # Le terminal de l’utilisateur en mode brut le temps du relais : `claude` gère l’écho.
+    clavier, avant = entree, brut(entree) if entree is not None else None
+    try:
         while True:
             lus, _, _ = select.select([maitre] + ([entree] if entree is not None else []), [], [])
             if maitre in lus:
@@ -196,17 +202,6 @@ def _relayer(maitre: int) -> bytes:
                     os.write(maitre, frappe)
                 else:
                     entree = None
-
-
-@contextmanager
-def _brut(entree: int | None) -> Iterator[None]:
-    """Le terminal de l’utilisateur en mode brut le temps du relais : `claude` gère l’écho."""
-    if entree is None:
-        yield
-        return
-    avant = termios.tcgetattr(entree)
-    tty.setraw(entree)
-    try:
-        yield
     finally:
-        termios.tcsetattr(entree, termios.TCSADRAIN, avant)
+        if clavier is not None:
+            restaurer(clavier, avant)

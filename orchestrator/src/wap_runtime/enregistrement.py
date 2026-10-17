@@ -17,19 +17,18 @@ import subprocess
 import sys
 import termios
 import time
-import tty
 from contextlib import suppress
 from pathlib import Path
+
+from wap_runtime.agents import agent_par_id
+from wap_runtime.pseudo_terminal import brut, controler, restaurer
 
 CAST = "terminal.cast"
 TRANSCRIPTION = "transcription"
 # Hors d’un terminal (tests) : la taille d’un terminal par défaut.
 TAILLE_PAR_DEFAUT = (80, 24)
-# Par agent : racine de ses transcriptions sous `HOME`, et motif des fichiers à copier.
-TRANSCRIPTIONS = {
-    "claude": (".claude/projects", "**/*.jsonl"),
-    "cursor": (".cursor/projects", "*/agent-transcripts/**/*.jsonl"),
-}
+# Code de sortie d’un agent qui n’a pas pu être lancé, comme le rend un shell.
+CODE_NON_LANCE = 127
 
 
 class Cast:
@@ -107,24 +106,22 @@ def enregistrer(commande: list[str], cast: Path) -> int:
 
         try:
             agent = subprocess.Popen(
-                commande, stdin=esclave, stdout=esclave, stderr=esclave, preexec_fn=_controler
+                commande, stdin=esclave, stdout=esclave, stderr=esclave, preexec_fn=controler
             )
         except OSError as erreur:
             afficher(f"KO — {commande[0]} : {erreur}\r\n".encode())
             os.close(maitre)
             os.close(esclave)
-            return 127
+            return CODE_NON_LANCE
         if arretee:
             # Terminé avant que l’agent ne démarre.
             arreter()
         signal.signal(signal.SIGWINCH, redimensionner)
-        brut = _brut(entree)
+        avant = brut(entree)
         try:
             _relayer(agent, entree, maitre, afficher)
         finally:
-            if brut is not None:
-                with suppress(termios.error):
-                    termios.tcsetattr(entree, termios.TCSADRAIN, brut)
+            restaurer(entree, avant)
             # L’esclave reste ouvert jusqu’ici : la sortie de l’agent est lue jusqu’au bout.
             os.close(maitre)
             os.close(esclave)
@@ -148,22 +145,6 @@ def _relayer(agent: subprocess.Popen, entree: int, maitre: int, afficher) -> Non
                 lectures.remove(entree)
     while select.select([maitre], [], [], 0.05)[0] and (donnees := _lire(maitre)):
         afficher(donnees)
-
-
-def _controler() -> None:
-    """Dans l’enfant : le pseudo-terminal devient son terminal de contrôle (^C, SIGWINCH)."""
-    os.setsid()
-    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-
-
-def _brut(fd: int) -> list | None:
-    """Le terminal de la session en mode brut (les touches vont telles quelles à l’agent) ;
-    rend ses réglages d’avant, `None` hors d’un terminal."""
-    if not os.isatty(fd):
-        return None
-    avant = termios.tcgetattr(fd)
-    tty.setraw(fd, termios.TCSANOW)
-    return avant
 
 
 def _taille(fd: int) -> tuple[int, int]:
@@ -198,7 +179,7 @@ def copier_transcription(agent: str, home: Path, depuis: float, cible: Path) -> 
     Une seule session à la fois et un `HOME` propre au runner : ce qui a bougé pendant la session
     est à elle. Un fichier illisible est signalé et passé, la session se clôt quand même.
     """
-    racine, motif = TRANSCRIPTIONS[agent]
+    racine, motif = agent_par_id(agent).transcriptions
     racine = home / racine
     copiees = []
     for source in sorted(racine.glob(motif)) if racine.is_dir() else []:

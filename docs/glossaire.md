@@ -20,7 +20,7 @@
 
 **Utilisateur d’instance** — l’utilisateur système `orchestrator` créé par le provisionnement : il possède l’instance et les CLIs agents, et exécute le runtime (jamais root).
 
-**Repo lié** — un repo métier que l’instance suit, déclaré par son `owner/name` GitHub, sans clone.
+**Repo lié** — un repo métier que l’instance suit, déclaré par son `owner/name` GitHub ; le suivre ne le clone pas (le runner en tient un **clone géré** au premier lancement de session).
 
 **Registry** — la liste des repos liés d’une instance (`~/.wap-runtime/repos.toml`), gérée par `wap-runtime repo add|remove|list`.
 

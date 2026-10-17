@@ -7,7 +7,7 @@ runner (`wap_runtime.terminal`).
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Literal, Mapping
+from typing import Callable, Mapping
 
 import httpx
 import uvicorn
@@ -26,6 +26,7 @@ from wap_runtime.instance import chemin_instance
 from wap_runtime.registry import RegistryErreur, chemin_registry
 from wap_runtime.runner import (
     PORT_RUNNER,
+    Choix,
     ClientRunner,
     CloneSale,
     Identite,
@@ -42,7 +43,7 @@ class Lancement(BaseModel):
     ticket: int
     agent: str
     # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
-    choix: Literal["reprendre", "jeter"] | None = None
+    choix: Choix | None = None
 
 
 def _instance_par_defaut() -> Path:
@@ -57,6 +58,11 @@ def _runner_par_defaut() -> httpx.Client:
 
 def _lien(session: dict) -> dict:
     return {"id": session["id"], "url": f"/sessions/{session['id']}", "repo": session["repo"]}
+
+
+def _avec_url(session: dict) -> dict:
+    """La session, avec l’adresse de sa page dans le cockpit."""
+    return {**session, "url": _lien(session)["url"]}
 
 
 def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:
@@ -138,7 +144,7 @@ def creer_app(
     @app.get("/api/repos/{owner}/{name}/sessions")
     def sessions_du_repo(owner: str, name: str) -> dict:
         """Sans GitHub : celles de `jobs/`, y compris d’un repo retiré du registry."""
-        return {"sessions": [{**s, "url": _lien(s)["url"]} for s in sessions.du_repo(f"{owner}/{name}")]}
+        return {"sessions": [_avec_url(s) for s in sessions.du_repo(f"{owner}/{name}")]}
 
     def _detail(slug: str) -> dict:
         try:
@@ -154,7 +160,7 @@ def creer_app(
         lue = sessions.lire(id_)
         if lue is None:
             raise HTTPException(404, f"session {id_} inconnue")
-        return {**lue, "url": _lien(lue)["url"]}
+        return _avec_url(lue)
 
     @app.get("/api/sessions/{id_}/terminal.cast")
     def cast(id_: str) -> FileResponse:
@@ -194,13 +200,10 @@ def creer_app(
         except SessionOuverte as refus:
             return _deja_ouverte(refus.session)
         except CloneSale as refus:
-            return JSONResponse(
-                {"detail": str(refus), "clone": {"fichiers": refus.fichiers, "diff": refus.diff}},
-                status_code=409,
-            )
+            return JSONResponse(refus.corps(), status_code=409)
         except RunnerErreur as erreur:
             raise HTTPException(422, str(erreur)) from erreur
-        return {**lancee, "url": _lien(lancee)["url"]}
+        return _avec_url(lancee)
 
     @app.post("/api/sessions/{id_}/terminer")
     def terminer(id_: str, requete: Request) -> dict:
@@ -212,7 +215,7 @@ def creer_app(
             close = client_runner.terminer(id_)
         except RunnerErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur
-        return {**close, "url": _lien(close)["url"]}
+        return _avec_url(close)
 
     @app.websocket("/api/sessions/{id_}/terminal")
     async def terminal(websocket: WebSocket, id_: str) -> None:

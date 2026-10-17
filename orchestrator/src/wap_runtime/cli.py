@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from wap_runtime.agents import AGENTS, CLAUDE, CURSOR, connecte, lancer_auth_agent
+from wap_runtime.agents import AGENTS, CURSOR, connecte, lancer_auth_agent
 from wap_runtime.auth import lancer_auth, lire_secrets, statut
 from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
@@ -129,7 +129,7 @@ def _auth(cible: str | None, avec_jeton: bool) -> int:
     utilisateur = UTILISATEUR if os.geteuid() == 0 else None
     if cible == "status":
         return _auth_status(instance, utilisateur)
-    agent = {"claude": CLAUDE, "agent": CURSOR}.get(cible)
+    agent = next((a for a in AGENTS if a.programme == cible), None)
     if agent is CURSOR and not avec_jeton:
         # `agent login` exige un navigateur sur la machine même.
         print(f"KO — Cursor se connecte par clé API sur stdin : `{CURSOR.commande}`")
@@ -208,7 +208,7 @@ def main(argv=None) -> int:
         "ou à Cursor (`agent`), ou affiche l’état des trois (`status`)",
     )
     auth.add_argument(
-        "cible", nargs="?", choices=["status", "claude", "agent"],
+        "cible", nargs="?", choices=["status", *(a.programme for a in AGENTS)],
         help="sans argument : GitHub",
     )
     auth.add_argument(

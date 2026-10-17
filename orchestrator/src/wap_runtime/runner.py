@@ -12,17 +12,17 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal, get_args
 
+from wap_runtime.agents import Agent, agent_par_id
+from wap_runtime.enregistrement import CODE_NON_LANCE
 from wap_runtime.sessions import CODE_ARRETEE, OUVERTE, Sessions
 
 DEPOT_GITHUB = "https://github.com/{slug}.git"
 PORT_RUNNER = 8788
-# Programme de chaque agent, lancé en mode interactif sur `/implement #n`.
-PROGRAMMES = {"claude": "claude", "cursor": "agent"}
 # Réponses au clone sale ; sans l’une d’elles, rien n’est lancé (pas de remise à zéro automatique).
-REPRENDRE, JETER = "reprendre", "jeter"
-CHOIX = (REPRENDRE, JETER)
+Choix = Literal["reprendre", "jeter"]
+REPRENDRE, JETER = get_args(Choix)
 
 
 class RunnerErreur(Exception):
@@ -36,6 +36,10 @@ class CloneSale(Exception):
         super().__init__("le clone a des changements non commités : Reprendre ou Jeter")
         self.fichiers = fichiers
         self.diff = diff
+
+    def corps(self) -> dict:
+        """Le corps de la réponse `409`, côté runner comme côté cockpit."""
+        return {"detail": str(self), "clone": {"fichiers": self.fichiers, "diff": self.diff}}
 
 
 class SessionOuverte(Exception):
@@ -56,8 +60,8 @@ def email_noreply(login: str, id_: int) -> str:
     return f"{id_}+{login}@users.noreply.github.com"
 
 
-def commande_agent(agent: str, ticket: int) -> list[str]:
-    return [PROGRAMMES[agent], f"/implement #{ticket}"]
+def commande_agent(agent: Agent, ticket: int) -> list[str]:
+    return [agent.programme, f"/implement #{ticket}"]
 
 
 def lanceur_tmux(nom: str, commande: list[str], dossier: Path) -> None:
@@ -112,7 +116,7 @@ class Runner:
         self._verrou = threading.Lock()
 
     def lancer(
-        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: str | None = None
+        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: Choix | None = None
     ) -> dict:
         """Lève `SessionOuverte` s’il y en a déjà une, `CloneSale` si le clone a des changements
         non commités et que `choix` ne dit pas quoi en faire, `RunnerErreur` si le clone ne se
@@ -122,9 +126,9 @@ class Runner:
         changer de branche ; `jeter` enregistre les changements dans `jobs/<id>/abandon.patch`,
         puis `reset --hard` et `clean -fd` avant le lancement normal.
         """
-        if agent not in PROGRAMMES:
+        if (connu := agent_par_id(agent)) is None:
             raise RunnerErreur(f"agent inconnu : {agent}")
-        if choix is not None and choix not in CHOIX:
+        if choix is not None and choix not in (REPRENDRE, JETER):
             raise RunnerErreur(f"choix inconnu : {choix}")
         with self._verrou:
             if (ouverte := self._sessions.ouverte()) is not None:
@@ -133,24 +137,24 @@ class Runner:
             fichiers = changements(dossier)
             if fichiers and choix is None:
                 raise CloneSale(fichiers, diff_complet(dossier))
-            argv = commande_agent(agent, ticket)
+            argv = commande_agent(connu, ticket)
             session = self._sessions.creer(repo, ticket, agent, f'{argv[0]} "{argv[1]}"')
             try:
                 if fichiers and choix == JETER:
                     # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
                     patch = self._sessions.jobs / session["id"] / "abandon.patch"
                     patch.write_text(diff_complet(dossier))
-                    _git("-C", str(dossier), "reset", "--quiet", "--hard")
-                    _git("-C", str(dossier), "clean", "--quiet", "-fd")
+                    _git(dossier, "reset", "--quiet", "--hard")
+                    _git(dossier, "clean", "--quiet", "-fd")
                 self.positionner_clone(dossier, branche, identite, sur_place=bool(fichiers) and choix == REPRENDRE)
             except RunnerErreur:
-                self._sessions.clore(session["id"], 127)
+                self._sessions.clore(session["id"], CODE_NON_LANCE)
                 raise
             executeur = [sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), session["id"]]
             try:
                 self._lanceur(nom_tmux(session["id"]), [*executeur, *argv], dossier)
             except (OSError, subprocess.CalledProcessError) as erreur:
-                self._sessions.clore(session["id"], 127)
+                self._sessions.clore(session["id"], CODE_NON_LANCE)
                 raise RunnerErreur(f"tmux : {erreur}") from erreur
             return self._sessions.lire(session["id"])
 
@@ -183,11 +187,11 @@ class Runner:
         if not (dossier / ".git").is_dir():
             dossier.parent.mkdir(parents=True, exist_ok=True)
             _executer(["gh", "auth", "setup-git"], "gh auth setup-git")
-            _git("clone", "--quiet", self._depot.format(slug=repo), str(dossier))
+            _git(None, "clone", "--quiet", self._depot.format(slug=repo), str(dossier))
         else:
-            _git("-C", str(dossier), "fetch", "--quiet", "--prune", "origin")
+            _git(dossier, "fetch", "--quiet", "--prune", "origin")
         try:
-            _git("-C", str(dossier), "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branche}")
+            _git(dossier, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branche}")
         except RunnerErreur:
             raise RunnerErreur(f"branche {branche} inexistante sur GitHub") from None
         return dossier
@@ -196,17 +200,17 @@ class Runner:
         """Sur `branche` à jour de `origin` (`sur_place` : la branche courante, pour **Reprendre**),
         avec l’identité git."""
         if not sur_place:
-            _git("-C", str(dossier), "switch", "--quiet", branche)
-            _git("-C", str(dossier), "merge", "--quiet", "--ff-only", f"origin/{branche}")
-        _git("-C", str(dossier), "config", "user.name", identite.login)
-        _git("-C", str(dossier), "config", "user.email", identite.email)
+            _git(dossier, "switch", "--quiet", branche)
+            _git(dossier, "merge", "--quiet", "--ff-only", f"origin/{branche}")
+        _git(dossier, "config", "user.name", identite.login)
+        _git(dossier, "config", "user.email", identite.email)
 
 
 def changements(dossier: Path) -> list[dict]:
     """Changements non commités du clone (fichiers non suivis compris, ignorés exclus) ; `[]` sans clone."""
     if not (dossier / ".git").is_dir():
         return []
-    sortie = _git("-C", str(dossier), "status", "--porcelain", "--untracked-files=all", "-z")
+    sortie = _git(dossier, "status", "--porcelain", "--untracked-files=all", "-z")
     fichiers, entrees = [], iter(sortie.split("\0"))
     for entree in entrees:
         if not entree:
@@ -222,8 +226,8 @@ def changements(dossier: Path) -> list[dict]:
 def diff_complet(dossier: Path) -> str:
     """`git diff HEAD` et les fichiers non suivis, en un patch que `git apply` rejoue."""
     racine = ["git", "-C", str(dossier)]
-    diff = _git("-C", str(dossier), "diff", "--binary", "HEAD")
-    sortie = _git("-C", str(dossier), "ls-files", "--others", "--exclude-standard", "-z")
+    diff = _git(dossier, "diff", "--binary", "HEAD")
+    sortie = _git(dossier, "ls-files", "--others", "--exclude-standard", "-z")
     for chemin in filter(None, sortie.split("\0")):
         # `--no-index` sort en 1 quand les fichiers diffèrent : c’est le cas attendu.
         nouveau = subprocess.run(
@@ -236,8 +240,11 @@ def diff_complet(dossier: Path) -> str:
     return diff
 
 
-def _git(*args: str) -> str:
-    return _executer(["git", *args], f"git {args[2] if args[0] == '-C' else args[0]}")
+def _git(dossier: Path | None, sous_commande: str, *args: str) -> str:
+    """`git -C <dossier> <sous_commande> …` (`dossier` absent : le dossier courant) ; l’étape
+    d’une erreur nomme la sous-commande."""
+    racine = ["git"] if dossier is None else ["git", "-C", str(dossier)]
+    return _executer([*racine, sous_commande, *args], f"git {sous_commande}")
 
 
 def _executer(commande: list[str], etape: str) -> str:
@@ -258,21 +265,24 @@ class ClientRunner:
     def __init__(self, http):
         self._http = http
 
-    def lancer(
-        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: str | None = None
-    ) -> dict:
-        """Mêmes erreurs que `Runner.lancer` ; `RunnerErreur` aussi si le runner est injoignable."""
+    def _poster(self, chemin: str, **options):
         import httpx
 
+        try:
+            return self._http.post(chemin, **options)
+        except httpx.HTTPError as erreur:
+            raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
+
+    def lancer(
+        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: Choix | None = None
+    ) -> dict:
+        """Mêmes erreurs que `Runner.lancer` ; `RunnerErreur` aussi si le runner est injoignable."""
         demande = {"repo": repo, "ticket": ticket, "agent": agent, "branche": branche,
                    "login": identite.login, "email": identite.email}
         if choix is not None:
             demande["choix"] = choix
-        try:
-            # Le premier clone d’un gros repo peut être long.
-            reponse = self._http.post("/sessions", json=demande, timeout=300)
-        except httpx.HTTPError as erreur:
-            raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
+        # Le premier clone d’un gros repo peut être long.
+        reponse = self._poster("/sessions", json=demande, timeout=300)
         if reponse.status_code == 409:
             corps = reponse.json()
             if "clone" in corps:
@@ -288,12 +298,7 @@ class ClientRunner:
 
     def terminer(self, id_: str) -> dict:
         """`RunnerErreur` si le runner est injoignable ou ne connaît pas la session."""
-        import httpx
-
-        try:
-            reponse = self._http.post(f"/sessions/{id_}/terminer", timeout=60)
-        except httpx.HTTPError as erreur:
-            raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
+        reponse = self._poster(f"/sessions/{id_}/terminer", timeout=60)
         if not reponse.is_success:
             raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
         return reponse.json()
@@ -325,7 +330,7 @@ def creer_app_runner(runner: Runner):
         branche: str
         login: str
         email: str
-        choix: str | None = None
+        choix: Choix | None = None
 
     app = FastAPI(title="wap-runner", version=__version__, docs_url=None, redoc_url=None)
 
@@ -344,8 +349,7 @@ def creer_app_runner(runner: Runner):
         except SessionOuverte as refus:
             return JSONResponse({"detail": str(refus), "session": refus.session}, status_code=409)
         except CloneSale as refus:
-            clone = {"fichiers": refus.fichiers, "diff": refus.diff}
-            return JSONResponse({"detail": str(refus), "clone": clone}, status_code=409)
+            return JSONResponse(refus.corps(), status_code=409)
         except RunnerErreur as erreur:
             return JSONResponse({"detail": str(erreur)}, status_code=422)
 
