@@ -37,7 +37,11 @@ class ClientGitHub:
         )
 
     def compte(self) -> str:
-        return self._lire("/user")["login"]
+        return self.utilisateur()["login"]
+
+    def utilisateur(self) -> dict:
+        """Le compte du token (`login`, `id`…)."""
+        return self._lire("/user")
 
     def issues_ouvertes(self, slug: str) -> list[dict]:
         """Issues ouvertes, sans les PR (que l’API des issues rend aussi)."""

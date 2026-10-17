@@ -1,5 +1,5 @@
 import type { Liste, Repo } from "./api";
-import { BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
+import { BandeauAuth, EncartAgents, LibelleEtape, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
 
 /** `/` : une ligne par repo lié, ceux qui attendent quelqu’un en tête. */
@@ -19,6 +19,7 @@ function Contenu({ liste }: { liste: Liste }) {
   return (
     <>
       <BandeauAuth auth={liste.auth} />
+      <EncartAgents agents={liste.agents} />
       {liste.erreur && <p className="erreur">Registry : {liste.erreur}</p>}
       {!liste.erreur && liste.repos.length === 0 && (
         <p>
@@ -57,6 +58,14 @@ function Ligne({ repo }: { repo: Repo }) {
     <tr className={repo.erreur ? "en-erreur" : undefined}>
       <td>
         <a href={`/repos/${repo.slug}`}>{nomAffiche(repo)}</a>
+        {repo.session && (
+          <>
+            {" "}
+            <a className="badge session" href={repo.session.url}>
+              Session en cours
+            </a>
+          </>
+        )}
       </td>
       {repo.erreur ? (
         <td colSpan={3} className="erreur">

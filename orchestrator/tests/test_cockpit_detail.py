@@ -99,6 +99,7 @@ def test_parent_et_enfants_avec_etat_labels_et_blocage(registry, github, horloge
             "ouvert": False,
             "labels": [],
             "bloque": False,
+            "lancement": {"claude": "enfant fermé", "cursor": "enfant fermé"},
         },
         {
             "numero": 21,
@@ -107,6 +108,7 @@ def test_parent_et_enfants_avec_etat_labels_et_blocage(registry, github, horloge
             "ouvert": True,
             "labels": ["ready-for-agent"],
             "bloque": False,
+            "lancement": {"claude": "pas de PR de version", "cursor": "pas de PR de version"},
         },
         {
             "numero": 23,
@@ -115,6 +117,7 @@ def test_parent_et_enfants_avec_etat_labels_et_blocage(registry, github, horloge
             "ouvert": True,
             "labels": ["ready-for-human"],
             "bloque": True,
+            "lancement": {"claude": "pas `ready-for-agent`", "cursor": "pas `ready-for-agent`"},
         },
     ]
 
@@ -138,6 +141,7 @@ def test_pr_de_version_brouillon_avec_ses_checks(registry, github, horloge):
         "titre": "PR 24",
         "url": "https://github.com/o/r/pull/24",
         "brouillon": True,
+        "branche": "branche-24",
         "ci": "echec",
         "checks": [
             {"nom": "check 0", "etat": "ok", "url": "https://github.com/o/r/runs/0"},

@@ -7,6 +7,15 @@ export interface Auth {
   compte: string | null;
 }
 
+/** Un agent de l’encart Agents : `connecte` = token présent dans `secrets.env`. */
+export interface Agent {
+  id: "claude" | "cursor";
+  nom: string;
+  connecte: boolean;
+  /** À lancer sur l’hôte pour le connecter. */
+  commande: string;
+}
+
 export interface Etape {
   numero: number | null;
   libelle: string;
@@ -36,6 +45,30 @@ export interface VersionResume {
   pr: PrResume | null;
 }
 
+/** Lien vers la session ouverte de l’instance (une seule à la fois). */
+export interface LienSession {
+  id: string;
+  url: string;
+  repo: string;
+}
+
+/** `interrompue` : le runner a redémarré pendant la session. */
+export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue";
+
+/** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
+export interface Session {
+  id: string;
+  url: string;
+  repo: string;
+  ticket: number;
+  agent: Agent["id"];
+  commande: string;
+  debut: string;
+  fin: string | null;
+  etat: EtatSession;
+  code_sortie: number | null;
+}
+
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */
 export interface Repo<V = VersionResume> {
   slug: string;
@@ -46,10 +79,13 @@ export interface Repo<V = VersionResume> {
   etape: Etape | null;
   humain_requis: boolean;
   versions: V[];
+  /** Session ouverte sur ce repo (badge « Session en cours »). */
+  session: LienSession | null;
 }
 
 export interface Liste {
   auth: Auth;
+  agents: Agent[];
   /** Registry illisible. */
   erreur: string | null;
   repos: Repo[];
@@ -62,6 +98,8 @@ export interface Enfant {
   ouvert: boolean;
   labels: string[];
   bloque: boolean;
+  /** Par agent : pourquoi `/implement #n` est grisé, `null` s’il est possible. */
+  lancement: Record<Agent["id"], string | null>;
 }
 
 export interface Check {
@@ -72,7 +110,7 @@ export interface Check {
 
 export interface Version extends Omit<VersionResume, "pr"> {
   enfants: Enfant[];
-  pr: (PrResume & { titre: string; checks: Check[] }) | null;
+  pr: (PrResume & { titre: string; branche: string; checks: Check[] }) | null;
   signaux: Etape[];
 }
 
@@ -84,11 +122,38 @@ export interface Bug {
 }
 
 /** `GET /api/repos/{owner}/{name}`. */
-export interface Detail extends Repo<Version> {
+export interface Detail extends Omit<Repo<Version>, "session"> {
   bugs: Bug[];
+  agents: Agent[];
+  /** Session ouverte de l’instance, quel que soit son repo. */
+  session: LienSession | null;
 }
 
-export class ErreurApi extends Error {}
+/** Changement non commité du clone géré (`git status --porcelain` : `M`, `??`…). */
+export interface FichierModifie {
+  statut: string;
+  chemin: string;
+}
+
+/** `409` au lancement : le clone géré a des changements non commités, rien n’est lancé. */
+export interface CloneSale {
+  fichiers: FichierModifie[];
+  /** `git diff HEAD` et les fichiers non suivis. */
+  diff: string;
+}
+
+/** Réponse au clone sale : **Reprendre** sur l’arbre tel quel, ou **Jeter** (patch gardé). */
+export type ChoixClone = "reprendre" | "jeter";
+
+/** Identifiant de session du runtime (`wap_runtime.sessions`) : seul ce motif sert à bâtir une URL. */
+export const ID_SESSION = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
+
+export class ErreurApi extends Error {
+  /** `409` : la session déjà ouverte. */
+  session: LienSession | null = null;
+  /** `409` : le clone sale, à reprendre ou jeter. */
+  clone: CloneSale | null = null;
+}
 
 export async function lire<T>(chemin: string): Promise<T> {
   const reponse = await fetch(chemin, { headers: { Accept: "application/json" } });
@@ -98,4 +163,64 @@ export async function lire<T>(chemin: string): Promise<T> {
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return (await reponse.json()) as T;
+}
+
+/** `GET /api/repos/{owner}/{name}/sessions` : de la plus récente à la plus ancienne. */
+export interface SessionsDuRepo {
+  sessions: Session[];
+}
+
+/** `GET /api/sessions/{id}/terminal.cast` : le terminal enregistré (asciinema v2), en texte. */
+export async function lireEnregistrement(id: string): Promise<string> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
+  const chemin = `/api/sessions/${encodeURIComponent(id)}/terminal.cast`;
+  const reponse = await fetch(chemin);
+  if (!reponse.ok) {
+    const corps = await reponse.json().catch(() => null);
+    throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
+  }
+  return reponse.text();
+}
+
+/** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
+export async function lancerSession(
+  repo: string,
+  ticket: number,
+  agent: Agent["id"],
+  choix?: ChoixClone,
+): Promise<Session> {
+  const reponse = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ repo, ticket, agent, ...(choix && { choix }) }),
+  });
+  const corps = await reponse.json().catch(() => null);
+  if (!reponse.ok) {
+    const erreur = new ErreurApi(corps?.detail ?? `lancement : HTTP ${reponse.status}`);
+    erreur.session = corps?.session ?? null;
+    erreur.clone = corps?.clone ?? null;
+    throw erreur;
+  }
+  return corps as Session;
+}
+
+/** **Terminer** : `POST /api/sessions/{id}/terminer`, la session rendue avec son état final. */
+export async function terminerSession(id: string): Promise<Session> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
+  const reponse = await fetch(`/api/sessions/${encodeURIComponent(id)}/terminer`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  const corps = await reponse.json().catch(() => null);
+  if (!reponse.ok) {
+    throw new ErreurApi(corps?.detail ?? `terminer : HTTP ${reponse.status}`);
+  }
+  return corps as Session;
+}
+
+/** Websocket du terminal en direct, sur le cockpit servi (le runtime vérifie son `Origin`). */
+export function urlTerminal(id: string): string {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
+  const { protocol, host } = window.location;
+  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
 }

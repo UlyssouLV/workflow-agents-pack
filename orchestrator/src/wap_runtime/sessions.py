@@ -1,0 +1,127 @@
+"""Sessions des agents : `jobs/<id>/session.json` (spec 0.4.0, « Enregistrement »).
+
+Le runner les crée et les clôt ; le `runtime` les lit (l’instance lui est montée en lecture
+seule). Rien n’est supprimé automatiquement.
+
+`python -m wap_runtime.sessions <jobs> <id>` : lancé dans la session tmux, exécute l’agent de
+la session sur son ticket en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription puis clôt la
+session selon son code de sortie.
+"""
+
+import json
+import re
+import secrets
+import signal
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable
+
+from wap_runtime.agents import agent_par_id, commande_agent
+from wap_runtime.enregistrement import CAST, TRANSCRIPTION, copier_transcription, enregistrer
+from wap_runtime.fichiers import remplacer
+
+OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
+# Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
+CODE_ARRETEE = 128 + signal.SIGHUP
+ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+
+
+class Sessions:
+    def __init__(
+        self, jobs: Path, horloge: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    ):
+        self.jobs = jobs
+        self._horloge = horloge
+
+    def creer(self, repo: str, ticket: int, agent: str, commande: str) -> dict:
+        debut = self._horloge()
+        session = {
+            "id": f"{debut:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}",
+            "repo": repo,
+            "ticket": ticket,
+            "agent": agent,
+            "commande": commande,
+            "debut": debut.isoformat(),
+            "fin": None,
+            "etat": OUVERTE,
+            "code_sortie": None,
+        }
+        (self.jobs / session["id"]).mkdir(parents=True)
+        self._ecrire(session)
+        return session
+
+    def lire(self, id_: str) -> dict | None:
+        """`None` si `id_` n’est pas un identifiant de session ou n’existe pas."""
+        if not ID_SESSION.fullmatch(id_):
+            return None
+        try:
+            return json.loads((self.jobs / id_ / "session.json").read_text())
+        except (OSError, ValueError):
+            return None
+
+    def toutes(self) -> list[dict]:
+        """De la plus récente à la plus ancienne (l’identifiant commence par le début)."""
+        if not self.jobs.is_dir():
+            return []
+        lues = (self.lire(d.name) for d in sorted(self.jobs.iterdir(), reverse=True))
+        return [s for s in lues if s is not None]
+
+    def du_repo(self, slug: str) -> list[dict]:
+        """Celles de `slug` (casse ignorée, comme GitHub), de la plus récente à la plus ancienne."""
+        return [s for s in self.toutes() if s["repo"].lower() == slug.lower()]
+
+    def ouverte(self) -> dict | None:
+        """La session ouverte de l’instance : une seule à la fois (ADR 0004)."""
+        return next((s for s in self.toutes() if s["etat"] == OUVERTE), None)
+
+    def clore(self, id_: str, code: int) -> dict:
+        """Une session déjà close garde son état final."""
+        if (lue := self.lire(id_))["etat"] != OUVERTE:
+            return lue
+        session = {
+            **lue,
+            "fin": self._horloge().isoformat(),
+            "etat": TERMINEE if code == 0 else ECHOUEE,
+            "code_sortie": code,
+        }
+        self._ecrire(session)
+        return session
+
+    def interrompre(self) -> list[dict]:
+        """Au démarrage du runner : une session restée ouverte n’a plus d’agent (runner redémarré
+        pendant la session) ; elle passe `interrompue`, ce qui libère l’instance."""
+        interrompues = []
+        for session in self.toutes():
+            if session["etat"] == OUVERTE:
+                session = {**session, "fin": self._horloge().isoformat(), "etat": INTERROMPUE}
+                self._ecrire(session)
+                interrompues.append(session)
+        return interrompues
+
+    def _ecrire(self, session: dict) -> None:
+        # Le `runtime` lit ce fichier pendant que le runner le réécrit.
+        contenu = json.dumps(session, ensure_ascii=False, indent=2) + "\n"
+        remplacer(self.jobs / session["id"] / "session.json", contenu, 0o644)
+
+
+def executer(jobs: Path, id_: str) -> int:
+    """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
+    une fois le terminal enregistré, la transcription copiée et la session close.
+
+    La commande se déduit de la session (agent connu, ticket) : rien de la ligne de commande
+    n’arrive aux arguments de l’agent."""
+    if not ID_SESSION.fullmatch(id_):
+        raise SystemExit(f"session invalide : {id_}")
+    session = Sessions(jobs).lire(id_)
+    if session is None or (agent := agent_par_id(session["agent"])) is None:
+        raise SystemExit(f"session {id_} inconnue")
+    code = enregistrer(commande_agent(agent, int(session["ticket"])), jobs / id_ / CAST)
+    depuis = datetime.fromisoformat(session["debut"]).timestamp()
+    copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
+    Sessions(jobs).clore(id_, code)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(executer(Path(sys.argv[1]), sys.argv[2]))

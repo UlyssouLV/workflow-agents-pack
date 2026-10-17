@@ -9,8 +9,8 @@ export interface Lecture<T> {
   erreur: string | null;
 }
 
-/** `chemin` lu au montage puis toutes les `RAFRAICHISSEMENT_MS` ; garde la dernière réponse. */
-export function useRafraichi<T>(chemin: string): Lecture<T> {
+/** `chemin` lu au montage puis toutes les `intervalle` ms ; garde la dernière réponse. */
+export function useRafraichi<T>(chemin: string, intervalle = RAFRAICHISSEMENT_MS): Lecture<T> {
   const [lecture, setLecture] = useState<Lecture<T>>({ donnees: null, erreur: null });
 
   useEffect(() => {
@@ -21,12 +21,12 @@ export function useRafraichi<T>(chemin: string): Lecture<T> {
         (erreur: Error) => actif && setLecture((avant) => ({ ...avant, erreur: erreur.message })),
       );
     void relire();
-    const minuteur = setInterval(relire, RAFRAICHISSEMENT_MS);
+    const minuteur = setInterval(relire, intervalle);
     return () => {
       actif = false;
       clearInterval(minuteur);
     };
-  }, [chemin]);
+  }, [chemin, intervalle]);
 
   return lecture;
 }

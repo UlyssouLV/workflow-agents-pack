@@ -22,7 +22,9 @@ def client(tmp_path, front):
     return TestClient(creer_app(registry=tmp_path / "repos.toml", jeton="", front=front))
 
 
-@pytest.mark.parametrize("chemin", ["/", "/repos/o/r", "/repos/mon-org/mon.repo"])
+@pytest.mark.parametrize(
+    "chemin", ["/", "/repos/o/r", "/repos/mon-org/mon.repo", "/sessions/20261017-090000-abcdef"]
+)
 def test_les_routes_du_front_rendent_index_html(tmp_path, front, chemin):
     reponse = client(tmp_path, front).get(chemin)
 

@@ -1,6 +1,6 @@
 # 0003 — Authentification GitHub de l’instance, interactive seulement quand un terminal existe
 
-- Statut : accepté
+- Statut : accepté ; point 1 remplacé par l’ADR 0004 (le runner utilise le `gh` de son image avec `GH_TOKEN`)
 - Date : 2026-10-17
 - Version : 0.3.0 (#17)
 

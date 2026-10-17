@@ -1,6 +1,21 @@
-import type { Auth, Bug, Detail, EtatCi, Version } from "./api";
-import { BadgeHumain, BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
+import { useState } from "react";
+import type {
+  Agent,
+  Auth,
+  Bug,
+  ChoixClone,
+  CloneSale,
+  Detail,
+  Enfant,
+  EtatCi,
+  LienSession,
+  SessionsDuRepo,
+  Version,
+} from "./api";
+import { ErreurApi, ID_SESSION, lancerSession } from "./api";
+import { BadgeHumain, BandeauAuth, LIBELLES_ETAT_SESSION, LibelleEtape, dateHeure, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
+import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
 
 const LIBELLES_CI: Record<EtatCi, string> = {
   echec: "en échec",
@@ -23,11 +38,79 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
       {auth.donnees && <BandeauAuth auth={auth.donnees} />}
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && <Contenu detail={donnees} />}
+      <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
     </main>
   );
 }
 
+/** Sessions du repo, lues dans `jobs/` sans GitHub : affichées même quand le repo est en erreur. */
+function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
+  const { donnees, erreur } = useRafraichi<SessionsDuRepo>(chemin, RAFRAICHISSEMENT_SESSION_MS);
+  const nom = (id: Agent["id"]) => agents.find((a) => a.id === id)?.nom ?? id;
+
+  return (
+    <section aria-label="Sessions">
+      <h2>Sessions</h2>
+      {erreur && <p className="erreur">{erreur}</p>}
+      {donnees &&
+        (donnees.sessions.length === 0 ? (
+          <p>Aucune session.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Agent</th>
+                <th>Commande</th>
+                <th>État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {donnees.sessions.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <a href={s.url}>{dateHeure(s.debut)}</a>
+                  </td>
+                  <td>{nom(s.agent)}</td>
+                  <td>
+                    <code>{s.commande}</code>
+                  </td>
+                  <td>{LIBELLES_ETAT_SESSION[s.etat]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+    </section>
+  );
+}
+
 function Contenu({ detail }: { detail: Detail }) {
+  const [agent, setAgent] = useState<Agent["id"]>(
+    () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
+  );
+  const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
+  // Clone sale au lancement : rien n’est lancé tant que l’utilisateur n’a pas choisi.
+  const [sale, setSale] = useState<{ ticket: number; clone: CloneSale } | null>(null);
+
+  const lancer = (ticket: number, choix?: ChoixClone) => {
+    setRefus(null);
+    setSale(null);
+    lancerSession(detail.slug, ticket, agent, choix).then(
+      (session) => {
+        // Page bâtie ici, pas l’URL de la réponse : on ne quitte pas le cockpit.
+        if (ID_SESSION.test(session.id)) window.location.assign(`/sessions/${session.id}`);
+      },
+      (erreur: Error) => {
+        if (erreur instanceof ErreurApi && erreur.clone) {
+          setSale({ ticket, clone: erreur.clone });
+        } else {
+          setRefus({ message: erreur.message, session: erreur instanceof ErreurApi ? erreur.session : null });
+        }
+      },
+    );
+  };
+
   return (
     <>
       <h1>{nomAffiche(detail)}</h1>
@@ -41,8 +124,48 @@ function Contenu({ detail }: { detail: Detail }) {
           <p>
             Étape : <strong>{detail.etape?.libelle}</strong> {detail.humain_requis && <BadgeHumain />}
           </p>
+          {detail.session && (
+            <p>
+              <a className="badge session" href={detail.session.url}>
+                Session en cours
+              </a>{" "}
+              sur {detail.session.repo}
+            </p>
+          )}
+          <p>
+            <label>
+              Agent{" "}
+              <select value={agent} onChange={(e) => setAgent(e.target.value as Agent["id"])}>
+                {detail.agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.nom}
+                    {!a.connecte && " (non connecté)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </p>
+          {refus && (
+            <p role="alert" className="erreur">
+              Lancement refusé : {refus.message}
+              {refus.session && (
+                <>
+                  {" "}
+                  — <a href={refus.session.url}>voir la session ouverte</a>
+                </>
+              )}
+            </p>
+          )}
+          {sale && (
+            <ChoixCloneSale
+              ticket={sale.ticket}
+              clone={sale.clone}
+              choisir={(choix) => lancer(sale.ticket, choix)}
+              annuler={() => setSale(null)}
+            />
+          )}
           {detail.versions.map((v) => (
-            <SectionVersion key={v.numero} version={v} />
+            <SectionVersion key={v.numero} version={v} agent={agent} lancer={lancer} />
           ))}
           <Bugs bugs={detail.bugs} />
         </>
@@ -51,7 +174,12 @@ function Contenu({ detail }: { detail: Detail }) {
   );
 }
 
-function SectionVersion({ version }: { version: Version }) {
+interface Lanceur {
+  agent: Agent["id"];
+  lancer: (ticket: number) => void;
+}
+
+function SectionVersion({ version, agent, lancer }: { version: Version } & Lanceur) {
   const nom = `#${version.numero} ${version.titre}`;
   const { pr } = version;
   return (
@@ -72,6 +200,7 @@ function SectionVersion({ version }: { version: Version }) {
             <th>Enfant</th>
             <th>État</th>
             <th>Labels</th>
+            <th>Agent</th>
           </tr>
         </thead>
         <tbody>
@@ -87,6 +216,7 @@ function SectionVersion({ version }: { version: Version }) {
                 {e.bloque && ", bloqué"}
               </td>
               <td>{e.labels.join(", ")}</td>
+              <td>{e.ouvert && <BoutonImplement enfant={e} agent={agent} lancer={lancer} />}</td>
             </tr>
           ))}
         </tbody>
@@ -112,6 +242,64 @@ function SectionVersion({ version }: { version: Version }) {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+/** `/implement #n`, grisé avec la raison rendue par le runtime pour l’agent choisi. */
+function BoutonImplement({ enfant, agent, lancer }: { enfant: Enfant } & Lanceur) {
+  const raison = enfant.lancement[agent];
+  return (
+    <>
+      <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer(enfant.numero)}>
+        /implement #{enfant.numero}
+      </button>
+      {raison && <span className="raison">{raison}</span>}
+    </>
+  );
+}
+
+/** Clone sale : les changements laissés par une session précédente, à reprendre ou jeter. */
+function ChoixCloneSale({
+  ticket,
+  clone,
+  choisir,
+  annuler,
+}: {
+  ticket: number;
+  clone: CloneSale;
+  choisir: (choix: ChoixClone) => void;
+  annuler: () => void;
+}) {
+  return (
+    <section role="dialog" aria-labelledby="titre-clone-sale" className="clone-sale">
+      <h2 id="titre-clone-sale">Le clone a des changements non commités</h2>
+      <p>
+        Une session précédente les a laissés. <strong>Reprendre</strong> lance /implement #{ticket} sur cet arbre,
+        sans changer de branche ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de la session,
+        remet le clone à zéro puis lance.
+      </p>
+      <ul aria-label="Fichiers modifiés">
+        {clone.fichiers.map((f) => (
+          <li key={f.chemin}>
+            <code>
+              {f.statut} {f.chemin}
+            </code>
+          </li>
+        ))}
+      </ul>
+      <pre aria-label="Diff">{clone.diff}</pre>
+      <p>
+        <button type="button" onClick={() => choisir("reprendre")}>
+          Reprendre
+        </button>{" "}
+        <button type="button" onClick={() => choisir("jeter")}>
+          Jeter
+        </button>{" "}
+        <button type="button" onClick={annuler}>
+          Annuler
+        </button>
+      </p>
     </section>
   );
 }

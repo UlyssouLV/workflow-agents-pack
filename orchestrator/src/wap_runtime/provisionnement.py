@@ -4,7 +4,8 @@
 `setup` tourne en root (lancé par `install.sh`) : il installe le socle, puis relance
 `wap-runtime setup --instance-seule` en utilisateur d’instance `orchestrator` pour
 le reste (ADR 0002) et recopie sa sortie dans le journal. Il finit par la connexion
-GitHub de l’instance, seule étape qui peut interagir (ADR 0003).
+GitHub de l’instance, seule étape qui peut interagir (ADR 0003), et indique l’auth
+des agents comme prochaine étape sans la lancer.
 """
 
 import os
@@ -14,7 +15,8 @@ import time
 from pathlib import Path
 from typing import Mapping
 
-from wap_runtime.auth import lancer_auth, statut
+from wap_runtime.agents import AGENTS, connecte
+from wap_runtime.auth import lancer_auth, lire_secrets, statut
 from wap_runtime.instance import chemin_instance, lire_config, preparer_instance
 from wap_runtime.sante import sonder
 from wap_runtime.socle import (
@@ -71,7 +73,11 @@ def setup(
     if code != 0:
         print(f"Journal : {journal}")
         return code
-    return _connecter_github(chemin_instance(home_orchestrator), env, terminal)
+    instance = chemin_instance(home_orchestrator)
+    code = _connecter_github(instance, env, terminal)
+    if code == 0:
+        _indiquer_auth_agents(instance)
+    return code
 
 
 def _connecter_github(instance: Path, env: Mapping[str, str], terminal: Path) -> int:
@@ -95,6 +101,15 @@ def _connecter_github(instance: Path, env: Mapping[str, str], terminal: Path) ->
             return lancer_auth(instance, None, UTILISATEUR, env, entree=tty)
     print("Instance non connectée à GitHub — prochaine étape : `sudo wap-runtime auth`", flush=True)
     return 0
+
+
+def _indiquer_auth_agents(instance: Path) -> None:
+    """Les agents non connectés, comme prochaine étape : le setup ne lance pas leur auth."""
+    secrets = lire_secrets(instance / "secrets.env")
+    manquants = [a for a in AGENTS if not connecte(a, secrets)]
+    if manquants:
+        commandes = " ou ".join(f"`{a.commande}` ({a.nom})" for a in manquants)
+        print(f"Agents non connectés — prochaine étape : {commandes}", flush=True)
 
 
 def demarrer_instance(

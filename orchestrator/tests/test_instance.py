@@ -1,6 +1,7 @@
 """Instance `~/.wap-runtime/` : création, idempotence, Compose, pack, `wap-runtime uninstall`."""
 
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -277,3 +278,123 @@ def test_une_passe_ne_cree_ni_ne_reecrit_repos_toml(home, depot_pack):
 
     assert registry.read_text() == '[[repos]]\nslug = "mon-org/mon-repo"\n'
     assert registry.stat().st_mtime_ns == avant
+
+
+def service(compose: str, nom: str) -> str:
+    """Le bloc d’un service : de `  nom:` jusqu’au service suivant."""
+    blocs = re.split(r"^  (?=\S)", compose.split("\nservices:\n", 1)[1], flags=re.MULTILINE)
+    return next(b for b in blocs if b.startswith(f"{nom}:"))
+
+
+def test_compose_ajoute_runner_borne(home, depot_pack):
+    instance = passe(home, depot_pack)
+
+    runner = service((instance / "compose.yaml").read_text(), "runner")
+    assert f'user: "{os.getuid()}:{os.getgid()}"' in runner
+    assert "dockerfile: runner/Dockerfile" in runner
+    assert "- secrets.env" in runner
+    montages = re.findall(r'^      - "(.+)"$', runner, re.MULTILINE)
+    assert sorted(montages) == [
+        "./clones:/clones",
+        "./jobs:/jobs",
+        "./runner-home:/home/runner",
+    ]
+    assert "HOME: /home/runner" in runner
+    assert "docker.sock" not in runner
+    assert "ports:" not in runner
+    assert "restart: unless-stopped" in runner
+
+
+def test_runner_sert_son_api_interne_au_runtime(home, depot_pack):
+    compose = (passe(home, depot_pack) / "compose.yaml").read_text()
+
+    runner = service(compose, "runner")
+    assert 'command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "8788"]' in runner
+    assert "WAP_CLONES: /clones" in runner
+    assert "WAP_JOBS: /jobs" in runner
+    assert "WAP_RUNNER: http://runner:8788" in service(compose, "runtime")
+
+
+def test_dockerfile_du_runner_installe_wap_runtime_verrouille():
+    from wap_runtime import instance as module
+
+    dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
+    assert "--require-hashes" in dockerfile
+    assert "requirements.txt" in dockerfile
+    assert "sleep" not in dockerfile
+
+
+def test_runtime_inchange_par_le_runner(home, depot_pack):
+    instance = passe(home, depot_pack, WAP_PORT="9003")
+
+    runtime = service((instance / "compose.yaml").read_text(), "runtime")
+    assert re.findall(r'^      - "(.+)"$', runtime, re.MULTILINE) == [
+        ".:/instance:ro",
+        "127.0.0.1:9003:8787",
+    ]
+    assert "user:" not in runtime
+
+
+def test_dockerfile_du_runner_existe_dans_le_contexte_de_build(home, depot_pack):
+    from wap_runtime import instance as module
+
+    contexte = Path(module.__file__).parents[2]
+    runner = service((passe(home, depot_pack) / "compose.yaml").read_text(), "runner")
+    chemin = re.search(r"dockerfile: (\S+)", runner).group(1)
+    assert module.CONTEXTE_RUNTIME in runner
+    assert (contexte / chemin).is_file()
+
+
+def test_dockerfile_du_runner_epingle_claude_cursor_et_les_skills_de_matt():
+    from wap_runtime import instance as module
+
+    dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
+    assert re.search(r"^ARG CLAUDE_VERSION=\d+\.\d+\.\d+$", dockerfile, re.MULTILINE)
+    assert "@anthropic-ai/claude-code@${CLAUDE_VERSION}" in dockerfile
+    assert re.search(r"^ARG CURSOR_VERSION=\S+$", dockerfile, re.MULTILINE)
+    for arch in ("X64", "ARM64"):
+        assert re.search(rf"^ARG CURSOR_SHA256_{arch}=[0-9a-f]{{64}}$", dockerfile, re.MULTILINE), arch
+    assert "sha256sum --check" in dockerfile
+    assert re.search(r"^ARG SKILLS_MATT_COMMIT=[0-9a-f]{40}$", dockerfile, re.MULTILINE)
+    assert 'checkout --quiet "${SKILLS_MATT_COMMIT}"' in dockerfile
+    for outil in ("git", "gh", "tmux", "python3-venv"):
+        assert outil in dockerfile, outil
+
+
+def test_dockerfile_du_runner_n_execute_rien_de_non_verifie():
+    """Pas de script téléchargé passé à un shell, pas de scripts npm des dépendances, pas de root."""
+    from wap_runtime import instance as module
+
+    dockerfile = (Path(module.__file__).parents[2] / "runner" / "Dockerfile").read_text()
+    assert not re.search(r"\|\s*(?:\S+=\S+\s+)*(?:ba)?sh\b", dockerfile)
+    assert "npx" not in dockerfile
+    assert all("--ignore-scripts" in l for l in dockerfile.splitlines() if "npm install" in l)
+    assert all("--proto '=https'" in l for l in dockerfile.splitlines() if "curl -" in l)
+    assert re.search(r"^USER (?!root)\S+$", dockerfile, re.MULTILINE)
+
+
+def test_setup_cree_les_dossiers_du_runner_sans_les_ecraser(home, depot_pack):
+    instance = passe(home, depot_pack)
+    for nom in ("clones", "jobs", "runner-home"):
+        dossier = instance / nom
+        assert dossier.is_dir(), nom
+        assert dossier.stat().st_uid == os.getuid(), nom
+        (dossier / "trace").write_text(nom)
+
+    passe(home, depot_pack)
+
+    for nom in ("clones", "jobs", "runner-home"):
+        assert (instance / nom / "trace").read_text() == nom
+
+
+def test_uninstall_purge_supprime_les_dossiers_du_runner(home, depot_pack, faux_docker):
+    from wap_runtime.cli import main
+
+    instance = passe(home, depot_pack)
+    (instance / "jobs" / "1").mkdir()
+    (instance / "runner-home" / ".claude.json").write_text("{}")
+
+    assert main(["uninstall", "--purge"]) == 0
+
+    for nom in ("clones", "jobs", "runner-home"):
+        assert not (instance / nom).exists(), nom

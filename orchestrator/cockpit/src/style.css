@@ -38,3 +38,48 @@ code {
 .compte {
   color: #59636e;
 }
+.agents h2 {
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+}
+.agents ul {
+  margin-top: 0;
+}
+.agents .non-connecte {
+  color: #59636e;
+}
+.badge.session {
+  background: #ddf4ff;
+  border-color: #54aeff;
+  color: inherit;
+  text-decoration: none;
+}
+.raison {
+  color: #59636e;
+  font-size: 0.85rem;
+  margin-left: 0.4rem;
+}
+.terminal {
+  background: #000;
+  height: 70vh;
+  padding: 0.3rem;
+}
+.etat-terminal {
+  color: #59636e;
+}
+.clone-sale {
+  background: #fff1c2;
+  border: 1px solid #d4a72c;
+  margin: 0.5rem 0 1rem;
+  padding: 0.6rem 0.8rem;
+}
+.clone-sale h2 {
+  font-size: 1rem;
+  margin-top: 0;
+}
+.clone-sale pre {
+  background: #f6f8fa;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 0.5rem;
+}

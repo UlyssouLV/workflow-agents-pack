@@ -96,6 +96,12 @@ class Hote:
         self.terminal = self.racine / "tty"
         self.terminal.write_text("")
 
+    def secrets_initiaux(self, contenu: str) -> None:
+        instance = self.home / ".wap-runtime"
+        instance.mkdir(exist_ok=True)
+        (instance / "secrets.env").write_text(contenu)
+        (instance / "secrets.env").chmod(0o600)
+
     def secrets(self) -> str:
         return (self.home / ".wap-runtime" / "secrets.env").read_text()
 
@@ -253,6 +259,25 @@ def test_setup_sans_terminal_ni_token_indique_la_prochaine_etape(hote, capsys):
     assert "prochaine étape : `sudo wap-runtime auth`" in sortie
     assert not any(l.startswith("gh auth") for l in hote.lignes_appels())
     assert hote.secrets() == ""
+
+
+def test_setup_indique_l_auth_des_agents_sans_l_enchainer(hote, capsys):
+    hote.avec_terminal()
+
+    assert hote.setup(GH_TOKEN="ghp_installation") == 0
+
+    sortie = capsys.readouterr().out
+    assert "prochaine étape : `sudo wap-runtime auth claude`" in sortie
+    assert "sudo wap-runtime auth agent --with-token" in sortie
+    assert not any(l.startswith("claude setup-token") for l in hote.lignes_appels())
+
+
+def test_setup_ne_rappelle_pas_l_auth_des_agents_deja_connectes(hote, capsys):
+    hote.secrets_initiaux("CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-x\nCURSOR_API_KEY=key_x\n")
+
+    assert hote.setup(GH_TOKEN="ghp_installation") == 0
+
+    assert "auth claude" not in capsys.readouterr().out
 
 
 def test_setup_avec_gh_token_l_utilise_sans_interaction(hote, capsys):

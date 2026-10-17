@@ -4,7 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   // `npm run dev` : l’API vient d’un `wap-runtime serve` local.
-  server: { proxy: { "/api": "http://127.0.0.1:8787", "/health": "http://127.0.0.1:8787" } },
+  server: {
+    proxy: { "/api": { target: "http://127.0.0.1:8787", ws: true }, "/health": "http://127.0.0.1:8787" },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],

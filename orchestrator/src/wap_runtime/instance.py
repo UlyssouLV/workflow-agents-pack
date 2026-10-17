@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 from wap_runtime import __version__
+from wap_runtime.runner import PORT_RUNNER
 
 NOM_INSTANCE = ".wap-runtime"
 DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
@@ -26,6 +27,9 @@ CONTEXTE_RUNTIME = (
 PORT_CONTENEUR = 8787
 # L’instance montée en lecture seule dans `runtime`, pour y lire `repos.toml`.
 INSTANCE_CONTENEUR = "/instance"
+# Seuls dossiers de l’instance montés en écriture dans `runner` (ADR 0004).
+DOSSIERS_RUNNER = ("clones", "jobs", "runner-home")
+HOME_RUNNER = "/home/runner"
 
 
 def chemin_instance(home: Path) -> Path:
@@ -40,7 +44,11 @@ def preparer_instance(
     instance.mkdir(parents=True, exist_ok=True)
     config = _completer_config(instance / "config.toml", _config_par_defaut(instance, env))
     _creer_secrets(instance / "secrets.env")
-    (instance / "compose.yaml").write_text(_compose(config["port"]))
+    for nom in DOSSIERS_RUNNER:
+        (instance / nom).mkdir(exist_ok=True)
+    # Cette passe tourne en utilisateur d’instance : le runner reprend son UID.
+    compose = _compose(config["port"], os.getuid(), os.getgid())
+    (instance / "compose.yaml").write_text(compose)
     _aligner_pack(depot_pack, Path(config["pack_path"]), config["pack_ref"])
     return instance
 
@@ -105,7 +113,7 @@ def _creer_secrets(chemin: Path) -> None:
     chemin.chmod(0o600)
 
 
-def _compose(port: int) -> str:
+def _compose(port: int, uid: int, gid: int) -> str:
     return f"""\
 # Généré par wap-runtime depuis config.toml : réécrit à chaque passe, ne pas éditer.
 name: wap-runtime
@@ -119,12 +127,34 @@ services:
       - secrets.env
     environment:
       WAP_INSTANCE: {INSTANCE_CONTENEUR}
+      WAP_RUNNER: http://runner:{PORT_RUNNER}
     # Le dossier et non `repos.toml` seul : absent, ce fichier deviendrait un dossier
     # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur.
     volumes:
       - ".:{INSTANCE_CONTENEUR}:ro"
     ports:
       - "127.0.0.1:{port}:{PORT_CONTENEUR}"
+    restart: unless-stopped
+  # Sessions des agents : pas de socket Docker, aucun port publié ; le `runtime` lui
+  # parle sur le réseau Compose.
+  runner:
+    build:
+      context: {CONTEXTE_RUNTIME}
+      dockerfile: runner/Dockerfile
+    image: wap-runner:local
+    command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "{PORT_RUNNER}"]
+    user: "{uid}:{gid}"
+    init: true
+    env_file:
+      - secrets.env
+    environment:
+      HOME: {HOME_RUNNER}
+      WAP_CLONES: /clones
+      WAP_JOBS: /jobs
+    volumes:
+      - "./clones:/clones"
+      - "./jobs:/jobs"
+      - "./runner-home:{HOME_RUNNER}"
     restart: unless-stopped
 """
 
