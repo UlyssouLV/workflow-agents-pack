@@ -104,23 +104,34 @@ def statut(
 
 
 def lire_jeton(secrets: Path) -> str | None:
-    try:
-        lignes = secrets.read_text().splitlines()
-    except FileNotFoundError:
-        return None
-    valeurs = [l.partition("=")[2].strip() for l in lignes if _est_jeton(l)]
-    return valeurs[-1] if valeurs and valeurs[-1] else None
+    return lire_secrets(secrets).get("GH_TOKEN")
 
 
 def ecrire_jeton(secrets: Path, jeton: str) -> None:
-    """Remplace `GH_TOKEN` en gardant les autres lignes ; fichier remplacé d’un coup, `0600`."""
+    ecrire_secret(secrets, "GH_TOKEN", jeton)
+
+
+def lire_secrets(secrets: Path) -> dict[str, str]:
+    """Les `CLE=valeur` non vides de `secrets.env` (la dernière l’emporte) ; `{}` sans fichier."""
+    try:
+        lignes = secrets.read_text().splitlines()
+    except FileNotFoundError:
+        return {}
+    valeurs = {}
+    for ligne in lignes:
+        cle, egal, valeur = ligne.strip().partition("=")
+        if egal and not cle.startswith("#"):
+            valeurs[cle] = valeur.strip()
+    return {cle: valeur for cle, valeur in valeurs.items() if valeur}
+
+
+def ecrire_secret(secrets: Path, cle: str, valeur: str, retirer: tuple[str, ...] = ()) -> None:
+    """Remplace `cle` (et retire les clés `retirer`) en gardant les autres lignes ; fichier
+    remplacé d’un coup, `0600`."""
     lignes = secrets.read_text().splitlines() if secrets.exists() else []
-    contenu = "".join(f"{l}\n" for l in lignes if not _est_jeton(l)) + f"GH_TOKEN={jeton}\n"
-    remplacer(secrets, contenu, 0o600)
-
-
-def _est_jeton(ligne: str) -> bool:
-    return ligne.strip().startswith("GH_TOKEN=")
+    otees = {cle, *retirer}
+    gardees = [l for l in lignes if l.strip().partition("=")[0] not in otees]
+    remplacer(secrets, "".join(f"{l}\n" for l in gardees) + f"{cle}={valeur}\n", 0o600)
 
 
 def _compte(home: Path, jeton: str, utilisateur: str | None, env: Mapping[str, str]) -> str:

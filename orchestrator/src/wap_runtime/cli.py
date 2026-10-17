@@ -6,8 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from wap_runtime.auth import lancer_auth, statut
-
+from wap_runtime.agents import AGENTS, CLAUDE, CURSOR, connecte, lancer_auth_agent
+from wap_runtime.auth import lancer_auth, lire_secrets, statut
 from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
@@ -106,26 +106,46 @@ def _repo(action: str, slug: str | None, nom: str | None) -> int:
     return 0
 
 
-def _auth(status: bool, avec_jeton: bool) -> int:
+def _auth(cible: str | None, avec_jeton: bool) -> int:
+    """`cible` : `None` (GitHub), `status`, `claude` ou `agent` (Cursor)."""
     instance = _instance_existante()
     if instance is None:
         return 1
-    # En root, `gh` tourne en utilisateur d’instance : c’est sa connexion qui compte.
+    # En root, `gh` et `claude` tournent en utilisateur d’instance : c’est sa connexion qui compte.
     utilisateur = UTILISATEUR if os.geteuid() == 0 else None
-    if status:
-        connectee, detail = statut(instance, utilisateur)
-        if connectee:
-            print(f"OK — instance connectée à GitHub en tant que {detail}")
-            return 0
-        print(f"KO — instance non connectée à GitHub ({detail}) : `sudo wap-runtime auth`")
+    if cible == "status":
+        return _auth_status(instance, utilisateur)
+    agent = {"claude": CLAUDE, "agent": CURSOR}.get(cible)
+    if agent is CURSOR and not avec_jeton:
+        # `agent login` exige un navigateur sur la machine même.
+        print(f"KO — Cursor se connecte par clé API sur stdin : `{CURSOR.commande}`")
         return 1
     jeton = None
     if avec_jeton:
         jeton = sys.stdin.read().strip()
         if not jeton:
-            print("KO — aucun token sur stdin : `… | sudo wap-runtime auth --with-token`")
+            commande = (agent.commande if agent else "sudo wap-runtime auth").removeprefix("… | ")
+            print(f"KO — aucun token sur stdin : `… | {commande.removesuffix(' --with-token')} --with-token`")
             return 1
-    return lancer_auth(instance, jeton, utilisateur)
+    if agent is None:
+        return lancer_auth(instance, jeton, utilisateur)
+    return lancer_auth_agent(instance, agent, jeton, utilisateur)
+
+
+def _auth_status(instance: Path, utilisateur: str | None) -> int:
+    """Une ligne par connexion ; le code de sortie est celui de GitHub, les agents étant au choix."""
+    connectee, detail = statut(instance, utilisateur)
+    if connectee:
+        print(f"OK — instance connectée à GitHub en tant que {detail}")
+    else:
+        print(f"KO — instance non connectée à GitHub ({detail}) : `sudo wap-runtime auth`")
+    secrets = lire_secrets(instance / "secrets.env")
+    for agent in AGENTS:
+        if connecte(agent, secrets):
+            print(f"OK — {agent.nom} connecté")
+        else:
+            print(f"KO — {agent.nom} non connecté : `{agent.commande}`")
+    return 0 if connectee else 1
 
 
 def _setup(instance_seule: bool) -> int:
@@ -165,11 +185,16 @@ def main(argv=None) -> int:
     remove.add_argument("slug", metavar="owner/name")
     actions.add_parser("list", help="liste les repos liés")
     auth = sous.add_parser(
-        "auth", help="connecte l’instance à GitHub (device flow), ou affiche son état"
+        "auth",
+        help="connecte l’instance à GitHub (device flow), à Claude Code (`claude`) "
+        "ou à Cursor (`agent`), ou affiche l’état des trois (`status`)",
     )
-    auth.add_argument("status", nargs="?", choices=["status"], help="affiche l’état")
     auth.add_argument(
-        "--with-token", action="store_true", help="lit le token GitHub sur stdin"
+        "cible", nargs="?", choices=["status", "claude", "agent"],
+        help="sans argument : GitHub",
+    )
+    auth.add_argument(
+        "--with-token", action="store_true", help="lit le token (ou la clé API) sur stdin"
     )
     setup_ = sous.add_parser(
         "setup",
@@ -181,7 +206,7 @@ def main(argv=None) -> int:
     if args.commande == "setup":
         return _setup(args.instance_seule)
     if args.commande == "auth":
-        return _auth(args.status == "status", args.with_token)
+        return _auth(args.cible, args.with_token)
     if args.commande == "repo":
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":

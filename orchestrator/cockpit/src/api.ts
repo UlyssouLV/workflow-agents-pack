@@ -7,6 +7,15 @@ export interface Auth {
   compte: string | null;
 }
 
+/** Un agent de l’encart Agents : `connecte` = token présent dans `secrets.env`. */
+export interface Agent {
+  id: "claude" | "cursor";
+  nom: string;
+  connecte: boolean;
+  /** À lancer sur l’hôte pour le connecter. */
+  commande: string;
+}
+
 export interface Etape {
   numero: number | null;
   libelle: string;
@@ -50,6 +59,7 @@ export interface Repo<V = VersionResume> {
 
 export interface Liste {
   auth: Auth;
+  agents: Agent[];
   /** Registry illisible. */
   erreur: string | null;
   repos: Repo[];

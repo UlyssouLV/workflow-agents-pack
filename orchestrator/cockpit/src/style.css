@@ -38,3 +38,13 @@ code {
 .compte {
   color: #59636e;
 }
+.agents h2 {
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+}
+.agents ul {
+  margin-top: 0;
+}
+.agents .non-connecte {
+  color: #59636e;
+}

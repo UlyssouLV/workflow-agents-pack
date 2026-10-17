@@ -3,7 +3,7 @@
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 import httpx
 import uvicorn
@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from wap_runtime import __version__
+from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.github import API_GITHUB, ClientGitHub
 from wap_runtime.instance import chemin_instance
@@ -37,14 +38,17 @@ def creer_app(
     transport: httpx.BaseTransport | None = None,
     horloge: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     front: Path | None = None,
+    env: Mapping[str, str] = os.environ,
 ) -> FastAPI:
     """Sans `jeton`, celui de `GH_TOKEN` (lu au démarrage : `env_file` de Compose).
 
     `front` : build Vite du cockpit (`WAP_COCKPIT` par défaut) ; absent, seules `/health` et
     `/api/` sont servies.
+    `env` : d’où lire les tokens des agents (`secrets.env`, reçu par `env_file`).
     """
     jeton = jeton if jeton is not None else os.environ.get("GH_TOKEN") or None
     client = ClientGitHub(jeton, api_github, transport) if jeton else None
+    agents = etat_agents(env)
     cockpit = Cockpit(registry or _registry_par_defaut(), client, horloge)
     app = FastAPI(title="wap-runtime", version=__version__, docs_url=None, redoc_url=None)
 
@@ -56,9 +60,13 @@ def creer_app(
     def auth() -> dict:
         return cockpit.auth()
 
+    @app.get("/api/agents")
+    def agents_() -> dict:
+        return {"agents": agents}
+
     @app.get("/api/repos")
     def repos() -> dict:
-        return cockpit.liste()
+        return {**cockpit.liste(), "agents": agents}
 
     @app.get("/api/repos/{owner}/{name}")
     def repo(owner: str, name: str) -> dict:

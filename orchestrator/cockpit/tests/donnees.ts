@@ -1,8 +1,21 @@
 // Réponses `/api/` simulées, à la forme rendue par `wap_runtime.cockpit`.
 import { vi } from "vitest";
-import type { Auth, Detail, Etape, Liste, Repo, VersionResume } from "../src/api";
+import type { Agent, Auth, Detail, Etape, Liste, Repo, VersionResume } from "../src/api";
 
 export const CONNECTE: Auth = { etat: "connecte", compte: "octocat" };
+
+export const CLAUDE: Agent = {
+  id: "claude",
+  nom: "Claude Code",
+  connecte: true,
+  commande: "sudo wap-runtime auth claude",
+};
+export const CURSOR: Agent = {
+  id: "cursor",
+  nom: "Cursor",
+  connecte: false,
+  commande: "… | sudo wap-runtime auth agent --with-token",
+};
 
 export const IMPLEMENT: Etape = { numero: 7, libelle: "Implement", humain: false };
 export const QUESTION: Etape = { numero: 1, libelle: "Question en attente", humain: true };
@@ -35,7 +48,7 @@ export function repo(r: Partial<Repo> = {}): Repo {
 }
 
 export function liste(l: Partial<Liste> = {}): Liste {
-  return { auth: CONNECTE, erreur: null, repos: [repo()], ...l };
+  return { auth: CONNECTE, agents: [CLAUDE, CURSOR], erreur: null, repos: [repo()], ...l };
 }
 
 export function detail(d: Partial<Detail> = {}): Detail {

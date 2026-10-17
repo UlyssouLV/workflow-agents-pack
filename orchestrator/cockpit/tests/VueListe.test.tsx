@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VueListe } from "../src/VueListe";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { PAS_DE_VERSION, QUESTION, liste, repo, simulerApi, version } from "./donnees";
+import { CLAUDE, CURSOR, PAS_DE_VERSION, QUESTION, liste, repo, simulerApi, version } from "./donnees";
 
 async function lignes() {
   const tableau = await screen.findByRole("table");
@@ -156,5 +156,38 @@ describe("vue liste", () => {
 
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole("link", { name: "o/nouveau" })).toBeInTheDocument();
+  });
+
+  describe("encart Agents", () => {
+    async function encart() {
+      return within(await screen.findByRole("region", { name: "Agents" }));
+    }
+
+    it("dit quel agent est connecté, et la commande à lancer pour l’autre", async () => {
+      simulerApi({ "/api/repos": liste() });
+
+      render(<VueListe />);
+
+      const agents = await encart();
+      const [claude, cursor] = agents.getAllByRole("listitem");
+      expect(claude).toHaveTextContent("Claude Code : Connecté");
+      expect(claude).not.toHaveTextContent("sudo");
+      expect(cursor).toHaveTextContent("Cursor : Non connecté");
+      expect(cursor).toHaveTextContent("… | sudo wap-runtime auth agent --with-token");
+    });
+
+    it("donne la commande de chaque agent non connecté", async () => {
+      simulerApi({
+        "/api/repos": liste({ agents: [{ ...CLAUDE, connecte: false }, { ...CURSOR, connecte: true }] }),
+      });
+
+      render(<VueListe />);
+
+      const [claude, cursor] = (await encart()).getAllByRole("listitem");
+      expect(claude).toHaveTextContent("Claude Code : Non connecté");
+      expect(claude).toHaveTextContent("sudo wap-runtime auth claude");
+      expect(cursor).toHaveTextContent("Cursor : Connecté");
+      expect(cursor).not.toHaveTextContent("sudo");
+    });
   });
 });
