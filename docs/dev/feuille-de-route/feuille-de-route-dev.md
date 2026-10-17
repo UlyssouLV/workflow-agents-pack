@@ -40,6 +40,22 @@ Hors périmètre : SaaS multi-tenant, comptes partagés entre instances.
 
 ## Plus tard (pas encore numéroté)
 
+### Bug — le runner refuse l’enchaînement auto (permissions Claude / Cursor) (#69)
+
+**Constat :** après les tests humains 0.4.1, Claude Code en mode auto peut refuser `$WAP_ENCHAINER`, et Cursor demande une validation hors allowlist, même si le runtime sait enchaîner.
+
+**Reproductibilité :** session runner Claude en mode auto ; laisser `encadrer-implement` (ou un appel direct) lancer l’enchaînement ; observer le refus / la demande d’allowlist.
+
+**Impact :** chaîne de tickets bloquée ou semi-manuelle dans le runner.
+
+**Cause probable :** aucune règle étroite dans `runner-home/` pour les commandes d’enchaînement.
+
+**À corriger :** fusionner au démarrage du runner des allowlist Claude / Cursor pour `enchainer-implement.sh` et `wap-runtime enchainer` (pas `Bash(*)`).
+
+**Hors périmètre :** correctif pack `#54` sur `main` ; politique permissions de l’autopilot 0.5.0.
+
+**Suivi :** [#69](https://github.com/UlyssouLV/workflow-agents-pack/issues/69) · Trouvé dans 0.4.1 · test humain · 2026-10-17 · avant déploiement
+
 ### Style du cockpit
 
 Un vrai design du cockpit (la 0.3.0 livre un style minimal).
