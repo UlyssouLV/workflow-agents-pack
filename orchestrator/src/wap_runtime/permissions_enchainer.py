@@ -7,7 +7,6 @@ chaque démarrage du conteneur, sans écraser le reste des settings agent.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 # Préfixes / motifs étroits — jamais Bash(*) ni allow-all.
@@ -20,11 +19,26 @@ CURSOR_TERMINAL_ALLOWLIST = (
     "wap-runtime enchainer",
 )
 
+_CLAUDE_RELATIF = (".claude", "settings.json")
+_CURSOR_RELATIF = (".cursor", "permissions.json")
+
 
 def assurer(home: Path) -> None:
-    """Ajoute les règles d’enchaînement sous `home` si elles manquent."""
-    _fusionner_claude(home / ".claude" / "settings.json")
-    _fusionner_cursor(home / ".cursor" / "permissions.json")
+    """Ajoute les règles d’enchaînement sous `home` si elles manquent.
+
+    N’écrit que sous la racine résolue de `home` (pas de traversée `..`).
+    """
+    racine = home.expanduser().resolve()
+    _fusionner_claude(_sous_racine(racine, *_CLAUDE_RELATIF))
+    _fusionner_cursor(_sous_racine(racine, *_CURSOR_RELATIF))
+
+
+def _sous_racine(racine: Path, *parties: str) -> Path:
+    """Chemin sous `racine` uniquement — refuse toute sortie via `..` ou lien."""
+    cible = racine.joinpath(*parties).resolve()
+    if not cible.is_relative_to(racine):
+        raise ValueError(f"refus d’écrire hors de {racine} : {cible}")
+    return cible
 
 
 def _lire_json(chemin: Path) -> dict:
@@ -69,10 +83,9 @@ def _fusionner_cursor(chemin: Path) -> None:
     _ecrire_json(chemin, data)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = argv if argv is not None else sys.argv[1:]
-    home = Path(args[0]) if args else Path.home()
-    assurer(home)
+def main() -> int:
+    """Point d’entrée conteneur : uniquement le HOME du processus (pas d’argv)."""
+    assurer(Path.home())
     return 0
 
 

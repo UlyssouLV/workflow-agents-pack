@@ -3,9 +3,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from wap_runtime.permissions_enchainer import (
     CLAUDE_ALLOW,
     CURSOR_TERMINAL_ALLOWLIST,
+    _sous_racine,
     assurer,
     main,
 )
@@ -63,6 +66,13 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
     ]
 
 
-def test_main_utilise_le_chemin_passe(tmp_path: Path):
-    assert main([str(tmp_path)]) == 0
+def test_sous_racine_refuse_la_traversee(tmp_path: Path):
+    racine = tmp_path.resolve()
+    with pytest.raises(ValueError, match="refus"):
+        _sous_racine(racine, "..", "etc", "passwd")
+
+
+def test_main_utilise_le_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert main() == 0
     assert (tmp_path / ".claude" / "settings.json").is_file()
