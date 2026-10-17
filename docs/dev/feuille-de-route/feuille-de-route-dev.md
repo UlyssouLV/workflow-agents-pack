@@ -20,11 +20,11 @@ Objectif. Depuis un repo du cockpit, ouvrir une nouvelle session (agent choisi, 
 
 Hors périmètre : catalogue de boutons par étape, parallélisme de plusieurs sessions qui travaillent.
 
-## Ensuite : 0.5.0 — Autopilot borné
+## Ensuite : 0.5.0 — Chaîne surveillée
 
-Objectif. Démarrer et surveiller sans humain la chaîne des enfants `ready-for-agent` tant que rien ne bloque (la 0.4.1 enchaîne déjà depuis la session) ; s’arrêter net sur besoin humain ou erreur.
+Objectif. Laisser une version s’implémenter sans personne devant le cockpit : l’enchaînement reste décidé par `encadrer-implement` dans la session (0.4.1), l’instance le rend tenable sans humain et le surveille. Ce que l’agent peut faire sans demander suit une politique de permissions bornée par l’instance : une action hors de cette politique est refusée au lieu d’attendre une validation. Une chaîne qui s’arrête (question, demande hors politique, plantage, session finie sans enchaîner, borne atteinte) est arrêtée net, avec sa raison et le ticket où elle s’est arrêtée, et lève « Intervention humaine requise » avec une alerte à l’humain. Des bornes limitent la chaîne : nombre de tickets, durée d’une session.
 
-Hors périmètre : SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
+Hors périmètre : décider de l’enchaînement côté instance (il reste au skill) ; démarrage sans clic du premier ticket ; plusieurs chaînes en parallèle ; SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
 
 ## Ensuite : 0.6.0 — Instances multiples isolées
 
