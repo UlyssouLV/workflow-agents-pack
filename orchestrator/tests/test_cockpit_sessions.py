@@ -142,6 +142,20 @@ def test_deuxieme_session_409_avec_le_lien_de_la_session_ouverte(api, runner):
     assert len(runner.demandes) == 1
 
 
+def test_lancement_sur_un_autre_repo_accepte(api, github, tmp_path, runner):
+    github.repo("o/autre")
+    ajouter(tmp_path / "repos.toml", "o/autre", None)
+    premiere = lancer(api).json()
+
+    reponse = lancer(api, repo="o/autre", branche="main")
+
+    assert reponse.status_code == 201
+    assert reponse.json()["repo"] == "o/autre"
+    assert {d["repo"] for d in runner.demandes} == {SLUG, "o/autre"}
+    assert lancer(api).status_code == 409
+    assert lancer(api).json()["session"]["id"] == premiere["id"]
+
+
 def test_agent_non_connecte_refuse(api, runner):
     reponse = lancer(api, agent="cursor")
 
@@ -224,17 +238,21 @@ def test_detail_porte_l_eligibilite_par_agent_et_la_session_ouverte(api):
     }
 
 
-def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, tmp_path):
+def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, github, tmp_path):
+    github.repo("o/autre")
     ajouter(tmp_path / "repos.toml", "o/autre", None)
     assert all(r["session"] is None for r in api.get("/api/repos").json()["repos"])
 
     session = lancer(api).json()
+    autre = lancer(api, repo="o/autre", branche="main").json()
     repos = {r["slug"]: r["session"] for r in api.get("/api/repos").json()["repos"]}
 
     assert repos == {
         SLUG: {"id": session["id"], "url": session["url"], "repo": SLUG, "activite": "inconnue"},
-        "o/autre": None,
+        "o/autre": {"id": autre["id"], "url": autre["url"], "repo": "o/autre", "activite": "inconnue"},
     }
+    assert api.get(f"/api/repos/{SLUG}").json()["session"]["id"] == session["id"]
+    assert api.get("/api/repos/o/autre").json()["session"]["id"] == autre["id"]
 
 
 SALE = {"fichiers": [{"statut": "M", "chemin": "a.py"}], "diff": "-avant\n+après\n", "branche": "travail"}
@@ -264,6 +282,21 @@ def test_choix_relaye_au_runner(api, runner, choix):
 def test_choix_inconnu_422(api, runner):
     assert lancer(api, choix="effacer").status_code == 422
     assert runner.demandes == []
+
+
+def test_liste_toutes_les_sessions_plus_recentes_d_abord(api, jobs):
+    a_9h, a_10h = (Sessions(jobs, lambda h=h: datetime(2026, 10, 17, h, tzinfo=timezone.utc)) for h in (9, 10))
+    premiere = a_9h.creer(SLUG, None, "claude", "claude", branche="main")
+    a_9h.clore(premiere["id"], 0)
+    seconde = a_10h.creer("o/autre", None, "cursor", "agent", branche="feat")
+
+    reponse = api.get("/api/sessions")
+
+    assert reponse.status_code == 200
+    lues = reponse.json()["sessions"]
+    assert [s["id"] for s in lues] == [seconde["id"], premiere["id"]]
+    assert lues[0] == {**publique(seconde), "url": f"/sessions/{seconde['id']}"}
+    assert lues[1]["repo"] == SLUG
 
 
 def test_sessions_d_un_repo_plus_recente_d_abord(api, jobs):

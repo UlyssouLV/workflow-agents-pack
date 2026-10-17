@@ -164,13 +164,20 @@ describe("vue détail", () => {
       expect(screen.getByText("agent non connecté")).toBeInTheDocument();
     });
 
-    it("bouton grisé avec le lien si une session est déjà ouverte", async () => {
+    it("bouton grisé avec le lien si une session est déjà ouverte sur ce repo", async () => {
       rendre({ "/api/repos/o/r": detail({ session: { id: "x", url: "/sessions/x", repo: "o/r" } }) });
 
       const bouton = await boutonNouvelle();
       expect(bouton).toBeDisabled();
-      expect(bouton).toHaveAttribute("title", "session déjà ouverte");
+      expect(bouton).toHaveAttribute("title", "session déjà ouverte sur ce repo");
       expect(screen.getByRole("link", { name: /session ouverte/i })).toHaveAttribute("href", "/sessions/x");
+    });
+
+    it("bouton non grisé si la session ouverte est sur un autre repo", async () => {
+      rendre({ "/api/repos/o/r": detail({ session: null }) });
+
+      const bouton = await boutonNouvelle();
+      expect(bouton).toBeEnabled();
     });
 
     it("le clic lance la session avec l’agent et la branche puis ouvre sa page", async () => {

@@ -138,11 +138,16 @@ def test_enregistrer_etat_refuse_une_session_close(sessions):
         sessions.enregistrer_etat(session["id"], "travaille")
 
 
-def test_ouverte_rend_la_session_ouverte_de_l_instance(sessions):
-    assert sessions.ouverte() is None
+def test_ouverte_rend_la_session_ouverte_du_repo(sessions):
+    assert sessions.ouverte("o/r") is None
     session = creer(sessions)
 
-    assert sessions.ouverte() == session
+    assert sessions.ouverte("o/r") == session
+    assert sessions.ouverte("O/R") == session
+    assert sessions.ouverte("o/autre") is None
+    autre = creer(sessions, repo="o/autre")
+    assert sessions.ouverte("o/autre") == autre
+    assert sessions.ouverte("o/r") == session
 
 
 @pytest.mark.parametrize("code, etat", [(0, "terminée"), (3, "échouée")])
@@ -156,7 +161,7 @@ def test_clore_selon_le_code_de_sortie(sessions, horloge, code, etat):
     assert close["code_sortie"] == code
     assert close["fin"] == (DEBUT + timedelta(minutes=5)).isoformat()
     assert sessions.lire(session["id"]) == close
-    assert sessions.ouverte() is None
+    assert sessions.ouverte("o/r") is None
 
 
 def test_toutes_les_sessions_de_la_plus_recente_a_la_plus_ancienne(sessions, horloge):
@@ -297,6 +302,7 @@ def test_interrompre_les_sessions_restees_ouvertes(sessions, horloge):
     sessions.clore(close["id"], 0)
     horloge.maintenant = DEBUT + timedelta(minutes=1)
     ouverte = creer(sessions)
+    autre = creer(sessions, repo="o/autre")
     horloge.maintenant = DEBUT + timedelta(minutes=9)
 
     sessions.interrompre()
@@ -304,8 +310,10 @@ def test_interrompre_les_sessions_restees_ouvertes(sessions, horloge):
     interrompue = sessions.lire(ouverte["id"])
     assert (interrompue["etat"], interrompue["code_sortie"]) == ("interrompue", None)
     assert interrompue["fin"] == (DEBUT + timedelta(minutes=9)).isoformat()
+    assert sessions.lire(autre["id"])["etat"] == "interrompue"
     assert sessions.lire(close["id"])["etat"] == "terminée"
-    assert sessions.ouverte() is None
+    assert sessions.ouverte("o/r") is None
+    assert sessions.ouverte("o/autre") is None
     # L’exécuteur d’avant le redémarrage ne la rouvre pas.
     assert sessions.clore(ouverte["id"], 0) == interrompue
 

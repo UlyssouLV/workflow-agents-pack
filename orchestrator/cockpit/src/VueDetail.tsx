@@ -16,6 +16,7 @@ import {
   BadgeHumain,
   BadgeSession,
   BandeauAuth,
+  Entete,
   LIBELLES_ETAT_SESSION,
   LibelleEtape,
   LiensChaine,
@@ -41,9 +42,7 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
 
   return (
     <main>
-      <p>
-        <a href="/">← Tous les repos</a>
-      </p>
+      <Entete />
       {auth.donnees && <BandeauAuth auth={auth.donnees} />}
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && <Contenu detail={donnees} />}
@@ -111,7 +110,7 @@ function Contenu({ detail }: { detail: Detail }) {
   const raison = !choisi?.connecte
     ? "agent non connecté"
     : detail.session
-      ? "session déjà ouverte"
+      ? "session déjà ouverte sur ce repo"
       : null;
 
   const lancer = (choix?: ChoixClone) => {
@@ -178,7 +177,7 @@ function Contenu({ detail }: { detail: Detail }) {
             {raison && (
               <span className="raison">
                 {raison}
-                {detail.session && raison === "session déjà ouverte" && (
+                {detail.session && raison === "session déjà ouverte sur ce repo" && (
                   <>
                     {" "}
                     — <a href={detail.session.url}>voir la session ouverte</a>

@@ -17,6 +17,7 @@ describe("vue liste", () => {
 
     const [ligne] = await lignes();
     expect(within(ligne).getByRole("link", { name: "o/r" })).toHaveAttribute("href", "/repos/o/r");
+    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
     expect(within(ligne).getByRole("link", { name: /v0\.3\.0 — registry/ })).toHaveAttribute(
       "href",
       "https://github.com/o/r/issues/17",

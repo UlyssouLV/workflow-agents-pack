@@ -7,6 +7,19 @@ const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
   injoignable: "GitHub injoignable",
 };
 
+/** En-tête du cockpit : liste des repos et page Sessions. */
+export function Entete() {
+  return (
+    <header>
+      <nav>
+        <a href="/">Cockpit</a>
+        {" · "}
+        <a href="/sessions">Sessions</a>
+      </nav>
+    </header>
+  );
+}
+
 /** Bandeau global quand l’instance ne peut pas lire GitHub. */
 export function BandeauAuth({ auth }: { auth: Auth }) {
   if (auth.etat === "connecte") {

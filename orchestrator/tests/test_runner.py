@@ -210,13 +210,16 @@ def test_session_enregistree_terminal_et_transcription(runner, instance, agent, 
 
 
 def test_redemarrage_session_ouverte_interrompue_et_nouvelle_session_possible(runner, instance, tmp_path):
-    ouverte = Sessions(instance / "jobs").creer(SLUG, 29, "claude", 'claude "/implement #29"')
+    jobs = Sessions(instance / "jobs")
+    ouverte = jobs.creer(SLUG, 29, "claude", 'claude "/implement #29"')
+    autre = jobs.creer("o/autre", 3, "claude", 'claude "/implement #3"')
 
     redemarre = Runner(instance / "clones", instance / "jobs", depot=str(tmp_path / "github" / "{slug}.git"))
 
     interrompue = redemarre.session(ouverte["id"])
     assert interrompue["etat"] == "interrompue"
     assert interrompue["fin"] is not None
+    assert redemarre.session(autre["id"])["etat"] == "interrompue"
     assert lancer(redemarre)["ticket"] == 30
 
 
@@ -226,15 +229,24 @@ def test_le_runner_ne_pose_aucun_label(runner, faux_bin):
     assert not [l for l in appels(faux_bin) if l.startswith("gh ") and l != "gh auth setup-git"]
 
 
-def test_une_seule_session_ouverte(runner, instance):
+def test_deuxieme_session_sur_le_meme_repo_refusee(runner, instance):
     from wap_runtime.runner import SessionOuverte
 
-    ouverte = Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+    ouverte = Sessions(instance / "jobs").creer(SLUG, 3, "claude", 'claude "/implement #3"')
 
     with pytest.raises(SessionOuverte) as refus:
         lancer(runner)
 
     assert refus.value.session == ouverte
+
+
+def test_session_sur_un_autre_repo_acceptee(runner, instance):
+    Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+
+    lancee = lancer(runner)
+
+    assert lancee["repo"] == SLUG
+    assert lancee["etat"] == "terminée"
 
 
 def test_api_interne_lance_une_session(runner, instance):
@@ -256,8 +268,8 @@ def test_api_interne_lance_une_session(runner, instance):
     assert reponse.json()["commande"] == 'agent "/implement #30"'
 
 
-def test_api_interne_409_avec_la_session_ouverte(runner, instance):
-    ouverte = Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+def test_api_interne_409_avec_la_session_ouverte_du_meme_repo(runner, instance):
+    ouverte = Sessions(instance / "jobs").creer(SLUG, 3, "claude", 'claude "/implement #3"')
     client = TestClient(creer_app_runner(runner))
 
     reponse = client.post(
@@ -268,6 +280,20 @@ def test_api_interne_409_avec_la_session_ouverte(runner, instance):
 
     assert reponse.status_code == 409
     assert reponse.json()["session"] == ouverte
+
+
+def test_api_interne_accepte_un_autre_repo(runner, instance):
+    Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+    client = TestClient(creer_app_runner(runner))
+
+    reponse = client.post(
+        "/sessions",
+        json={"repo": SLUG, "ticket": 30, "agent": "claude", "branche": BRANCHE,
+              "login": IDENTITE.login, "email": IDENTITE.email},
+    )
+
+    assert reponse.status_code == 201
+    assert reponse.json()["repo"] == SLUG
 
 
 def test_api_interne_422_avec_le_message_du_runner(runner):

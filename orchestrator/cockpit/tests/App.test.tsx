@@ -10,6 +10,7 @@ describe("routes du cockpit", () => {
     render(<App chemin="/" />);
 
     expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
   });
 
   it("`/repos/<owner>/<name>` rend la vue détail de ce repo", async () => {

@@ -24,6 +24,7 @@ describe("page de session", () => {
     rendre();
 
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session /implement #23");
+    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
     expect(screen.getByRole("link", { name: "o/r" })).toHaveAttribute("href", "/repos/o/r");
     expect(screen.getByText('claude "/implement #23"')).toBeInTheDocument();
   });

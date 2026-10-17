@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
-import { LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
+import { Entete, LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
 import { useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
@@ -57,9 +57,7 @@ export function VueSession({ id }: { id: string }) {
 
   return (
     <main>
-      <p>
-        <a href="/">← Tous les repos</a>
-      </p>
+      <Entete />
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && (
         <Contenu session={donnees} arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null} />

@@ -188,7 +188,7 @@ export async function lire<T>(chemin: string): Promise<T> {
   return (await reponse.json()) as T;
 }
 
-/** `GET /api/repos/{owner}/{name}/sessions` : de la plus récente à la plus ancienne. */
+/** `GET /api/sessions` et `GET /api/repos/{owner}/{name}/sessions` : plus récentes d’abord. */
 export interface SessionsDuRepo {
   sessions: Session[];
 }

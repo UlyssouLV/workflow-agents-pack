@@ -111,9 +111,12 @@ class Sessions:
         """Celles de `slug` (casse ignorée, comme GitHub), de la plus récente à la plus ancienne."""
         return [s for s in self.toutes() if s["repo"].lower() == slug.lower()]
 
-    def ouverte(self) -> dict | None:
-        """La session ouverte de l’instance : une seule à la fois (ADR 0004)."""
-        return next((s for s in self.toutes() if s["etat"] == OUVERTE), None)
+    def ouverte(self, repo: str) -> dict | None:
+        """La session ouverte de `repo` : au plus une par clone géré (ADR 0007)."""
+        return next(
+            (s for s in self.toutes() if s["etat"] == OUVERTE and s["repo"].lower() == repo.lower()),
+            None,
+        )
 
     def clore(self, id_: str, code: int) -> dict:
         """Une session déjà close garde son état final."""
@@ -157,8 +160,8 @@ class Sessions:
         return session
 
     def interrompre(self) -> list[dict]:
-        """Au démarrage du runner : une session restée ouverte n’a plus d’agent (runner redémarré
-        pendant la session) ; elle passe `interrompue`, ce qui libère l’instance."""
+        """Au démarrage du runner : les sessions restées ouvertes n’ont plus d’agent (runner
+        redémarré pendant la session) ; elles passent `interrompue`, ce qui libère leurs clones."""
         interrompues = []
         for session in self.toutes():
             if session["etat"] == OUVERTE:

@@ -134,19 +134,16 @@ def creer_app(
     @app.get("/api/repos")
     def repos() -> dict:
         liste = cockpit.liste()
-        ouverte = sessions.ouverte()
-        # Badge « Session en cours » : la session ouverte de l’instance, sur son repo.
-        sur = ouverte["repo"].lower() if ouverte else None
-        repos_ = [
-            {**r, "session": _lien(ouverte) if r["slug"].lower() == sur else None}
-            for r in liste["repos"]
-        ]
+        # Badge « Session en cours » : au plus une session ouverte par repo.
+        ouvertes = {s["repo"].lower(): _lien(s) for s in sessions.toutes() if s["etat"] == OUVERTE}
+        repos_ = [{**r, "session": ouvertes.get(r["slug"].lower())} for r in liste["repos"]]
         return {**liste, "repos": repos_, "agents": agents}
 
     @app.get("/api/repos/{owner}/{name}")
     def repo(owner: str, name: str) -> dict:
-        ouverte = sessions.ouverte()
-        detail = lancements(_detail(f"{owner}/{name}"), ouverte, agents)
+        slug = f"{owner}/{name}"
+        ouverte = sessions.ouverte(slug)
+        detail = lancements(_detail(slug), ouverte, agents)
         return {**detail, "agents": agents, "session": ouverte and _lien(ouverte)}
 
     @app.get("/api/repos/{owner}/{name}/sessions")
@@ -162,6 +159,11 @@ def creer_app(
         if detail is None:
             raise HTTPException(404, f"{slug} absent du registry : `sudo wap-runtime repo add {slug}`")
         return detail
+
+    @app.get("/api/sessions")
+    def toutes_les_sessions() -> dict:
+        """Toutes les sessions de l’instance, de la plus récente à la plus ancienne."""
+        return {"sessions": [_avec_url(s) for s in sessions.toutes()]}
 
     @app.get("/api/sessions/{id_}")
     def session(id_: str) -> dict:
@@ -185,7 +187,7 @@ def creer_app(
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
         if not agent["connecte"]:
             raise HTTPException(422, "agent non connecté")
-        if (ouverte := sessions.ouverte()) is not None:
+        if (ouverte := sessions.ouverte(demande.repo)) is not None:
             return _deja_ouverte(ouverte)
         detail = _detail(demande.repo)
         if detail["erreur"]:
@@ -262,6 +264,10 @@ def _servir_front(app: FastAPI, front: Path) -> None:
 
     @app.get("/repos/{owner}/{name}", include_in_schema=False)
     def detail(owner: str, name: str) -> FileResponse:
+        return FileResponse(index)
+
+    @app.get("/sessions", include_in_schema=False)
+    def sessions_page() -> FileResponse:
         return FileResponse(index)
 
     @app.get("/sessions/{id_}", include_in_schema=False)

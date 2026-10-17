@@ -136,8 +136,8 @@ class Runner:
         `github` : de quoi vérifier l’éligibilité d’une session suivante ; sans lui, toute
         demande est refusée.
 
-        Un runner qui démarre n’a aucun agent en cours : les sessions restées ouvertes passent
-        `interrompue`.
+        Un runner qui démarre n’a aucun agent en cours : toutes les sessions restées ouvertes
+        passent `interrompue`.
         """
         self._clones = clones
         self._sessions = Sessions(jobs)
@@ -149,7 +149,7 @@ class Runner:
         self._github = github
         # Par session lancée ; retiré quand son jeton a servi.
         self._lancements: dict[str, _Lancement] = {}
-        # Deux requêtes simultanées ne doivent pas ouvrir deux sessions.
+        # Deux requêtes simultanées ne doivent pas ouvrir deux sessions sur le même repo.
         self._verrou = threading.Lock()
 
     def lancer(
@@ -161,7 +161,7 @@ class Runner:
         identite: Identite,
         choix: Choix | None = None,
     ) -> dict:
-        """Lève `SessionOuverte` s’il y en a déjà une, `CloneSale` si le clone a des changements
+        """Lève `SessionOuverte` s’il y en a déjà une sur `repo`, `CloneSale` si le clone a des changements
         non commités et que `choix` ne dit pas quoi en faire, `RunnerErreur` si le clone ne se
         prépare pas ou si `branche` n’est pas proposée (base d’intégration ou PR de version).
 
@@ -181,7 +181,7 @@ class Runner:
         if not (_LOGIN.fullmatch(identite.login) and _EMAIL.fullmatch(identite.email)):
             raise RunnerErreur(f"identité git invalide : {identite.login} <{identite.email}>")
         with self._verrou:
-            if (ouverte := self._sessions.ouverte()) is not None:
+            if (ouverte := self._sessions.ouverte(repo)) is not None:
                 raise SessionOuverte(ouverte)
             self._verifier_branche(repo, branche)
             dossier = self.recuperer_clone(repo, branche)
