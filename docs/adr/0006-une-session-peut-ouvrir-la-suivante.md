@@ -13,10 +13,12 @@ En local, `encadrer-implement` enchaîne le ticket suivant en ouvrant une conver
 1. Le runner lance chaque agent avec `WAP_ENCHAINER=wap-runtime enchainer` et un jeton propre à la session (`WAP_SESSION_JETON`). Le pack (sur `main`) exécute `$WAP_ENCHAINER <n>` quand la variable existe ; il ne connaît pas l’orchestrateur.
 2. `wap-runtime enchainer <n>` demande au runner, par son API interne, d’ouvrir la session suivante. Le runner n’accepte que : le jeton de la session **ouverte**, **une seule fois** ; `/implement #n` sur un enfant **éligible du même repo** (règles du bouton du cockpit) ; un clone propre.
 3. Accepté : la session courante se ferme à l’état `enchaînée`, la suivante démarre avec le même agent, sur la même branche, dans un **nouveau processus** sans reprise de conversation (contexte vierge). Le runner choisit tout sauf le numéro du ticket.
+4. Au démarrage du conteneur `runner`, l’entrypoint fusionne dans le `HOME` persistant (`runner-home/`) des règles de permission **étroites** pour Claude Code (`Bash(bash agents/scripts/enchainer-implement.sh *)`, `Bash(wap-runtime enchainer *)`) et Cursor (`terminalAllowlist` des mêmes préfixes), afin que le mode auto / l’allowlist n’exigent pas un humain pour l’enchaînement (#69). Pas de `Bash(*)`.
 
 ## Conséquences
 
 - Une chaîne de tickets tourne sans intervention, jusqu’aux tests humains (la fin d’`encadrer-implement` demande un humain).
 - Un agent ne peut ni lancer une autre commande, ni viser un autre repo, ni changer d’agent par ce chemin ; il ne peut pas ouvrir deux sessions.
 - Sans pack à jour (ou hors runner), l’enchaînement retombe sur le fallback du skill.
+- Sans ces règles dans `runner-home/`, Claude en mode auto ou Cursor hors allowlist peuvent encore refuser l’appel même si le pack et `wap-runtime enchainer` sont prêts.
 - L’autopilot (0.5.0) reste distinct : ici, c’est le skill dans la session qui décide d’enchaîner.
