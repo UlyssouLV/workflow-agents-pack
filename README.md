@@ -25,6 +25,8 @@ curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat
 
 Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`) et n’écoute que sur `127.0.0.1`.
 
+L’instance a deux services Compose : `runtime` (API et cockpit, instance en lecture seule) et `runner` (sessions des agents, ADR 0004). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (dernière version au build), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`). Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Relancer `setup` reconstruit l’image (nouvelle version de Cursor, épinglages changés).
+
 Options, par variables d’environnement passées à `sudo` :
 
 | Variable | Défaut | Effet |
