@@ -14,7 +14,7 @@ import uvicorn
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from test_terminal import attendre, etat_tmux, jobs, jusqu_a_la_fermeture, role, runner, taper  # noqa: F401 (fixtures)
+from test_terminal import attendre, etat_tmux, jobs, jusqu_a_la_fermeture, prendre, role, runner, taper  # noqa: F401 (fixtures)
 from wap_runtime.registry import ajouter
 from wap_runtime.runner import Identite, creer_app_runner
 from wap_runtime.server import creer_app
@@ -75,6 +75,18 @@ def test_deuxieme_onglet_en_lecture_seule_a_travers_le_runtime(api, session, eta
 
         attendre(second, "reçu : ami")
     assert "intrus" not in (etat_tmux / f"wap-{session['id']}" / "sortie").read_text()
+
+
+def test_un_onglet_en_lecture_prend_la_main_a_travers_le_runtime(api, session):
+    with terminal(api, session) as premier, terminal(api, session) as second:
+        assert (role(premier), role(second)) == ("ecriture", "lecture")
+        attendre(second, "prêt")
+
+        prendre(second)
+
+        assert (role(second), role(premier)) == ("ecriture", "lecture")
+        taper(second, "repris\r")
+        attendre(premier, "reçu : repris")
 
 
 def test_fermer_l_onglet_garde_la_session_et_revenir_rend_l_ecran(api, session, jobs):

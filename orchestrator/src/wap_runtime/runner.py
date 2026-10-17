@@ -402,8 +402,8 @@ def creer_app_runner(runner: Runner):
             await websocket.close()
             return
         await websocket.accept()
-        with ecrivains.connexion(id_) as ecrit:
-            await relayer(websocket, nom_tmux(session["id"]), ecrit)
+        with ecrivains.connexion(id_) as main:
+            await relayer(websocket, nom_tmux(session["id"]), main)
 
     return app
 

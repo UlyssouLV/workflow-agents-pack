@@ -159,6 +159,58 @@ def test_le_depart_de_celui_qui_ecrit_donne_la_main_au_suivant(client, session, 
     assert attaches[-1] == f"tmux attach-session -t wap-{session['id']}"
 
 
+def prendre(ws) -> None:
+    ws.send_text(json.dumps({"prendre": True}))
+
+
+def test_prendre_la_main_passe_l_ancien_ecrivain_en_lecture(client, session, etat_tmux):
+    with terminal(client, session) as premier, terminal(client, session) as second:
+        assert (role(premier), role(second)) == ("ecriture", "lecture")
+        attendre(second, "prêt")
+
+        prendre(second)
+
+        assert (role(second), role(premier)) == ("ecriture", "lecture")
+        taper(premier, "intrus\r")
+        taper(second, "repris\r")
+        attendre(premier, "reçu : repris")
+    assert "intrus" not in (etat_tmux / f"wap-{session['id']}" / "sortie").read_text()
+
+
+def test_un_seul_ecrivain_quand_un_troisieme_prend_la_main(client, session):
+    with terminal(client, session) as a, terminal(client, session) as b, terminal(client, session) as c:
+        assert (role(a), role(b), role(c)) == ("ecriture", "lecture", "lecture")
+        attendre(c, "prêt")
+
+        prendre(c)
+        assert (role(c), role(a)) == ("ecriture", "lecture")
+        prendre(c)
+        prendre(b)
+
+        assert (role(b), role(c)) == ("ecriture", "lecture")
+        taper(b, "seul\r")
+        for ws in (a, c):
+            attendre(ws, "reçu : seul")
+            taper(ws, "intrus\r")
+        taper(b, "fin\r")
+        ecran = attendre(b, "reçu : fin")
+        assert "reçu : intrus" not in ecran
+
+
+def test_au_depart_de_celui_qui_a_pris_la_main_le_plus_ancien_la_reprend(client, session):
+    with terminal(client, session) as a, terminal(client, session) as b, terminal(client, session) as c:
+        assert (role(a), role(b), role(c)) == ("ecriture", "lecture", "lecture")
+        attendre(c, "prêt")
+        prendre(c)
+        assert (role(c), role(a)) == ("ecriture", "lecture")
+
+        c.close()
+
+        assert role(a) == "ecriture"
+        taper(a, "retour\r")
+        attendre(b, "reçu : retour")
+
+
 def test_deconnexion_garde_la_session_et_la_reconnexion_rend_l_ecran(client, session, jobs, etat_tmux):
     with terminal(client, session) as ws:
         role(ws)

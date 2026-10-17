@@ -107,6 +107,30 @@ describe("terminal en direct", () => {
     expect(ws.envoyes).toEqual([]);
   });
 
+  it("lecture seule : Prendre la main la demande, puis l’onglet peut taper", async () => {
+    const { ws, terminal } = await ouvrir("lecture");
+
+    fireEvent.click(screen.getByRole("button", { name: "Prendre la main" }));
+    expect(ws.envoyes).toEqual([{ prendre: true }]);
+    act(() => ws.role("ecriture"));
+    terminal.taper("a");
+
+    expect(screen.queryByRole("button", { name: "Prendre la main" })).not.toBeInTheDocument();
+    expect(terminal.options.disableStdin).toBe(false);
+    expect(ws.envoyes).toContainEqual({ saisie: "a" });
+  });
+
+  it("perdre la main : retour en lecture seule avec Prendre la main", async () => {
+    const { ws, terminal } = await ouvrir("ecriture");
+
+    act(() => ws.role("lecture"));
+    terminal.taper("perdu");
+
+    expect(screen.getByText("Lecture seule : un autre onglet a la main.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prendre la main" })).toBeInTheDocument();
+    expect(ws.envoyes).not.toContainEqual({ saisie: "perdu" });
+  });
+
   it("prend la main quand le runtime l’annonce", async () => {
     const { ws, terminal } = await ouvrir("lecture");
 
@@ -136,6 +160,35 @@ describe("terminal en direct", () => {
     expect(ws.readyState).toBe(FauxWebSocket.CLOSED);
     expect(terminal.libere).toBe(true);
     expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([]);
+  });
+
+  it("quitter la page sans fermer l’onglet ferme le websocket", async () => {
+    // Les liens rechargent le document : le composant n’est pas démonté, la page peut rester
+    // en mémoire (cache de l’historique) avec son websocket.
+    const { ws } = await ouvrir();
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    });
+
+    expect(ws.readyState).toBe(FauxWebSocket.CLOSED);
+  });
+
+  it("revenir par l’historique rouvre le terminal", async () => {
+    const { ws } = await ouvrir();
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    });
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(2));
+    expect(ws.readyState).toBe(FauxWebSocket.CLOSED);
+    expect(screen.getByText("Connexion au terminal…")).toBeInTheDocument();
+    act(() => FauxWebSocket.instances[1].role("ecriture"));
+    expect(screen.queryByText(/Connexion|Lecture seule|déconnecté/)).not.toBeInTheDocument();
   });
 
   it.each(["terminée", "échouée"] as const)("session %s : ni terminal ni Terminer", async (etat) => {
