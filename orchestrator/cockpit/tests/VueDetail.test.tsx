@@ -294,4 +294,50 @@ describe("vue détail", () => {
       expect(lien).toHaveAttribute("href", "/sessions/x");
     });
   });
+
+  describe("sessions du repo", () => {
+    const SESSIONS = "/api/repos/o/r/sessions";
+
+    it("liste les sessions, plus récente d’abord : date, agent, commande, état et lien", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        [SESSIONS]: {
+          sessions: [
+            session({ id: "b", url: "/sessions/b", debut: "2026-10-17T10:30:00+00:00", agent: "cursor",
+              commande: 'agent "/implement #23"' }),
+            session({ id: "a", url: "/sessions/a", etat: "interrompue", fin: "2026-10-17T09:10:00+00:00" }),
+          ],
+        },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      const lignes = (await within(section).findAllByRole("row")).slice(1);
+      expect(lignes).toHaveLength(2);
+      expect(lignes[0]).toHaveTextContent("17/10/2026 10:30");
+      expect(lignes[0]).toHaveTextContent("Cursor");
+      expect(lignes[0]).toHaveTextContent('agent "/implement #23"');
+      expect(lignes[0]).toHaveTextContent("Ouverte");
+      expect(within(lignes[0]).getByRole("link")).toHaveAttribute("href", "/sessions/b");
+      expect(lignes[1]).toHaveTextContent("Claude Code");
+      expect(lignes[1]).toHaveTextContent("Interrompue");
+      expect(within(lignes[1]).getByRole("link")).toHaveAttribute("href", "/sessions/a");
+    });
+
+    it("aucune session", async () => {
+      rendre({ "/api/repos/o/r": detail(), [SESSIONS]: { sessions: [] } });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      expect(await within(section).findByText("Aucune session.")).toBeInTheDocument();
+    });
+
+    it("listées même quand GitHub est en erreur", async () => {
+      rendre({
+        "/api/repos/o/r": detail({ erreur: "GitHub injoignable", versions: [] }),
+        [SESSIONS]: { sessions: [session()] },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      expect(await within(section).findByText('claude "/implement #23"')).toBeInTheDocument();
+    });
+  });
 });

@@ -3,15 +3,17 @@
 /** Remplace `Terminal` de `@xterm/xterm` (voir `setup.ts`). */
 export class FauxTerminal {
   static instances: FauxTerminal[] = [];
-  options: { disableStdin?: boolean; cursorBlink?: boolean };
-  cols = 120;
-  rows = 30;
-  ecrit: Uint8Array[] = [];
+  options: { disableStdin?: boolean; cursorBlink?: boolean; cols?: number; rows?: number };
+  cols: number;
+  rows: number;
+  ecrit: (Uint8Array | string)[] = [];
   libere = false;
   private saisie: ((donnees: string) => void) | null = null;
 
   constructor(options: FauxTerminal["options"] = {}) {
     this.options = { ...options };
+    this.cols = options.cols ?? 120;
+    this.rows = options.rows ?? 30;
     FauxTerminal.instances.push(this);
   }
 
@@ -19,8 +21,17 @@ export class FauxTerminal {
   open() {}
   focus() {}
 
-  write(donnees: Uint8Array) {
+  write(donnees: Uint8Array | string) {
     this.ecrit.push(donnees);
+  }
+
+  resize(colonnes: number, lignes: number) {
+    this.cols = colonnes;
+    this.rows = lignes;
+  }
+
+  reset() {
+    this.ecrit = [];
   }
 
   onData(rappel: (donnees: string) => void) {
@@ -40,7 +51,7 @@ export class FauxTerminal {
   /** Côté test : tout ce qui a été affiché. */
   texte(): string {
     const decodeur = new TextDecoder();
-    return this.ecrit.map((d) => decodeur.decode(d)).join("");
+    return this.ecrit.map((d) => (typeof d === "string" ? d : decodeur.decode(d))).join("");
   }
 }
 

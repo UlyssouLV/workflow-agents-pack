@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from wap_runtime import __version__
 from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
+from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements, raison_grisee
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
@@ -134,6 +135,11 @@ def creer_app(
         detail = lancements(_detail(f"{owner}/{name}"), ouverte, agents)
         return {**detail, "agents": agents, "session": ouverte and _lien(ouverte)}
 
+    @app.get("/api/repos/{owner}/{name}/sessions")
+    def sessions_du_repo(owner: str, name: str) -> dict:
+        """Sans GitHub : celles de `jobs/`, y compris d’un repo retiré du registry."""
+        return {"sessions": [{**s, "url": _lien(s)["url"]} for s in sessions.du_repo(f"{owner}/{name}")]}
+
     def _detail(slug: str) -> dict:
         try:
             detail = cockpit.detail(slug)
@@ -149,6 +155,13 @@ def creer_app(
         if lue is None:
             raise HTTPException(404, f"session {id_} inconnue")
         return {**lue, "url": _lien(lue)["url"]}
+
+    @app.get("/api/sessions/{id_}/terminal.cast")
+    def cast(id_: str) -> FileResponse:
+        """Le terminal enregistré (asciinema v2), en cours d’écriture si la session est ouverte."""
+        if sessions.lire(id_) is None or not (chemin := sessions.jobs / id_ / CAST).is_file():
+            raise HTTPException(404, f"aucun enregistrement pour la session {id_}")
+        return FileResponse(chemin, media_type="application/x-asciicast")
 
     @app.post("/api/sessions", status_code=201, response_model=None)
     def lancer(demande: Lancement, requete: Request) -> dict | JSONResponse:

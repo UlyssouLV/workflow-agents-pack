@@ -20,6 +20,11 @@ from wap_runtime.sessions import Sessions
 SLUG = "o/r"
 BRANCHE = "v0.4.0-runner"
 IDENTITE = Identite("octocat", "583231+octocat@users.noreply.github.com")
+# Où chaque fausse CLI écrit sa transcription, sous `HOME`.
+TRANSCRIPTIONS = {
+    "claude": ".claude/projects/-clones-o-r",
+    "agent": ".cursor/projects/clones-o-r/agent-transcripts/c1",
+}
 
 
 def executable(dossier: Path, nom: str, script: str) -> None:
@@ -54,7 +59,12 @@ def faux_bin(tmp_path, monkeypatch):
             bin_,
             agent,
             f'echo "{agent} $* @ $(pwd) @ $(git config user.name) <$(git config user.email)>"'
-            f' >> {log}\nexit "${{FAUX_CODE:-0}}"\n',
+            f' >> {log}\n'
+            # Affiché dans son terminal, et sa transcription native sous `HOME`.
+            f'echo "{agent} prêt : $*"\n'
+            f'mkdir -p "$HOME/{TRANSCRIPTIONS[agent]}"\n'
+            f'echo \'{{"agent": "{agent}"}}\' > "$HOME/{TRANSCRIPTIONS[agent]}/t.jsonl"\n'
+            'exit "${FAUX_CODE:-0}"\n',
         )
     monkeypatch.setenv("PATH", f"{bin_}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -161,6 +171,29 @@ def test_session_close_selon_le_code_de_sortie_de_l_agent(runner, instance, monk
     sur_disque = json.loads((instance / "jobs" / session["id"] / "session.json").read_text())
     assert (sur_disque["etat"], sur_disque["code_sortie"]) == (etat, int(code))
     assert (sur_disque["repo"], sur_disque["ticket"]) == (SLUG, 30)
+
+
+@pytest.mark.parametrize("agent, programme", [("claude", "claude"), ("cursor", "agent")])
+def test_session_enregistree_terminal_et_transcription(runner, instance, agent, programme):
+    session = lancer(runner, agent=agent)
+
+    dossier = instance / "jobs" / session["id"]
+    entete, *evenements = (json.loads(l) for l in (dossier / "terminal.cast").read_text().splitlines())
+    assert entete["version"] == 2 and entete["width"] > 0 and entete["height"] > 0
+    assert f"{programme} prêt : /implement #30" in "".join(e[2] for e in evenements if e[1] == "o")
+    copiee = next((dossier / "transcription").rglob("t.jsonl"))
+    assert json.loads(copiee.read_text()) == {"agent": programme}
+
+
+def test_redemarrage_session_ouverte_interrompue_et_nouvelle_session_possible(runner, instance, tmp_path):
+    ouverte = Sessions(instance / "jobs").creer(SLUG, 29, "claude", 'claude "/implement #29"')
+
+    redemarre = Runner(instance / "clones", instance / "jobs", depot=str(tmp_path / "github" / "{slug}.git"))
+
+    interrompue = redemarre.session(ouverte["id"])
+    assert interrompue["etat"] == "interrompue"
+    assert interrompue["fin"] is not None
+    assert lancer(redemarre)["ticket"] == 30
 
 
 def test_le_runner_ne_pose_aucun_label(runner, faux_bin):

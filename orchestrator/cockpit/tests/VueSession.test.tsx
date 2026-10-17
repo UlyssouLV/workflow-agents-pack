@@ -1,9 +1,15 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { VueSession } from "../src/VueSession";
 import { session, simulerApi } from "./donnees";
 import { FauxTerminal, FauxWebSocket } from "./simulations";
+
+const CAST = [
+  JSON.stringify({ version: 2, width: 100, height: 20, timestamp: 1792227600 }),
+  JSON.stringify([0.01, "o", "claude prêt\r\n"]),
+  JSON.stringify([0.02, "o", "au revoir"]),
+].join("\n");
 
 const CHEMIN = "/api/sessions/20261017-090000-abcdef";
 
@@ -32,6 +38,7 @@ describe("page de session", () => {
   it.each([
     [0, "terminée", "Terminée"],
     [1, "échouée", "Échouée (code 1)"],
+    [null, "interrompue", "Interrompue (runner redémarré)"],
   ] as const)("session close (code %i) : état et durée jusqu’à la fin", async (code, etat, libelle) => {
     rendre(session({ etat, code_sortie: code, fin: "2026-10-17T10:01:00+00:00" }));
 
@@ -59,6 +66,8 @@ describe("terminal en direct", () => {
   async function ouvrir(role: "ecriture" | "lecture" = "ecriture") {
     const { unmount } = rendre();
     await screen.findByRole("region", { name: "Terminal" });
+    // L’effet qui ouvre le websocket peut passer après le rendu de la région.
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(1));
     const [ws] = FauxWebSocket.instances;
     act(() => ws.role(role));
     return { ws, terminal: FauxTerminal.instances[0], unmount };
@@ -174,5 +183,83 @@ describe("terminal en direct", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Terminer" }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("runner injoignable"));
+  });
+});
+
+describe("relecture", () => {
+  const CLOSE = session({ etat: "terminée", code_sortie: 0, fin: "2026-10-17T10:01:00+00:00" });
+
+  function rejouer(cast: unknown = new Response(CAST), s = CLOSE) {
+    const fetch = simulerApi({ [CHEMIN]: s, [`${CHEMIN}/terminal.cast`]: cast });
+    render(<VueSession id="20261017-090000-abcdef" />);
+    return fetch;
+  }
+
+  it.each(["terminée", "échouée", "interrompue"] as const)(
+    "session %s : rejoue le terminal enregistré, sans saisie ni websocket",
+    async (etat) => {
+      rejouer(new Response(CAST), session({ etat, code_sortie: null, fin: "2026-10-17T10:01:00+00:00" }));
+
+      const relecture = await screen.findByRole("region", { name: "Relecture" });
+      await waitFor(() => expect(FauxTerminal.instances[0]?.texte()).toBe("claude prêt\r\nau revoir"));
+      const [terminal] = FauxTerminal.instances;
+      expect(terminal.options.disableStdin).toBe(true);
+      expect([terminal.cols, terminal.rows]).toEqual([100, 20]);
+      expect(FauxWebSocket.instances).toEqual([]);
+      expect(await within(relecture).findByRole("button", { name: "Rejouer" })).toBeInTheDocument();
+    },
+  );
+
+  it("Rejouer repart du début", async () => {
+    rejouer();
+    const bouton = await screen.findByRole("button", { name: "Rejouer" });
+    const [terminal] = FauxTerminal.instances;
+
+    fireEvent.click(bouton);
+
+    expect(terminal.texte()).toBe("");
+    await waitFor(() => expect(terminal.texte()).toBe("claude prêt\r\nau revoir"));
+  });
+
+  it("Pause, Reprendre et Aller à la fin pendant la lecture", async () => {
+    const lent = [
+      JSON.stringify({ version: 2, width: 80, height: 24 }),
+      JSON.stringify([0.01, "o", "a"]),
+      JSON.stringify([30, "o", "b"]),
+    ].join("\n");
+    rejouer(new Response(lent));
+    await waitFor(() => expect(FauxTerminal.instances[0]?.texte()).toBe("a"));
+    const [terminal] = FauxTerminal.instances;
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la fin" }));
+
+    expect(terminal.texte()).toBe("ab");
+    expect(await screen.findByRole("button", { name: "Rejouer" })).toBeInTheDocument();
+  });
+
+  it("sans enregistrement : le message du runtime", async () => {
+    rejouer(new Response(JSON.stringify({ detail: "aucun enregistrement" }), { status: 404 }));
+
+    expect(await screen.findByText("aucun enregistrement")).toBeInTheDocument();
+    expect(FauxTerminal.instances).toEqual([]);
+  });
+
+  it("quitter la page arrête la relecture", async () => {
+    rejouer();
+    await screen.findByRole("button", { name: "Rejouer" });
+
+    cleanup();
+
+    expect(FauxTerminal.instances[0].libere).toBe(true);
+  });
+
+  it("session ouverte : pas de relecture", async () => {
+    const fetch = rejouer(new Response(CAST), session());
+
+    await screen.findByRole("region", { name: "Terminal" });
+    expect(screen.queryByRole("region", { name: "Relecture" })).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith(`${CHEMIN}/terminal.cast`, expect.anything());
   });
 });

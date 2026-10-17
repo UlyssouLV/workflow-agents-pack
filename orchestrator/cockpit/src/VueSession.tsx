@@ -1,20 +1,16 @@
 import { useState } from "react";
-import type { EtatSession, Session } from "./api";
+import type { Session } from "./api";
 import { terminerSession } from "./api";
+import { LIBELLES_ETAT_SESSION } from "./commun";
 import { useRafraichi } from "./rafraichi";
+import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
 
 /** L’état d’une session ouverte change sans GitHub : relu plus souvent que les repos. */
 export const RAFRAICHISSEMENT_SESSION_MS = 5_000;
 
-const LIBELLES_ETAT: Record<EtatSession, string> = {
-  ouverte: "Ouverte",
-  terminée: "Terminée",
-  échouée: "Échouée",
-};
-
 /** `/sessions/<id>` : état et durée d’une session `/implement`, son terminal tant qu’elle est
- * ouverte. */
+ * ouverte, sa relecture ensuite. */
 export function VueSession({ id }: { id: string }) {
   const { donnees, erreur } = useRafraichi<Session>(
     `/api/sessions/${encodeURIComponent(id)}`,
@@ -37,7 +33,7 @@ function Contenu({ session: lue }: { session: Session }) {
   const [close, setClose] = useState<Session | null>(null);
   const [refus, setRefus] = useState<string | null>(null);
   const session = close ?? lue;
-  const etat = LIBELLES_ETAT[session.etat];
+  const etat = LIBELLES_ETAT_SESSION[session.etat];
 
   const terminer = () => {
     if (!window.confirm("Terminer la session ? L’agent sera arrêté.")) return;
@@ -53,11 +49,11 @@ function Contenu({ session: lue }: { session: Session }) {
       </p>
       <dl>
         <dt>État</dt>
-        <dd>{session.etat === "échouée" ? `${etat} (code ${session.code_sortie})` : etat}</dd>
+        <dd>{precision(session) ? `${etat} (${precision(session)})` : etat}</dd>
         <dt>Durée</dt>
         <dd>{duree(session.debut, session.fin)}</dd>
       </dl>
-      {session.etat === "ouverte" && (
+      {session.etat === "ouverte" ? (
         <>
           <p>
             <button type="button" onClick={terminer}>
@@ -71,9 +67,17 @@ function Contenu({ session: lue }: { session: Session }) {
           )}
           <TerminalEnDirect id={session.id} />
         </>
+      ) : (
+        <RelectureTerminal id={session.id} />
       )}
     </>
   );
+}
+
+function precision(session: Session): string | null {
+  if (session.etat === "échouée") return `code ${session.code_sortie}`;
+  if (session.etat === "interrompue") return "runner redémarré";
+  return null;
 }
 
 /** Du début à la fin, ou à maintenant pour une session ouverte. */

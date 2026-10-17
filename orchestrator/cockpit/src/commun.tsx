@@ -1,4 +1,4 @@
-import type { Agent, Auth, Etape, Repo } from "./api";
+import type { Agent, Auth, Etape, EtatSession, Repo } from "./api";
 
 const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
   sans_token: "GitHub non connecté",
@@ -59,4 +59,16 @@ export function nomAffiche(repo: Pick<Repo, "slug" | "nom">): string {
 
 export function heure(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR");
+}
+
+export const LIBELLES_ETAT_SESSION: Record<EtatSession, string> = {
+  ouverte: "Ouverte",
+  terminée: "Terminée",
+  échouée: "Échouée",
+  interrompue: "Interrompue",
+};
+
+/** Date et heure, au fuseau du navigateur, sans les secondes. */
+export function dateHeure(iso: string): string {
+  return new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
 }

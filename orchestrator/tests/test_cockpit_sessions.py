@@ -2,6 +2,7 @@
 faux runner ; éligibilité dans le détail, badge dans la liste, lecture d’une session."""
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -249,3 +250,41 @@ def test_choix_relaye_au_runner(api, runner, choix):
 def test_choix_inconnu_422(api, runner):
     assert lancer(api, choix="effacer").status_code == 422
     assert runner.demandes == []
+
+
+def test_sessions_d_un_repo_plus_recente_d_abord(api, jobs):
+    a_9h, a_10h = (Sessions(jobs, lambda h=h: datetime(2026, 10, 17, h, tzinfo=timezone.utc)) for h in (9, 10))
+    seconde = a_10h.creer(SLUG, 31, "cursor", 'agent "/implement #31"')
+    premiere = a_9h.creer(SLUG, 30, "claude", 'claude "/implement #30"')
+    a_9h.clore(premiere["id"], 0)
+    a_9h.creer("o/autre", 3, "claude", 'claude "/implement #3"')
+
+    reponse = api.get("/api/repos/o/r/sessions")
+
+    assert reponse.status_code == 200
+    lues = reponse.json()["sessions"]
+    assert [s["ticket"] for s in lues] == [31, 30]
+    assert lues[0] == {**seconde, "url": f"/sessions/{seconde['id']}"}
+
+
+def test_sessions_d_un_repo_sans_session(api):
+    assert api.get("/api/repos/o/r/sessions").json() == {"sessions": []}
+
+
+def test_contenu_du_cast_d_une_session(api, jobs):
+    session = Sessions(jobs).creer(SLUG, 30, "claude", 'claude "/implement #30"')
+    cast = '{"version": 2, "width": 80, "height": 24}\n[0.1, "o", "prêt"]\n'
+    (jobs / session["id"] / "terminal.cast").write_text(cast)
+
+    reponse = api.get(f"/api/sessions/{session['id']}/terminal.cast")
+
+    assert reponse.status_code == 200
+    assert reponse.text == cast
+    assert reponse.headers["content-type"].startswith("application/x-asciicast")
+
+
+def test_cast_absent_ou_session_inconnue_404(api, jobs):
+    session = Sessions(jobs).creer(SLUG, 30, "claude", 'claude "/implement #30"')
+
+    assert api.get(f"/api/sessions/{session['id']}/terminal.cast").status_code == 404
+    assert api.get("/api/sessions/20261017-090000-ffffff/terminal.cast").status_code == 404

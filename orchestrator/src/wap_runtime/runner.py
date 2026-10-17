@@ -97,9 +97,13 @@ class Runner:
         """`depot` : URL du dépôt, `{slug}` remplacé (les tests y mettent un dépôt local).
 
         `attente` : secondes laissées à l’agent pour sortir après **Terminer**.
+
+        Un runner qui démarre n’a aucun agent en cours : les sessions restées ouvertes passent
+        `interrompue`.
         """
         self._clones = clones
         self._sessions = Sessions(jobs)
+        self._sessions.interrompre()
         self._lanceur = lanceur
         self._depot = depot
         self._arreteur = arreteur

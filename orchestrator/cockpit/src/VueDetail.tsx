@@ -1,8 +1,21 @@
 import { useState } from "react";
-import type { Agent, Auth, Bug, ChoixClone, CloneSale, Detail, Enfant, EtatCi, LienSession, Version } from "./api";
+import type {
+  Agent,
+  Auth,
+  Bug,
+  ChoixClone,
+  CloneSale,
+  Detail,
+  Enfant,
+  EtatCi,
+  LienSession,
+  SessionsDuRepo,
+  Version,
+} from "./api";
 import { ErreurApi, lancerSession } from "./api";
-import { BadgeHumain, BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
+import { BadgeHumain, BandeauAuth, LIBELLES_ETAT_SESSION, LibelleEtape, dateHeure, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
+import { RAFRAICHISSEMENT_SESSION_MS } from "./VueSession";
 
 const LIBELLES_CI: Record<EtatCi, string> = {
   echec: "en échec",
@@ -25,7 +38,50 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
       {auth.donnees && <BandeauAuth auth={auth.donnees} />}
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && <Contenu detail={donnees} />}
+      <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
     </main>
+  );
+}
+
+/** Sessions du repo, lues dans `jobs/` sans GitHub : affichées même quand le repo est en erreur. */
+function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
+  const { donnees, erreur } = useRafraichi<SessionsDuRepo>(chemin, RAFRAICHISSEMENT_SESSION_MS);
+  const nom = (id: Agent["id"]) => agents.find((a) => a.id === id)?.nom ?? id;
+
+  return (
+    <section aria-label="Sessions">
+      <h2>Sessions</h2>
+      {erreur && <p className="erreur">{erreur}</p>}
+      {donnees &&
+        (donnees.sessions.length === 0 ? (
+          <p>Aucune session.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Agent</th>
+                <th>Commande</th>
+                <th>État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {donnees.sessions.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <a href={s.url}>{dateHeure(s.debut)}</a>
+                  </td>
+                  <td>{nom(s.agent)}</td>
+                  <td>
+                    <code>{s.commande}</code>
+                  </td>
+                  <td>{LIBELLES_ETAT_SESSION[s.etat]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+    </section>
   );
 }
 

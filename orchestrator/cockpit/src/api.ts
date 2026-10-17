@@ -52,7 +52,8 @@ export interface LienSession {
   repo: string;
 }
 
-export type EtatSession = "ouverte" | "terminée" | "échouée";
+/** `interrompue` : le runner a redémarré pendant la session. */
+export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue";
 
 /** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
 export interface Session {
@@ -159,6 +160,22 @@ export async function lire<T>(chemin: string): Promise<T> {
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return (await reponse.json()) as T;
+}
+
+/** `GET /api/repos/{owner}/{name}/sessions` : de la plus récente à la plus ancienne. */
+export interface SessionsDuRepo {
+  sessions: Session[];
+}
+
+/** `GET /api/sessions/{id}/terminal.cast` : le terminal enregistré (asciinema v2), en texte. */
+export async function lireEnregistrement(id: string): Promise<string> {
+  const chemin = `/api/sessions/${encodeURIComponent(id)}/terminal.cast`;
+  const reponse = await fetch(chemin);
+  if (!reponse.ok) {
+    const corps = await reponse.json().catch(() => null);
+    throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
+  }
+  return reponse.text();
 }
 
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */

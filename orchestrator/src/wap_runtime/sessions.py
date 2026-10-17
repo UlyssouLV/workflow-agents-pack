@@ -4,22 +4,23 @@ Le runner les crée et les clôt ; le `runtime` les lit (l’instance lui est mo
 seule). Rien n’est supprimé automatiquement.
 
 `python -m wap_runtime.sessions <jobs> <id> <commande…>` : lancé dans la session tmux, exécute
-l’agent puis clôt la session selon son code de sortie.
+l’agent en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription puis clôt la
+session selon son code de sortie.
 """
 
 import json
 import re
 import secrets
 import signal
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from wap_runtime.enregistrement import CAST, TRANSCRIPTION, copier_transcription, enregistrer
 from wap_runtime.fichiers import remplacer
 
-OUVERTE, TERMINEE, ECHOUEE = "ouverte", "terminée", "échouée"
+OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
 _ID = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
@@ -65,6 +66,10 @@ class Sessions:
         lues = (self.lire(d.name) for d in sorted(self.jobs.iterdir(), reverse=True))
         return [s for s in lues if s is not None]
 
+    def du_repo(self, slug: str) -> list[dict]:
+        """Celles de `slug` (casse ignorée, comme GitHub), de la plus récente à la plus ancienne."""
+        return [s for s in self.toutes() if s["repo"].lower() == slug.lower()]
+
     def ouverte(self) -> dict | None:
         """La session ouverte de l’instance : une seule à la fois (ADR 0004)."""
         return next((s for s in self.toutes() if s["etat"] == OUVERTE), None)
@@ -82,6 +87,17 @@ class Sessions:
         self._ecrire(session)
         return session
 
+    def interrompre(self) -> list[dict]:
+        """Au démarrage du runner : une session restée ouverte n’a plus d’agent (runner redémarré
+        pendant la session) ; elle passe `interrompue`, ce qui libère l’instance."""
+        interrompues = []
+        for session in self.toutes():
+            if session["etat"] == OUVERTE:
+                session = {**session, "fin": self._horloge().isoformat(), "etat": INTERROMPUE}
+                self._ecrire(session)
+                interrompues.append(session)
+        return interrompues
+
     def _ecrire(self, session: dict) -> None:
         # Le `runtime` lit ce fichier pendant que le runner le réécrit.
         contenu = json.dumps(session, ensure_ascii=False, indent=2) + "\n"
@@ -89,33 +105,12 @@ class Sessions:
 
 
 def executer(jobs: Path, id_: str, commande: list[str]) -> int:
-    """L’agent hérite du terminal (tmux) ; rend son code de sortie, une fois la session close.
-
-    **Terminer** ferme la session tmux : SIGHUP arrête l’agent, et l’exécuteur, qui y survit,
-    clôt la session (un agent tué par un signal sort en `128 + signal`).
-    """
-    agent: subprocess.Popen | None = None
-    arretee = False
-
-    def arreter(*_) -> None:
-        nonlocal arretee
-        arretee = True
-        if agent is not None:
-            agent.send_signal(signal.SIGHUP)
-
-    # Un gestionnaire, pas SIG_IGN : l’agent, lui, garde le comportement par défaut.
-    signal.signal(signal.SIGHUP, arreter)
-    try:
-        agent = subprocess.Popen(commande)
-    except OSError as erreur:
-        print(f"KO — {commande[0]} : {erreur}", file=sys.stderr)
-        code = 127
-    else:
-        if arretee:
-            # Terminé avant que l’agent ne démarre.
-            agent.send_signal(signal.SIGHUP)
-        code = agent.wait()
-        code = 128 - code if code < 0 else code
+    """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
+    une fois le terminal enregistré, la transcription copiée et la session close."""
+    session = Sessions(jobs).lire(id_)
+    code = enregistrer(commande, jobs / id_ / CAST)
+    depuis = datetime.fromisoformat(session["debut"]).timestamp()
+    copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
     Sessions(jobs).clore(id_, code)
     return code
 

@@ -103,6 +103,7 @@ def test_l_executeur_lance_la_commande_puis_clot_la_session(sessions, tmp_path, 
     sortie = subprocess.run(
         [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
          sys.executable, "-c", f"import sys; sys.exit({code})"],
+        stdin=subprocess.DEVNULL,
     ).returncode
 
     assert sortie == code
@@ -129,6 +130,7 @@ def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path
         [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
          sys.executable, "-c", agent],
         start_new_session=True,
+        stdin=subprocess.DEVNULL,
     )
     while not pret.exists():
         time.sleep(0.02)
@@ -138,3 +140,70 @@ def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path
     assert executeur.wait(timeout=10) == 129
     close = sessions.lire(session["id"])
     assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
+
+
+def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path):
+    """L’agent écrit dans un vrai terminal ; ce qu’il affiche va aussi dans `terminal.cast`."""
+    session = creer(sessions)
+    agent = "import os, sys; print('tty' if os.isatty(1) else 'pas de tty'); print('fini é')"
+
+    sortie = subprocess.run(
+        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
+         sys.executable, "-c", agent],
+        stdin=subprocess.DEVNULL, capture_output=True,
+    )
+
+    assert sortie.returncode == 0
+    assert b"fini \xc3\xa9" in sortie.stdout
+    entete, *evenements = (
+        json.loads(l) for l in (tmp_path / "jobs" / session["id"] / "terminal.cast").read_text().splitlines()
+    )
+    assert entete["version"] == 2
+    ecran = "".join(e[2] for e in evenements if e[1] == "o")
+    assert "tty\r\nfini é" in ecran
+
+
+def test_l_executeur_copie_la_transcription_avant_de_clore(tmp_path):
+    # Horloge réelle : seuls les fichiers écrits depuis le début de la session sont copiés.
+    session = creer(Sessions(tmp_path / "jobs"))
+    home = tmp_path / "home"
+    agent = (
+        "import pathlib; p = pathlib.Path.home() / '.claude/projects/-c/s.jsonl';"
+        "p.parent.mkdir(parents=True); p.write_text('{}')"
+    )
+
+    subprocess.run(
+        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
+         sys.executable, "-c", agent],
+        stdin=subprocess.DEVNULL, env={**os.environ, "HOME": str(home)}, check=True,
+    )
+
+    assert (tmp_path / "jobs" / session["id"] / "transcription" / "-c" / "s.jsonl").read_text() == "{}"
+
+
+def test_interrompre_les_sessions_restees_ouvertes(sessions, horloge):
+    close = creer(sessions)
+    sessions.clore(close["id"], 0)
+    horloge.maintenant = DEBUT + timedelta(minutes=1)
+    ouverte = creer(sessions)
+    horloge.maintenant = DEBUT + timedelta(minutes=9)
+
+    sessions.interrompre()
+
+    interrompue = sessions.lire(ouverte["id"])
+    assert (interrompue["etat"], interrompue["code_sortie"]) == ("interrompue", None)
+    assert interrompue["fin"] == (DEBUT + timedelta(minutes=9)).isoformat()
+    assert sessions.lire(close["id"])["etat"] == "terminée"
+    assert sessions.ouverte() is None
+    # L’exécuteur d’avant le redémarrage ne la rouvre pas.
+    assert sessions.clore(ouverte["id"], 0) == interrompue
+
+
+def test_sessions_d_un_repo_de_la_plus_recente_a_la_plus_ancienne(sessions, horloge):
+    premiere = creer(sessions)
+    horloge.maintenant = DEBUT + timedelta(hours=1)
+    creer(sessions, repo="o/autre")
+    horloge.maintenant = DEBUT + timedelta(hours=2)
+    seconde = creer(sessions, repo="O/R")
+
+    assert [s["id"] for s in sessions.du_repo("o/r")] == [seconde["id"], premiere["id"]]
