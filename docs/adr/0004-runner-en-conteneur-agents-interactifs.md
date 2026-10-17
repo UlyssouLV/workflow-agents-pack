@@ -20,5 +20,5 @@ La 0.4.0 lance depuis le cockpit `/implement #n` avec Claude Code ou Cursor, sur
 - Un agent sans permissions ne peut toucher que le clone, les sessions et le `HOME` du runner, pas l’hôte ni Docker.
 - Un repo métier qui exige d’autres outils que Python ou Node échoue dans le runner ; il faut enrichir l’image.
 - Mettre à jour Cursor = relancer `setup` (reconstruction de l’image) ; sa version n’est pas reproductible d’un build à l’autre.
-- L’orchestrateur ne lit pas la conversation de façon structurée : l’enregistrement est le flux du terminal (`.cast`) plus la transcription native de l’agent. Les états « en train de travailler » / « réponse attendue » viendront des hooks des agents (0.4.1).
+- L’orchestrateur ne lit pas la conversation de façon structurée : l’enregistrement est le flux du terminal (`.cast`) plus la transcription native de l’agent. Les états « en train de travailler » / « réponse attendue » viendront des hooks des agents (0.4.2).
 - Avec plusieurs instances (0.6.0), chacune aura son `runner`, ses clones et son `HOME`.

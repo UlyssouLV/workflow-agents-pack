@@ -18,7 +18,19 @@ Objectif. Depuis le cockpit, lancer `/implement #n` sur un enfant éligible avec
 
 Hors périmètre : autres skills que `/implement`, états « en train de travailler » / « réponse attendue », plusieurs sessions ouvertes à la fois, pose des labels d’état (hook du pack, #24), enchaînement automatique des tickets.
 
-## Ensuite : 0.4.1 — Catalogue d’actions et réponse attendue
+## Ensuite : 0.4.1 — Correctifs du runner distant (tests humains 0.4.0)
+
+Objectif. Une session lancée depuis le cockpit suit le workflow du pack et l’instance s’installe et se connecte avec les commandes affichées : corriger les bugs relevés par les tests humains de la 0.4.0 ([#34](https://github.com/UlyssouLV/workflow-agents-pack/issues/34)).
+
+- **Bug — les agents du runner n’ont pas les skills du pack ([#40](https://github.com/UlyssouLV/workflow-agents-pack/issues/40))** : le clone géré expose les skills du pack à l’agent choisi, à la version du repo, sans modifier de fichier suivi.
+- **Bug — auth claude ne trouve pas la CLI claude ([#41](https://github.com/UlyssouLV/workflow-agents-pack/issues/41))** : `auth claude` trouve la CLI installée par `setup`, quel que soit le PATH de l’appelant.
+- **Bug — branche de build figée en dur, version non testable avant fusion ([#42](https://github.com/UlyssouLV/workflow-agents-pack/issues/42))** : paquet et images s’installent depuis un ref choisi (par défaut la base d’intégration).
+- **Bug — commande sudo wap-runtime introuvable ([#43](https://github.com/UlyssouLV/workflow-agents-pack/issues/43))** : les commandes affichées par le cockpit et `setup` se lancent telles quelles sur l’hôte.
+- **Bug — un onglet qui quitte la session garde la main sur le terminal ([#44](https://github.com/UlyssouLV/workflow-agents-pack/issues/44))** : quitter la page de session libère la main ; un onglet en lecture seule peut la prendre.
+
+Hors périmètre : catalogue d’actions (0.4.2), assistant de premier lancement de Claude Code, contenu des skills du pack.
+
+## Ensuite : 0.4.2 — Catalogue d’actions et réponse attendue
 
 Objectif. Lancer depuis le cockpit tout le cycle du pack selon l’étape de la version (Ouvre la version, `/th`, `/code-review`, Finalise, `/cqg`, session libre), et voir quand une session du serveur travaille ou attend une réponse (ex. « réponse attendue — Ouvre la version / grilling »), pour lancer une autre session pendant qu’une attend.
 
@@ -58,7 +70,7 @@ Plusieurs jobs agents en parallèle sur la même machine hôte, avec isolation e
 
 ### Plusieurs sessions ouvertes
 
-Plusieurs sessions du runner ouvertes en même temps sur une instance (la 0.4.0 en autorise une, la 0.4.1 une seule qui travaille).
+Plusieurs sessions du runner ouvertes en même temps sur une instance (la 0.4.0 en autorise une, la 0.4.2 une seule qui travaille).
 
 ### Labels d’état posés par le pack (#24)
 
