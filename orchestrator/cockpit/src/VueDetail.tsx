@@ -14,6 +14,7 @@ import type {
 import { ErreurApi, ID_SESSION, lancerSession } from "./api";
 import {
   BadgeHumain,
+  BadgeSession,
   BandeauAuth,
   LIBELLES_ETAT_SESSION,
   LibelleEtape,
@@ -146,10 +147,7 @@ function Contenu({ detail }: { detail: Detail }) {
           </p>
           {detail.session && (
             <p>
-              <a className="badge session" href={detail.session.url}>
-                Session en cours
-              </a>{" "}
-              sur {detail.session.repo}
+              <BadgeSession session={detail.session} /> sur {detail.session.repo}
             </p>
           )}
           <p>

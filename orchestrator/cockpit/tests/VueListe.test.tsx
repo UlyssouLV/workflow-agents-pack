@@ -191,17 +191,28 @@ describe("vue liste", () => {
     });
   });
 
-  it("badge « Session en cours » sur le repo de la session ouverte, lié à sa page", async () => {
+  it.each([
+    [undefined, "Session en cours"],
+    ["inconnue", "Session en cours"],
+    ["travaille", "Travaille"],
+    ["attend", "Réponse attendue"],
+  ] as const)("badge d’activité %s : %s", async (activite, libelle) => {
     simulerApi({
       "/api/repos": liste({
-        repos: [repo({ slug: "o/a" }), repo({ slug: "o/b", session: { id: "x", url: "/sessions/x", repo: "o/b" } })],
+        repos: [
+          repo({ slug: "o/a" }),
+          repo({
+            slug: "o/b",
+            session: { id: "x", url: "/sessions/x", repo: "o/b", ...(activite && { activite }) },
+          }),
+        ],
       }),
     });
 
     render(<VueListe />);
 
     const [a, b] = await lignes();
-    expect(within(a).queryByText("Session en cours")).toBeNull();
-    expect(within(b).getByRole("link", { name: "Session en cours" })).toHaveAttribute("href", "/sessions/x");
+    expect(within(a).queryByText(libelle)).toBeNull();
+    expect(within(b).getByRole("link", { name: libelle })).toHaveAttribute("href", "/sessions/x");
   });
 });

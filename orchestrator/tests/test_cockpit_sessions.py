@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from faux_github import JETON, FauxGitHub
 from wap_runtime.registry import ajouter
 from wap_runtime.server import creer_app
-from wap_runtime.sessions import Sessions
+from wap_runtime.sessions import Sessions, publique
 
 SLUG = "o/r"
 COCKPIT = "http://testserver"
@@ -133,7 +133,12 @@ def test_deuxieme_session_409_avec_le_lien_de_la_session_ouverte(api, runner):
     reponse = lancer(api)
 
     assert reponse.status_code == 409
-    assert reponse.json()["session"] == {"id": premiere["id"], "url": premiere["url"], "repo": SLUG}
+    assert reponse.json()["session"] == {
+        "id": premiere["id"],
+        "url": premiere["url"],
+        "repo": SLUG,
+        "activite": "inconnue",
+    }
     assert len(runner.demandes) == 1
 
 
@@ -211,7 +216,12 @@ def test_detail_porte_l_eligibilite_par_agent_et_la_session_ouverte(api):
     detail = api.get(f"/api/repos/{SLUG}").json()
 
     assert detail["versions"][0]["enfants"][0]["lancement"]["claude"] == "session déjà ouverte"
-    assert detail["session"] == {"id": session["id"], "url": session["url"], "repo": SLUG}
+    assert detail["session"] == {
+        "id": session["id"],
+        "url": session["url"],
+        "repo": SLUG,
+        "activite": "inconnue",
+    }
 
 
 def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, tmp_path):
@@ -221,7 +231,10 @@ def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, tmp_path):
     session = lancer(api).json()
     repos = {r["slug"]: r["session"] for r in api.get("/api/repos").json()["repos"]}
 
-    assert repos == {SLUG: {"id": session["id"], "url": session["url"], "repo": SLUG}, "o/autre": None}
+    assert repos == {
+        SLUG: {"id": session["id"], "url": session["url"], "repo": SLUG, "activite": "inconnue"},
+        "o/autre": None,
+    }
 
 
 SALE = {"fichiers": [{"statut": "M", "chemin": "a.py"}], "diff": "-avant\n+après\n", "branche": "travail"}
@@ -265,7 +278,7 @@ def test_sessions_d_un_repo_plus_recente_d_abord(api, jobs):
     assert reponse.status_code == 200
     lues = reponse.json()["sessions"]
     assert [s["ticket"] for s in lues] == [31, 30]
-    assert lues[0] == {**seconde, "url": f"/sessions/{seconde['id']}"}
+    assert lues[0] == {**publique(seconde), "url": f"/sessions/{seconde['id']}"}
 
 
 def test_sessions_d_un_repo_sans_session(api):
@@ -304,6 +317,18 @@ def test_chaine_de_sessions_exposee_dans_la_session_et_la_liste(api, jobs):
     assert liste[premiere["id"]] == lue
     assert (liste[seconde["id"]]["etat"], liste[seconde["id"]]["precedente"]) == ("ouverte", premiere["id"])
     assert liste[seconde["id"]]["suivante"] is None
+
+
+def test_session_expose_activite_skill_et_titre_par_defaut_nom_agent(api, jobs):
+    sessions = Sessions(jobs)
+    session = sessions.creer(SLUG, None, "claude", "claude", branche="main")
+    sessions.enregistrer_etat(session["id"], "attend", skill="grilling", prompt="Ouvre la version")
+
+    lue = api.get(f"/api/sessions/{session['id']}").json()
+
+    assert (lue["activite"], lue["skill"], lue["titre"]) == ("attend", "grilling", "Ouvre la version")
+    sans = sessions.creer("o/autre", None, "cursor", "agent", branche="main")
+    assert api.get(f"/api/sessions/{sans['id']}").json()["titre"] == "Cursor"
 
 
 def test_session_d_avant_la_chaine_sans_precedente_ni_suivante(api, jobs):

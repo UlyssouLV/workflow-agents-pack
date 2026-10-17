@@ -45,11 +45,15 @@ export interface VersionResume {
   pr: PrResume | null;
 }
 
+/** Activité d’une session ouverte, remontée par les hooks (`inconnue` au départ). */
+export type ActiviteSession = "travaille" | "attend" | "inconnue";
+
 /** Lien vers la session ouverte de l’instance (une seule à la fois). */
 export interface LienSession {
   id: string;
   url: string;
   repo: string;
+  activite?: ActiviteSession | null;
 }
 
 /** `interrompue` : le runner a redémarré pendant la session. `enchaînée` : close par l’ouverture
@@ -74,6 +78,10 @@ export interface Session {
   /** Identifiants des sessions voisines dans la chaîne ; `null` hors chaîne. */
   precedente: string | null;
   suivante: string | null;
+  activite: ActiviteSession;
+  skill: string | null;
+  /** Premier message soumis, sinon le nom de l’agent. */
+  titre: string;
 }
 
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */

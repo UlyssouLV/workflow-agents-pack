@@ -34,6 +34,8 @@
 
 **Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable. Une **session libre** démarre sans commande (`claude`, `agent`) : l’humain tape ce qu’il veut ; une session enchaînée lance `/implement #n`.
 
+**Activité** — ce que fait une session ouverte, remonté par les hooks des agents : *travaille*, *attend* (réponse attendue, avec le dernier skill s’il est connu) ou *inconnue* (valeur de départ, ou agent sans hooks). Le titre de la session est le premier message tapé, sinon le nom de l’agent.
+
 **Main** — le droit de taper dans le terminal d’une session ouverte : un seul onglet du cockpit l’a à la fois ; les autres sont en lecture seule et peuvent la **prendre**. Quitter la page de session la libère.
 
 **Session enchaînée** — une session qui a demandé au runner d’ouvrir la suivante (`/implement #m` sur un enfant éligible du même repo, même agent, contexte vierge) et s’est fermée ; ses liens `precedente` / `suivante` forment la chaîne (ADR 0006).

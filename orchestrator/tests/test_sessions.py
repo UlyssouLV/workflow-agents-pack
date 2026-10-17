@@ -75,6 +75,9 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "code_sortie": None,
         "precedente": None,
         "suivante": None,
+        "activite": "inconnue",
+        "skill": None,
+        "titre": None,
     }
 
 
@@ -94,6 +97,45 @@ def test_session_d_avant_la_branche_sans_branche(sessions, tmp_path):
     chemin.write_text(json.dumps(ancien))
 
     assert sessions.lire(session["id"])["branche"] is None
+
+
+def test_session_d_avant_l_activite_sans_activite_ni_titre(sessions, tmp_path):
+    """Un `session.json` écrit avant 0.4.2 n’a pas `activite` / `skill` / `titre`."""
+    session = creer(sessions)
+    chemin = tmp_path / "jobs" / session["id"] / "session.json"
+    ancien = {
+        k: v
+        for k, v in json.loads(chemin.read_text()).items()
+        if k not in ("activite", "skill", "titre")
+    }
+    chemin.write_text(json.dumps(ancien))
+
+    lue = sessions.lire(session["id"])
+    assert (lue["activite"], lue["skill"], lue["titre"]) == ("inconnue", None, None)
+
+
+def test_enregistrer_etat_met_a_jour_activite_skill_et_le_premier_titre(sessions):
+    session = creer(sessions)
+
+    premiere = sessions.enregistrer_etat(session["id"], "travaille", prompt="Ouvre la version")
+    seconde = sessions.enregistrer_etat(session["id"], "attend", skill="grilling", prompt="autre")
+
+    assert premiere["activite"] == "travaille"
+    assert premiere["titre"] == "Ouvre la version"
+    assert (seconde["activite"], seconde["skill"], seconde["titre"]) == (
+        "attend",
+        "grilling",
+        "Ouvre la version",
+    )
+    assert sessions.lire(session["id"]) == seconde
+
+
+def test_enregistrer_etat_refuse_une_session_close(sessions):
+    session = creer(sessions)
+    sessions.clore(session["id"], 0)
+
+    with pytest.raises(ValueError, match="close"):
+        sessions.enregistrer_etat(session["id"], "travaille")
 
 
 def test_ouverte_rend_la_session_ouverte_de_l_instance(sessions):

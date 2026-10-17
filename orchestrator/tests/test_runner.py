@@ -758,6 +758,61 @@ def test_api_interne_suivante_session_inconnue_403(client_chaine):
     assert reponse.status_code in (403, 404)
 
 
+def test_etat_avec_le_jeton_met_a_jour_activite_et_reste_reutilisable(chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    premiere = chaine.runner.enregistrer_etat(
+        courante["id"], chaine.jeton(), "travaille", prompt="Ouvre la version"
+    )
+    seconde = chaine.runner.enregistrer_etat(
+        courante["id"], chaine.jeton(), "attend", skill="grilling", prompt="autre"
+    )
+
+    assert (premiere["activite"], premiere["titre"]) == ("travaille", "Ouvre la version")
+    assert (seconde["activite"], seconde["skill"], seconde["titre"]) == (
+        "attend", "grilling", "Ouvre la version",
+    )
+
+
+def test_etat_mauvais_jeton_ou_session_close_refuse(chaine):
+    from wap_runtime.runner import JetonRefuse
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    with pytest.raises(JetonRefuse, match="jeton refusé"):
+        chaine.runner.enregistrer_etat(courante["id"], "pas-le-bon", "travaille")
+
+    chaine.runner.terminer(courante["id"])
+    with pytest.raises(JetonRefuse, match="jeton refusé"):
+        chaine.runner.enregistrer_etat(courante["id"], chaine.jeton(), "travaille")
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
+def test_api_interne_etat_met_a_jour_la_session(chaine, client_chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/etat",
+        json={"jeton": chaine.jeton(), "activite": "travaille", "prompt": "Ouvre la version"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["activite"] == "travaille"
+    assert chaine.runner.session(courante["id"])["titre"] == "Ouvre la version"
+
+
+def test_api_interne_etat_mauvais_jeton_403(chaine, client_chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/etat",
+        json={"jeton": "faux", "activite": "travaille"},
+    )
+
+    assert reponse.status_code == 403
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
 @pytest.fixture
 def runner_servi(chaine):
     import threading
@@ -805,3 +860,90 @@ def test_wap_runtime_enchainer_hors_session_ko(monkeypatch, capsys):
 
     assert main(["enchainer", "31"]) == 1
     assert capsys.readouterr().out.startswith("KO — ")
+
+
+def _env_session(chaine, monkeypatch, runner_servi):
+    commande, _ = chaine.lances[-1]
+    for affectation in commande[1:4]:
+        monkeypatch.setenv(*affectation.split("=", 1))
+    monkeypatch.setenv("WAP_RUNNER", runner_servi)
+
+
+def test_wap_runtime_etat_met_a_jour_avec_le_jeton_et_rend_0(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "travaille"
+    assert main(["etat", "attend", "--skill", "grilling"]) == 0
+    lue = chaine.runner.session(courante["id"])
+    assert (lue["activite"], lue["skill"]) == ("attend", "grilling")
+
+
+def test_wap_runtime_etat_premier_message_devient_le_titre(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {"read": lambda self: json.dumps({"prompt": "Ouvre la version"})})(),
+    )
+
+    assert main(["etat", "travaille"]) == 0
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {"read": lambda self: json.dumps({"prompt": "autre"})})(),
+    )
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["titre"] == "Ouvre la version"
+
+
+def test_wap_runtime_etat_skill_depuis_l_outil(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {
+            "read": lambda self: json.dumps(
+                {"tool_name": "Skill", "tool_input": {"skill": "grilling"}}
+            )
+        })(),
+    )
+
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["skill"] == "grilling"
+
+
+@pytest.mark.parametrize("argv, env", [
+    (["etat", "travaille"], False),
+    (["etat", "travaille"], True),
+])
+def test_wap_runtime_etat_refus_rend_quand_meme_0(chaine, runner_servi, monkeypatch, argv, env):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    if env:
+        _env_session(chaine, monkeypatch, runner_servi)
+        monkeypatch.setenv("WAP_SESSION_JETON", "pas-le-bon")
+    else:
+        monkeypatch.delenv("WAP_SESSION", raising=False)
+        monkeypatch.delenv("WAP_SESSION_JETON", raising=False)
+
+    assert main(argv) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
+def test_wap_runtime_etat_session_close_rend_0(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+    chaine.runner.terminer(courante["id"])
+
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"

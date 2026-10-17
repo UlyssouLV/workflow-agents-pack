@@ -1,4 +1,4 @@
-import type { Agent, Auth, Etape, EtatSession, Repo, Session } from "./api";
+import type { ActiviteSession, Agent, Auth, Etape, EtatSession, LienSession, Repo, Session } from "./api";
 import { ID_SESSION } from "./api";
 
 const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
@@ -60,6 +60,32 @@ export function nomAffiche(repo: Pick<Repo, "slug" | "nom">): string {
 
 export function heure(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR");
+}
+
+export const LIBELLES_ACTIVITE: Record<ActiviteSession, string> = {
+  travaille: "Travaille",
+  attend: "Réponse attendue",
+  inconnue: "Inconnue",
+};
+
+/** Badge de la vue liste (et détail) : activité inconnue → Session en cours. */
+export function libelleBadgeSession(activite?: ActiviteSession | null): string {
+  if (activite === "travaille") return LIBELLES_ACTIVITE.travaille;
+  if (activite === "attend") return LIBELLES_ACTIVITE.attend;
+  return "Session en cours";
+}
+
+export function libelleActivite(session: Pick<Session, "activite" | "skill">): string {
+  const base = LIBELLES_ACTIVITE[session.activite] ?? LIBELLES_ACTIVITE.inconnue;
+  return session.activite === "attend" && session.skill ? `${base} — ${session.skill}` : base;
+}
+
+export function BadgeSession({ session }: { session: LienSession }) {
+  return (
+    <a className="badge session" href={session.url}>
+      {libelleBadgeSession(session.activite)}
+    </a>
+  );
 }
 
 export const LIBELLES_ETAT_SESSION: Record<EtatSession, string> = {

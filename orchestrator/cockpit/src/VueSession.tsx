@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
-import { LIBELLES_ETAT_SESSION, LiensChaine, lienSession } from "./commun";
+import { LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
 import { useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
@@ -109,6 +109,10 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
         </p>
       )}
       <dl>
+        <dt>Titre</dt>
+        <dd>{session.titre}</dd>
+        <dt>Activité</dt>
+        <dd>{libelleActivite(session)}</dd>
         <dt>État</dt>
         <dd>{precision(session) ? `${etat} (${precision(session)})` : etat}</dd>
         <dt>Durée</dt>

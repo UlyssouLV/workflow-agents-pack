@@ -57,6 +57,7 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
         "Bash(git status)",
         CLAUDE_ALLOW[0],
         CLAUDE_ALLOW[1],
+        CLAUDE_ALLOW[2],
     ]
 
     cursor = json.loads(cursor_path.read_text(encoding="utf-8"))
@@ -64,6 +65,7 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
         "gh issue view",
         CURSOR_TERMINAL_ALLOWLIST[0],
         CURSOR_TERMINAL_ALLOWLIST[1],
+        CURSOR_TERMINAL_ALLOWLIST[2],
     ]
 
 

@@ -34,6 +34,13 @@ describe("page de session", () => {
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session claude");
   });
 
+  it("montre le titre et l’activité", async () => {
+    rendre(session({ titre: "Ouvre la version", activite: "attend", skill: "grilling" }));
+
+    expect(await screen.findByText("Ouvre la version")).toBeInTheDocument();
+    expect(screen.getByText("Réponse attendue — grilling")).toBeInTheDocument();
+  });
+
   it("session ouverte : état et durée depuis le début", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date("2026-10-17T09:12:05Z") });
     rendre();

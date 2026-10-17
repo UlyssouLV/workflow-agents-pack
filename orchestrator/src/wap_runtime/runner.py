@@ -21,7 +21,7 @@ from urllib.parse import quote
 from wap_runtime.agents import Agent, agent_par_id, commande_agent
 from wap_runtime.eligibilite import enfant_de_version, raison_grisee
 from wap_runtime.enregistrement import CODE_NON_LANCE
-from wap_runtime.sessions import CODE_ARRETEE, ID_SESSION, OUVERTE, Sessions
+from wap_runtime.sessions import ATTEND, CODE_ARRETEE, ID_SESSION, OUVERTE, TRAVAILLE, Sessions
 
 if TYPE_CHECKING:
     from wap_runtime.github import ClientGitHub
@@ -234,6 +234,32 @@ class Runner:
             self._verifier_eligible(session["repo"], ticket, lancement.branche)
             del self._lancements[id_]
         return lambda: self._ouvrir_suivante(session, ticket, lancement, dossier)
+
+    def enregistrer_etat(
+        self,
+        id_: str,
+        jeton: str,
+        activite: str,
+        skill: str | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        """Hooks de l’agent : met à jour l’activité. Le jeton n’est pas consommé.
+
+        Lève `JetonRefuse` si `jeton` n’est pas celui de la session ouverte `id_`.
+        """
+        with self._verrou:
+            session = self._sessions.lire(id_)
+            lancement = self._lancements.get(id_)
+            if (
+                session is None
+                or session["etat"] != OUVERTE
+                or lancement is None
+                or not secrets.compare_digest(jeton.encode(), lancement.jeton.encode())
+            ):
+                raise JetonRefuse("jeton refusé : pas celui de la session ouverte")
+            if activite not in (TRAVAILLE, ATTEND):
+                raise RunnerErreur(f"activité inconnue : {activite}")
+            return self._sessions.enregistrer_etat(id_, activite, skill, prompt)
 
     def _verifier_eligible(self, repo: str, ticket: int, branche: str) -> None:
         """Les règles du bouton `/implement #n` du cockpit, lues en direct sur GitHub."""
@@ -526,6 +552,12 @@ def creer_app_runner(runner: Runner):
         ticket: int
         jeton: str
 
+    class Etat(BaseModel):
+        jeton: str
+        activite: str
+        skill: str | None = None
+        prompt: str | None = None
+
     app = FastAPI(title="wap-runner", version=__version__, docs_url=None, redoc_url=None)
 
     @app.get("/health")
@@ -571,6 +603,18 @@ def creer_app_runner(runner: Runner):
 
         taches.add_task(ouvrir_apres_la_reponse)
         return {"detail": f"session suivante : /implement #{demande.ticket}"}
+
+    @app.post("/sessions/{id_}/etat")
+    def etat(id_: str, demande: Etat):
+        """Depuis un hook (`wap-runtime etat`) : le jeton n’est pas consommé."""
+        try:
+            return runner.enregistrer_etat(
+                id_, demande.jeton, demande.activite, demande.skill, demande.prompt
+            )
+        except JetonRefuse as refus:
+            return JSONResponse({"detail": str(refus)}, status_code=403)
+        except RunnerErreur as erreur:
+            return JSONResponse({"detail": str(erreur)}, status_code=422)
 
     ecrivains = Ecrivains()
 

@@ -34,7 +34,7 @@ from wap_runtime.runner import (
     SessionOuverte,
     email_noreply,
 )
-from wap_runtime.sessions import OUVERTE, Sessions
+from wap_runtime.sessions import OUVERTE, Sessions, publique
 from wap_runtime.terminal import relayer_runner
 
 
@@ -59,12 +59,18 @@ def _runner_par_defaut() -> httpx.Client:
 
 
 def _lien(session: dict) -> dict:
-    return {"id": session["id"], "url": f"/sessions/{session['id']}", "repo": session["repo"]}
+    vue = publique(session)
+    return {
+        "id": vue["id"],
+        "url": f"/sessions/{vue['id']}",
+        "repo": vue["repo"],
+        "activite": vue["activite"],
+    }
 
 
 def _avec_url(session: dict) -> dict:
     """La session, avec l’adresse de sa page dans le cockpit."""
-    return {**session, "url": _lien(session)["url"]}
+    return {**publique(session), "url": _lien(session)["url"]}
 
 
 def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:

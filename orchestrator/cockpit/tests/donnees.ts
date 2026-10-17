@@ -121,6 +121,9 @@ export function session(s: Partial<Session> = {}): Session {
     code_sortie: null,
     precedente: null,
     suivante: null,
+    activite: "inconnue",
+    skill: null,
+    titre: "Claude Code",
     ...s,
   };
 }

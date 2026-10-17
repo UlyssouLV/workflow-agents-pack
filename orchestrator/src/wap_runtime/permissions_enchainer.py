@@ -14,10 +14,12 @@ from pathlib import Path
 CLAUDE_ALLOW = (
     "Bash(bash agents/scripts/enchainer-implement.sh *)",
     "Bash(wap-runtime enchainer *)",
+    "Bash(wap-runtime etat *)",
 )
 CURSOR_TERMINAL_ALLOWLIST = (
     "bash agents/scripts/enchainer-implement.sh",
     "wap-runtime enchainer",
+    "wap-runtime etat",
 )
 
 _CLAUDE_RELATIF = (".claude", "settings.json")

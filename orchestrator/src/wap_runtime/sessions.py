@@ -24,9 +24,22 @@ from wap_runtime.fichiers import remplacer
 OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
 # Close par l’ouverture de la suivante (ADR 0006) : `suivante` la désigne.
 ENCHAINEE = "enchaînée"
+# Activité d’une session ouverte : hooks → `wap-runtime etat`.
+INCONNUE, TRAVAILLE, ATTEND = "inconnue", "travaille", "attend"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
 ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+
+
+def publique(session: dict) -> dict:
+    """Champs d’API : titre absent → nom de l’agent."""
+    agent = agent_par_id(session["agent"])
+    return {
+        **session,
+        "activite": session.get("activite") or INCONNUE,
+        "skill": session.get("skill"),
+        "titre": session.get("titre") or (agent.nom if agent else session["agent"]),
+    }
 
 
 class Sessions:
@@ -60,6 +73,9 @@ class Sessions:
             "code_sortie": None,
             "precedente": precedente,
             "suivante": None,
+            "activite": INCONNUE,
+            "skill": None,
+            "titre": None,
         }
         (self.jobs / session["id"]).mkdir(parents=True)
         self._ecrire(session)
@@ -73,8 +89,16 @@ class Sessions:
             lue = json.loads((self.jobs / id_ / "session.json").read_text())
         except (OSError, ValueError):
             return None
-        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche`.
-        return {"precedente": None, "suivante": None, "branche": None, **lue}
+        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche` ni d’activité.
+        return {
+            "precedente": None,
+            "suivante": None,
+            "branche": None,
+            "activite": INCONNUE,
+            "skill": None,
+            "titre": None,
+            **lue,
+        }
 
     def toutes(self) -> list[dict]:
         """De la plus récente à la plus ancienne (l’identifiant commence par le début)."""
@@ -103,6 +127,27 @@ class Sessions:
         }
         self._ecrire(session)
         return session
+
+    def enregistrer_etat(
+        self,
+        id_: str,
+        activite: str,
+        skill: str | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        """Met à jour l’activité d’une session ouverte. Le premier `prompt` devient le titre."""
+        session = self.lire(id_)
+        if session is None or session["etat"] != OUVERTE:
+            raise ValueError(f"session {id_} close ou inconnue")
+        if activite not in (TRAVAILLE, ATTEND):
+            raise ValueError(f"activité inconnue : {activite}")
+        maj = {**session, "activite": activite}
+        if skill:
+            maj["skill"] = skill
+        if prompt and session["titre"] is None:
+            maj["titre"] = prompt
+        self._ecrire(maj)
+        return maj
 
     def enchainer(self, id_: str, suivante: str) -> dict:
         """La session ouverte `id_` passe `enchaînée` vers `suivante` ; l’exécuteur, en la clôturant
