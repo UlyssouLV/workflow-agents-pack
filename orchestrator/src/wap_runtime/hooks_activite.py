@@ -9,22 +9,24 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from wap_runtime.permissions_enchainer import _ecrire_json, _lire_json, _sous_racine
+from wap_runtime.home_json import ecrire_json, lire_json, sous_racine
 
 ETAT_TRAVAILLE = "wap-runtime etat travaille"
 ETAT_ATTEND = "wap-runtime etat attend"
+# Retient le skill sans changer l’activité (ne doit pas écraser `attend`).
+ETAT_SKILL = "wap-runtime etat skill"
 
 # (événement, commande, matcher ou None)
 CLAUDE_HOOKS = (
     ("UserPromptSubmit", ETAT_TRAVAILLE, None),
     ("Stop", ETAT_ATTEND, None),
     ("Notification", ETAT_ATTEND, None),
-    ("PostToolUse", ETAT_TRAVAILLE, "Skill"),
+    ("PostToolUse", ETAT_SKILL, "Skill"),
 )
 CURSOR_HOOKS = (
     ("beforeSubmitPrompt", ETAT_TRAVAILLE, None),
     ("stop", ETAT_ATTEND, None),
-    ("postToolUse", ETAT_TRAVAILLE, "Skill"),
+    ("postToolUse", ETAT_SKILL, "Skill"),
 )
 
 _CLAUDE_RELATIF = (".claude", "settings.json")
@@ -34,15 +36,17 @@ _CURSOR_RELATIF = (".cursor", "hooks.json")
 def assurer(home: Path) -> None:
     """Ajoute les hooks d’activité sous `home` s’ils manquent."""
     racine = os.path.realpath(home.expanduser())
-    _fusionner_claude(_sous_racine(racine, *_CLAUDE_RELATIF))
-    _fusionner_cursor(_sous_racine(racine, *_CURSOR_RELATIF))
+    _fusionner_claude(sous_racine(racine, *_CLAUDE_RELATIF))
+    _fusionner_cursor(sous_racine(racine, *_CURSOR_RELATIF))
 
 
 def _fusionner_claude(chemin: Path) -> None:
-    data = _lire_json(chemin)
+    data = lire_json(chemin)
     hooks = data.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError(f"{chemin} : hooks doit être un objet")
+    # 0.4.2 : Skill ne doit plus forcer `travaille` (homes déjà provisionnés).
+    _retirer_claude(hooks.get("PostToolUse"), ETAT_TRAVAILLE, "Skill")
     for event, commande, matcher in CLAUDE_HOOKS:
         liste = hooks.setdefault(event, [])
         if not isinstance(liste, list):
@@ -53,7 +57,7 @@ def _fusionner_claude(chemin: Path) -> None:
         if matcher:
             bloc["matcher"] = matcher
         liste.append(bloc)
-    _ecrire_json(chemin, data)
+    ecrire_json(chemin, data)
 
 
 def _claude_deja(liste: list, commande: str, matcher: str | None) -> bool:
@@ -68,12 +72,30 @@ def _claude_deja(liste: list, commande: str, matcher: str | None) -> bool:
     return False
 
 
+def _retirer_claude(liste: list | None, commande: str, matcher: str) -> None:
+    if not isinstance(liste, list):
+        return
+    a_garder = []
+    for bloc in liste:
+        if (
+            isinstance(bloc, dict)
+            and bloc.get("matcher") == matcher
+            and any(
+                isinstance(h, dict) and h.get("command") == commande for h in (bloc.get("hooks") or [])
+            )
+        ):
+            continue
+        a_garder.append(bloc)
+    liste[:] = a_garder
+
+
 def _fusionner_cursor(chemin: Path) -> None:
-    data = _lire_json(chemin)
+    data = lire_json(chemin)
     data.setdefault("version", 1)
     hooks = data.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError(f"{chemin} : hooks doit être un objet")
+    _retirer_cursor(hooks.get("postToolUse"), ETAT_TRAVAILLE, "Skill")
     for event, commande, matcher in CURSOR_HOOKS:
         liste = hooks.setdefault(event, [])
         if not isinstance(liste, list):
@@ -89,7 +111,17 @@ def _fusionner_cursor(chemin: Path) -> None:
         if matcher:
             entree["matcher"] = matcher
         liste.append(entree)
-    _ecrire_json(chemin, data)
+    ecrire_json(chemin, data)
+
+
+def _retirer_cursor(liste: list | None, commande: str, matcher: str) -> None:
+    if not isinstance(liste, list):
+        return
+    liste[:] = [
+        h
+        for h in liste
+        if not (isinstance(h, dict) and h.get("command") == commande and h.get("matcher") == matcher)
+    ]
 
 
 def main() -> int:

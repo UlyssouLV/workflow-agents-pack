@@ -48,7 +48,7 @@ export interface VersionResume {
 /** Activité d’une session ouverte, remontée par les hooks (`inconnue` au départ). */
 export type ActiviteSession = "travaille" | "attend" | "inconnue";
 
-/** Lien vers la session ouverte de l’instance (une seule à la fois). */
+/** Lien vers une session ouverte (au plus une par repo, ADR 0007). */
 export interface LienSession {
   id: string;
   url: string;
@@ -145,7 +145,7 @@ export interface BranchesSession {
 export interface Detail extends Omit<Repo<Version>, "session"> {
   bugs: Bug[];
   agents: Agent[];
-  /** Session ouverte de l’instance, quel que soit son repo. */
+  /** Session ouverte de ce repo, s’il y en a une (ADR 0007). */
   session: LienSession | null;
   branches: BranchesSession;
 }

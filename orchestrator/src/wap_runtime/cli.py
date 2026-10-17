@@ -128,14 +128,19 @@ def _depuis_hook(texte: str) -> tuple[str | None, str | None]:
 
 
 def _etat(activite: str, skill: str | None) -> int:
-    """Dans une session du runner : met à jour l’activité. Rend 0 même en cas de refus (hooks)."""
+    """Dans une session du runner : met à jour l’activité. Rend 0 même en cas de refus (hooks).
+
+    `activite` `skill` : ne retient que le nom du skill (outil `Skill`), sans changer l’activité.
+    """
     id_, jeton = os.environ.get("WAP_SESSION"), os.environ.get("WAP_SESSION_JETON")
     prompt, skill_hook = _depuis_hook(_lire_stdin())
     skill = skill or skill_hook
     if not (id_ and jeton):
         return 0
     base = os.environ.get("WAP_RUNNER", f"http://127.0.0.1:{PORT_RUNNER}").rstrip("/")
-    corps = {"jeton": jeton, "activite": activite, "skill": skill, "prompt": prompt}
+    # `skill` seul : pas d’`activite` dans le corps → le runner ne change pas travaille/attend.
+    activite_corps = None if activite == "skill" else activite
+    corps = {"jeton": jeton, "activite": activite_corps, "skill": skill, "prompt": prompt}
     requete = urllib.request.Request(
         f"{base}/sessions/{urllib.parse.quote(id_, safe='')}/etat",
         data=json.dumps(corps).encode(),
@@ -299,8 +304,15 @@ def main(argv=None) -> int:
     # Lancé par l’agent d’une session du runner, via `WAP_ENCHAINER`.
     enchainer = sous.add_parser("enchainer", help="dans une session du runner : ouvre /implement #n à sa suite")
     enchainer.add_argument("ticket", type=int)
-    etat = sous.add_parser("etat", help="dans une session du runner : signale travaille ou attend")
-    etat.add_argument("activite", choices=["travaille", "attend"])
+    etat = sous.add_parser(
+        "etat",
+        help="dans une session du runner : signale travaille, attend, ou retient un skill",
+    )
+    etat.add_argument(
+        "activite",
+        choices=["travaille", "attend", "skill"],
+        help="`skill` : retient le nom du skill sans changer l’activité",
+    )
     etat.add_argument("--skill", help="dernier skill chargé")
     uninstall = sous.add_parser(
         "uninstall", help="arrête et retire le Compose de l’instance"

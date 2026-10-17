@@ -250,13 +250,14 @@ class Runner:
         self,
         id_: str,
         jeton: str,
-        activite: str,
+        activite: str | None = None,
         skill: str | None = None,
         prompt: str | None = None,
     ) -> dict:
-        """Hooks de l’agent : met à jour l’activité. Le jeton n’est pas consommé.
+        """Hooks de l’agent : met à jour l’activité et/ou le skill. Le jeton n’est pas consommé.
 
-        Lève `JetonRefuse` si `jeton` n’est pas celui de la session ouverte `id_`.
+        `activite` à `None` : ne retient que le skill. Lève `JetonRefuse` si `jeton`
+        n’est pas celui de la session ouverte `id_`.
         """
         with self._verrou:
             session = self._sessions.lire(id_)
@@ -268,7 +269,7 @@ class Runner:
                 or not secrets.compare_digest(jeton.encode(), lancement.jeton.encode())
             ):
                 raise JetonRefuse("jeton refusé : pas celui de la session ouverte")
-            if activite not in (TRAVAILLE, ATTEND):
+            if activite is not None and activite not in (TRAVAILLE, ATTEND):
                 raise RunnerErreur(f"activité inconnue : {activite}")
             return self._sessions.enregistrer_etat(id_, activite, skill, prompt)
 
@@ -567,7 +568,7 @@ def creer_app_runner(runner: Runner):
 
     class Etat(BaseModel):
         jeton: str
-        activite: str
+        activite: str | None = None
         skill: str | None = None
         prompt: str | None = None
 

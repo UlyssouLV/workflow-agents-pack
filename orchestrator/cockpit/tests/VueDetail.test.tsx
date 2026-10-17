@@ -267,12 +267,13 @@ describe("vue détail", () => {
         return assign;
       }
 
-      it("montre la branche actuelle, les fichiers et le diff, sans lancer", async () => {
+      it("montre la branche actuelle, le nombre de fichiers, la liste et le diff, sans lancer", async () => {
         const assign = rendreSale([]);
         fireEvent.click(await boutonNouvelle());
 
         const choix = await screen.findByRole("dialog", { name: /changements non commités/i });
         expect(choix).toHaveTextContent("travail-en-cours");
+        expect(choix).toHaveTextContent("2 fichiers modifiés");
         expect(within(choix).getByRole("list", { name: "Fichiers modifiés" })).toHaveTextContent(
           /M src\/a\.py.*\?\? notes\.txt/,
         );

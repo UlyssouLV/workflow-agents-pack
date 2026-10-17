@@ -130,6 +130,15 @@ def test_enregistrer_etat_met_a_jour_activite_skill_et_le_premier_titre(sessions
     assert sessions.lire(session["id"]) == seconde
 
 
+def test_enregistrer_etat_sans_activite_retient_seulement_le_skill(sessions):
+    session = creer(sessions)
+    sessions.enregistrer_etat(session["id"], "attend")
+
+    maj = sessions.enregistrer_etat(session["id"], activite=None, skill="grilling")
+
+    assert (maj["activite"], maj["skill"]) == ("attend", "grilling")
+
+
 def test_enregistrer_etat_refuse_une_session_close(sessions):
     session = creer(sessions)
     sessions.clore(session["id"], 0)

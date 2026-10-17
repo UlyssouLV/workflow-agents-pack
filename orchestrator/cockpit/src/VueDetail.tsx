@@ -304,9 +304,11 @@ function ChoixCloneSale({
     <section role="dialog" aria-labelledby="titre-clone-sale" className="clone-sale">
       <h2 id="titre-clone-sale">Le clone a des changements non commités</h2>
       <p>
-        Une session précédente les a laissés sur <code>{clone.branche}</code>. <strong>Reprendre</strong> lance
-        sur cette branche, sans la changer ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de
-        la session, remet le clone à zéro puis passe sur la branche choisie.
+        Une session précédente les a laissés sur <code>{clone.branche}</code> (
+        {clone.fichiers.length} fichier{clone.fichiers.length > 1 ? "s" : ""} modifié
+        {clone.fichiers.length > 1 ? "s" : ""}). <strong>Reprendre</strong> lance sur cette branche, sans la
+        changer ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de la session, remet le clone
+        à zéro puis passe sur la branche choisie.
       </p>
       <ul aria-label="Fichiers modifiés">
         {clone.fichiers.map((f) => (

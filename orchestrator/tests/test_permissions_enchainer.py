@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from wap_runtime.home_json import sous_racine
 from wap_runtime.permissions_enchainer import (
     CLAUDE_ALLOW,
     CURSOR_TERMINAL_ALLOWLIST,
-    _sous_racine,
     assurer,
     main,
 )
@@ -72,7 +72,7 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
 def test_sous_racine_refuse_la_traversee(tmp_path: Path):
     racine = os.path.realpath(tmp_path)
     with pytest.raises(ValueError, match="refus"):
-        _sous_racine(racine, "..", "etc", "passwd")
+        sous_racine(racine, "..", "etc", "passwd")
 
 
 def test_main_utilise_le_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

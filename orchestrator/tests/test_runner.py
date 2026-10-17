@@ -985,9 +985,11 @@ def test_wap_runtime_etat_premier_message_devient_le_titre(chaine, runner_servi,
 
 
 def test_wap_runtime_etat_skill_depuis_l_outil(chaine, runner_servi, monkeypatch):
+    """`etat skill` retient le skill sans écraser une activité `attend`."""
     from wap_runtime.cli import main
 
     courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    chaine.runner.enregistrer_etat(courante["id"], chaine.jeton(), "attend")
     _env_session(chaine, monkeypatch, runner_servi)
     monkeypatch.setattr(
         "sys.stdin",
@@ -998,8 +1000,9 @@ def test_wap_runtime_etat_skill_depuis_l_outil(chaine, runner_servi, monkeypatch
         })(),
     )
 
-    assert main(["etat", "travaille"]) == 0
-    assert chaine.runner.session(courante["id"])["skill"] == "grilling"
+    assert main(["etat", "skill"]) == 0
+    lue = chaine.runner.session(courante["id"])
+    assert (lue["activite"], lue["skill"]) == ("attend", "grilling")
 
 
 @pytest.mark.parametrize("argv, env", [

@@ -6,9 +6,10 @@ chaque démarrage du conteneur, sans écraser le reste des settings agent.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
+
+from wap_runtime.home_json import ecrire_json, lire_json, sous_racine
 
 # Préfixes / motifs étroits — jamais Bash(*) ni allow-all.
 CLAUDE_ALLOW = (
@@ -32,39 +33,12 @@ def assurer(home: Path) -> None:
     N’écrit que sous la racine réelle de `home` (pas de traversée `..`).
     """
     racine = os.path.realpath(home.expanduser())
-    _fusionner_claude(_sous_racine(racine, *_CLAUDE_RELATIF))
-    _fusionner_cursor(_sous_racine(racine, *_CURSOR_RELATIF))
-
-
-def _sous_racine(racine: str, *parties: str) -> Path:
-    """Chemin sous `racine` uniquement — `realpath` + `commonpath` (S2083)."""
-    cible = os.path.realpath(os.path.join(racine, *parties))
-    if os.path.commonpath([racine, cible]) != racine:
-        raise ValueError(f"refus d’écrire hors de {racine} : {cible}")
-    return Path(cible)
-
-
-def _lire_json(chemin: Path) -> dict:
-    if not chemin.is_file():
-        return {}
-    texte = chemin.read_text(encoding="utf-8").strip()
-    if not texte:
-        return {}
-    data = json.loads(texte)
-    if not isinstance(data, dict):
-        raise ValueError(f"{chemin} : JSON objet attendu")
-    return data
-
-
-def _ecrire_json(chemin: Path, data: dict) -> None:
-    dossier = os.path.dirname(os.fspath(chemin))
-    os.makedirs(dossier, exist_ok=True)
-    with open(chemin, "w", encoding="utf-8") as sortie:
-        sortie.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    _fusionner_claude(sous_racine(racine, *_CLAUDE_RELATIF))
+    _fusionner_cursor(sous_racine(racine, *_CURSOR_RELATIF))
 
 
 def _fusionner_claude(chemin: Path) -> None:
-    data = _lire_json(chemin)
+    data = lire_json(chemin)
     permissions = data.setdefault("permissions", {})
     if not isinstance(permissions, dict):
         raise ValueError(f"{chemin} : permissions doit être un objet")
@@ -74,18 +48,18 @@ def _fusionner_claude(chemin: Path) -> None:
     for regle in CLAUDE_ALLOW:
         if regle not in allow:
             allow.append(regle)
-    _ecrire_json(chemin, data)
+    ecrire_json(chemin, data)
 
 
 def _fusionner_cursor(chemin: Path) -> None:
-    data = _lire_json(chemin)
+    data = lire_json(chemin)
     allowlist = data.setdefault("terminalAllowlist", [])
     if not isinstance(allowlist, list):
         raise ValueError(f"{chemin} : terminalAllowlist doit être une liste")
     for prefixe in CURSOR_TERMINAL_ALLOWLIST:
         if prefixe not in allowlist:
             allowlist.append(prefixe)
-    _ecrire_json(chemin, data)
+    ecrire_json(chemin, data)
 
 
 def main() -> int:

@@ -79,3 +79,62 @@ def test_assurer_n_ecrit_pas_hors_du_home(tmp_path: Path):
 
     assert list(clone.iterdir()) == [clone / "README.md"]
     assert (home / ".claude" / "settings.json").is_file()
+
+
+def test_assurer_remplace_l_ancien_hook_skill_qui_forcait_travaille(tmp_path: Path):
+    from wap_runtime.hooks_activite import ETAT_SKILL, ETAT_TRAVAILLE
+
+    claude_path = tmp_path / ".claude" / "settings.json"
+    claude_path.parent.mkdir(parents=True)
+    claude_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Skill",
+                            "hooks": [{"type": "command", "command": ETAT_TRAVAILLE}],
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cursor_path = tmp_path / ".cursor" / "hooks.json"
+    cursor_path.parent.mkdir(parents=True)
+    cursor_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "postToolUse": [{"command": ETAT_TRAVAILLE, "matcher": "Skill"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assurer(tmp_path)
+
+    claude = json.loads(claude_path.read_text(encoding="utf-8"))
+    assert all(
+        not any(h.get("command") == ETAT_TRAVAILLE for h in b.get("hooks", []))
+        for b in claude["hooks"]["PostToolUse"]
+        if b.get("matcher") == "Skill"
+    )
+    assert any(
+        b.get("matcher") == "Skill"
+        and any(h.get("command") == ETAT_SKILL for h in b.get("hooks", []))
+        for b in claude["hooks"]["PostToolUse"]
+    )
+
+    cursor = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert not any(
+        h.get("command") == ETAT_TRAVAILLE and h.get("matcher") == "Skill"
+        for h in cursor["hooks"]["postToolUse"]
+    )
+    assert any(
+        h.get("command") == ETAT_SKILL and h.get("matcher") == "Skill"
+        for h in cursor["hooks"]["postToolUse"]
+    )

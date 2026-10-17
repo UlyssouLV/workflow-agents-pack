@@ -147,17 +147,23 @@ class Sessions:
     def enregistrer_etat(
         self,
         id_: str,
-        activite: str,
+        activite: str | None = None,
         skill: str | None = None,
         prompt: str | None = None,
     ) -> dict:
-        """Met à jour l’activité d’une session ouverte. Le premier `prompt` devient le titre."""
+        """Met à jour l’activité et/ou le skill d’une session ouverte.
+
+        `activite` à `None` : ne change que le skill (outil `Skill` des hooks).
+        Le premier `prompt` devient le titre.
+        """
         session = self.lire(id_)
         if session is None or session["etat"] != OUVERTE:
             raise ValueError(f"session {id_} close ou inconnue")
-        if activite not in (TRAVAILLE, ATTEND):
+        if activite is not None and activite not in (TRAVAILLE, ATTEND):
             raise ValueError(f"activité inconnue : {activite}")
-        maj = {**session, "activite": activite}
+        maj = {**session}
+        if activite is not None:
+            maj["activite"] = activite
         if skill:
             maj["skill"] = skill
         if prompt and session["titre"] is None:
