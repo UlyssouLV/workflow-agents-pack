@@ -1,6 +1,7 @@
 """Règles étroites d’enchaînement dans le HOME du runner (#69)."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -67,7 +68,7 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
 
 
 def test_sous_racine_refuse_la_traversee(tmp_path: Path):
-    racine = tmp_path.resolve()
+    racine = os.path.realpath(tmp_path)
     with pytest.raises(ValueError, match="refus"):
         _sous_racine(racine, "..", "etc", "passwd")
 

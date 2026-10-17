@@ -7,6 +7,7 @@ chaque démarrage du conteneur, sans écraser le reste des settings agent.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 # Préfixes / motifs étroits — jamais Bash(*) ni allow-all.
@@ -26,19 +27,19 @@ _CURSOR_RELATIF = (".cursor", "permissions.json")
 def assurer(home: Path) -> None:
     """Ajoute les règles d’enchaînement sous `home` si elles manquent.
 
-    N’écrit que sous la racine résolue de `home` (pas de traversée `..`).
+    N’écrit que sous la racine réelle de `home` (pas de traversée `..`).
     """
-    racine = home.expanduser().resolve()
+    racine = os.path.realpath(home.expanduser())
     _fusionner_claude(_sous_racine(racine, *_CLAUDE_RELATIF))
     _fusionner_cursor(_sous_racine(racine, *_CURSOR_RELATIF))
 
 
-def _sous_racine(racine: Path, *parties: str) -> Path:
-    """Chemin sous `racine` uniquement — refuse toute sortie via `..` ou lien."""
-    cible = racine.joinpath(*parties).resolve()
-    if not cible.is_relative_to(racine):
+def _sous_racine(racine: str, *parties: str) -> Path:
+    """Chemin sous `racine` uniquement — `realpath` + `commonpath` (S2083)."""
+    cible = os.path.realpath(os.path.join(racine, *parties))
+    if os.path.commonpath([racine, cible]) != racine:
         raise ValueError(f"refus d’écrire hors de {racine} : {cible}")
-    return cible
+    return Path(cible)
 
 
 def _lire_json(chemin: Path) -> dict:
@@ -54,8 +55,10 @@ def _lire_json(chemin: Path) -> dict:
 
 
 def _ecrire_json(chemin: Path, data: dict) -> None:
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    chemin.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    dossier = os.path.dirname(os.fspath(chemin))
+    os.makedirs(dossier, exist_ok=True)
+    with open(chemin, "w", encoding="utf-8") as sortie:
+        sortie.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def _fusionner_claude(chemin: Path) -> None:
