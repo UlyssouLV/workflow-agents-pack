@@ -157,6 +157,7 @@ class Runner:
                     _git(dossier, "reset", "--quiet", "--hard")
                     _git(dossier, "clean", "--quiet", "-fd")
                 self.positionner_clone(dossier, branche, identite, sur_place=bool(fichiers) and choix == REPRENDRE)
+                exposer_skills(dossier)
             except RunnerErreur:
                 self._sessions.clore(session["id"], CODE_NON_LANCE)
                 raise
@@ -217,6 +218,23 @@ class Runner:
         _git(dossier, "config", "user.email", identite.email)
 
 
+def exposer_skills(dossier: Path) -> None:
+    """Les skills du pack à la version de la branche : `agents/scripts/dispatch.py` du clone les
+    copie sous `.claude/skills/` et `.cursor/skills/`.
+
+    Sans `agents/skills/` ou sans `dispatch.py`, rien : le pack ne s’initialise pas ici. Un
+    dispatch qui échoue ou modifie un fichier suivi lève `RunnerErreur` (les changements déjà là,
+    sur **Reprendre**, ne comptent pas).
+    """
+    dispatch = Path("agents") / "scripts" / "dispatch.py"
+    if not ((dossier / "agents" / "skills").is_dir() and (dossier / dispatch).is_file()):
+        return
+    avant = _git(dossier, "diff", "--binary", "HEAD")
+    _executer(["python3", str(dispatch)], "dispatch.py", dossier)
+    if _git(dossier, "diff", "--binary", "HEAD") != avant:
+        raise RunnerErreur("fichier suivi modifié par dispatch.py : l’agent n’est pas lancé")
+
+
 def changements(dossier: Path) -> list[dict]:
     """Changements non commités du clone (fichiers non suivis compris, ignorés exclus) ; `[]` sans clone."""
     if not (dossier / ".git").is_dir():
@@ -258,10 +276,10 @@ def _git(dossier: Path | None, sous_commande: str, *args: str) -> str:
     return _executer([*racine, sous_commande, *args], f"git {sous_commande}")
 
 
-def _executer(commande: list[str], etape: str) -> str:
+def _executer(commande: list[str], etape: str, dossier: Path | None = None) -> str:
     try:
         return subprocess.run(
-            commande, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL
+            commande, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL, cwd=dossier
         ).stdout
     except FileNotFoundError as erreur:
         raise RunnerErreur(f"{etape} : {erreur}") from erreur

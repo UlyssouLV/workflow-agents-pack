@@ -354,3 +354,113 @@ def test_api_interne_409_avec_le_clone_sale(runner, clone_sale):
     assert "+après" in reponse.json()["clone"]["diff"]
 
     assert client.post("/sessions", json={**demande, "choix": "jeter"}).status_code == 201
+
+
+# Un `dispatch.py` réduit : copie `agents/skills/*` sous `.claude/skills/` et `.cursor/skills/`,
+# et sort selon `FAUX_DISPATCH` (`echec` : code 3 ; `suivi` : modifie un fichier suivi).
+DISPATCH = """\
+import os, shutil, sys
+from pathlib import Path
+
+racine = Path(__file__).resolve().parents[2]
+with open(os.environ["FAUX_LOG"], "a") as log:
+    log.write(f"dispatch @ {Path.cwd()}\\n")
+if os.environ.get("FAUX_DISPATCH") == "echec":
+    sys.exit(3)
+if os.environ.get("FAUX_DISPATCH") == "suivi":
+    (racine / "README.md").write_text("réécrit\\n")
+for destination in (".claude/skills", ".cursor/skills"):
+    shutil.copytree(racine / "agents" / "skills", racine / destination, dirs_exist_ok=True)
+"""
+
+
+def pousser_pack(github: Path, skills=True, dispatch=True) -> None:
+    """La branche de version suit `agents/skills/` et/ou `agents/scripts/dispatch.py` ; les
+    adaptateurs sont ignorés, comme dans un repo qui suit le pack."""
+    (github / ".gitignore").write_text("/.claude/skills/\n/.cursor/skills/\n")
+    (github / "README.md").write_text("repo\n")
+    if skills:
+        (github / "agents" / "skills" / "process" / "tdd").mkdir(parents=True)
+        (github / "agents" / "skills" / "process" / "tdd" / "SKILL.md").write_text("# tdd\n")
+    if dispatch:
+        (github / "agents" / "scripts").mkdir(parents=True)
+        (github / "agents" / "scripts" / "dispatch.py").write_text(DISPATCH)
+    git("add", ".", cwd=github)
+    git("commit", "--quiet", "-m", "pack", cwd=github)
+    git("push", "--quiet", "origin", BRANCHE, cwd=github)
+
+
+@pytest.fixture
+def faux_dispatch(faux_bin, monkeypatch):
+    monkeypatch.setenv("FAUX_LOG", str(faux_bin))
+    return faux_bin
+
+
+def dispatchs(log: Path) -> list[str]:
+    return [l for l in appels(log) if l.startswith("dispatch ")]
+
+
+@pytest.mark.parametrize("agent, programme", [("claude", "claude"), ("cursor", "agent")])
+def test_skills_du_pack_dispatches_avant_l_agent_sans_fichier_suivi_modifie(
+    runner, instance, github, faux_dispatch, agent, programme
+):
+    pousser_pack(github)
+
+    lancer(runner, agent=agent)
+
+    clone = instance / "clones" / "o" / "r"
+    lignes = appels(faux_dispatch)
+    assert dispatchs(faux_dispatch) == [f"dispatch @ {clone.resolve()}"]
+    assert lignes.index(dispatchs(faux_dispatch)[0]) < next(
+        i for i, l in enumerate(lignes) if l.startswith(f"{programme} ")
+    )
+    for adaptateur in (".claude", ".cursor"):
+        assert (clone / adaptateur / "skills" / "process" / "tdd" / "SKILL.md").read_text() == "# tdd\n"
+    assert git("status", "--porcelain", cwd=clone) == ""
+
+
+@pytest.mark.parametrize("skills, dispatch", [(False, True), (True, False), (False, False)])
+def test_sans_skills_ou_sans_dispatch_l_agent_demarre_tel_quel(
+    runner, instance, github, faux_dispatch, skills, dispatch
+):
+    if skills or dispatch:
+        pousser_pack(github, skills=skills, dispatch=dispatch)
+
+    session = lancer(runner)
+
+    clone = instance / "clones" / "o" / "r"
+    assert dispatchs(faux_dispatch) == []
+    assert not (clone / ".claude").exists() and not (clone / ".cursor").exists()
+    assert session["etat"] == "terminée"
+    assert any(l.startswith("claude ") for l in appels(faux_dispatch))
+
+
+@pytest.mark.parametrize("panne, motif", [("echec", "dispatch.py a échoué"), ("suivi", "fichier suivi modifié")])
+def test_dispatch_en_echec_ou_fichier_suivi_modifie_l_agent_n_est_pas_lance(
+    runner, instance, github, faux_dispatch, monkeypatch, panne, motif
+):
+    from wap_runtime.runner import RunnerErreur
+
+    pousser_pack(github)
+    monkeypatch.setenv("FAUX_DISPATCH", panne)
+
+    with pytest.raises(RunnerErreur, match=motif):
+        lancer(runner)
+
+    assert len(dispatchs(faux_dispatch)) == 1
+    assert not [l for l in appels(faux_dispatch) if l.startswith(("claude ", "tmux "))]
+    (session,) = Sessions(instance / "jobs").toutes()
+    assert session["etat"] != "ouverte"
+
+
+def test_reprendre_dispatch_sans_compter_les_changements_deja_la(runner, instance, github, faux_dispatch):
+    pousser_pack(github)
+    lancer(runner)
+    clone = instance / "clones" / "o" / "r"
+    (clone / "README.md").write_text("en cours\n")
+
+    session = runner.lancer(SLUG, 31, "claude", BRANCHE, IDENTITE, choix="reprendre")
+
+    assert session["etat"] == "terminée"
+    assert len(dispatchs(faux_dispatch)) == 2
+    assert (clone / "README.md").read_text() == "en cours\n"
