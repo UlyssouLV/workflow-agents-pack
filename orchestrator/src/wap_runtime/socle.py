@@ -19,6 +19,8 @@ UTILISATEUR = "orchestrator"
 HOME_UTILISATEUR = Path("/home") / UTILISATEUR
 VERSIONS_MINIMALES = {"debian": (12,), "ubuntu": (22, 4)}
 PLATEFORMES = "Debian 12+ / Ubuntu 22.04+"
+# Absents du PATH qu’un `sudo` peut laisser à root ; `runuser` y vit.
+REPERTOIRES_SYSTEME = ("/usr/local/sbin", "/usr/sbin", "/sbin")
 
 
 class PlateformeNonSupportee(Exception):
@@ -112,6 +114,18 @@ def installer_socle(
     return 0
 
 
+def path_hote(env: Mapping[str, str], home_orchestrator: Path) -> str:
+    """PATH de l’appelant, répertoires système et `~orchestrator/.local/bin`, où `setup`
+    installe `claude` et `agent`."""
+    repertoires = [env.get("PATH", ""), *REPERTOIRES_SYSTEME, str(home_orchestrator / ".local" / "bin")]
+    return os.pathsep.join(r for r in repertoires if r)
+
+
+def resoudre(binaire: str, env: Mapping[str, str], home_orchestrator: Path) -> str | None:
+    """Chemin absolu de `binaire` sur `path_hote` : ce que `setup` voit installé, `auth` le lance."""
+    return shutil.which(binaire, path=path_hote(env, home_orchestrator))
+
+
 def mode_debug(env: Mapping[str, str]) -> bool:
     return env.get("WAP_DEBUG") == "1"
 
@@ -122,7 +136,6 @@ def _version(texte: str) -> tuple[int, ...]:
 
 def _detecter(env: Mapping[str, str], home_orchestrator: Path) -> dict[str, bool]:
     path = env.get("PATH", "")
-    chez_orchestrator = os.pathsep.join([path, str(home_orchestrator / ".local" / "bin")])
     groupes = _sortie(["id", "-nG", UTILISATEUR], path)
     return {
         "git": _present("git", path),
@@ -131,8 +144,8 @@ def _detecter(env: Mapping[str, str], home_orchestrator: Path) -> dict[str, bool
         "docker activé": _reussit(["systemctl", "is-enabled", "docker"], path),
         "gh": _present("gh", path),
         "curl": _present("curl", path),
-        "claude": _present("claude", chez_orchestrator),
-        "agent": _present("agent", chez_orchestrator),
+        "claude": resoudre("claude", env, home_orchestrator) is not None,
+        "agent": resoudre("agent", env, home_orchestrator) is not None,
         "utilisateur": groupes is not None,
         "groupe docker": groupes is not None and "docker" in groupes.split(),
     }

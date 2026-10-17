@@ -1,5 +1,7 @@
 """Connexion des agents de l’instance : `auth claude`, `auth agent --with-token`, `auth status`."""
 
+import os
+
 import pytest
 
 from test_auth import FAUX_GH, Faux, auth, mode
@@ -63,20 +65,53 @@ def test_auth_claude_lance_setup_token_et_ecrit_le_token(faux, instance, capsys)
     assert "OK — Claude Code connecté" in sortie
 
 
-def test_auth_claude_en_root_lance_claude_en_utilisateur_d_instance(
+def en_root(tmp_path, instance, monkeypatch, path_appelant: str):
+    """Root avec `path_appelant` ; `runuser` dans un faux `/usr/sbin`, hors de ce PATH."""
+    from wap_runtime import cli, socle
+
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+    monkeypatch.setenv("PATH", path_appelant)
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(cli, "HOME_UTILISATEUR", instance.parent)
+    monkeypatch.setattr("wap_runtime.fichiers.os.chown", lambda *a: None)
+    sbin = tmp_path / "usr-sbin"
+    sbin.mkdir()
+    monkeypatch.setattr(socle, "REPERTOIRES_SYSTEME", (str(sbin),))
+    return sbin
+
+
+def test_auth_claude_en_root_avec_un_path_minimal_trouve_claude_chez_orchestrator(
     faux, tmp_path, instance, monkeypatch
 ):
     from wap_runtime import cli
 
-    monkeypatch.setenv("HOME", str(tmp_path / "root"))
-    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(cli, "HOME_UTILISATEUR", instance.parent)
-    monkeypatch.setattr("wap_runtime.fichiers.os.chown", lambda *a: None)
+    # `setup` installe `claude` dans `~orchestrator/.local/bin` ; `runuser` vit sous `/usr/sbin`.
+    sbin = en_root(tmp_path, instance, monkeypatch, f"{faux.bin}{os.pathsep}/usr/bin{os.pathsep}/bin")
+    local_bin = instance.parent / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (faux.bin / "claude").rename(local_bin / "claude")
+    (faux.bin / "runuser").rename(sbin / "runuser")
 
     assert cli.main(["auth", "claude"]) == 0
 
-    assert faux.lignes("runuser -u orchestrator -- claude setup-token")
+    assert faux.lignes(f"runuser -u orchestrator -- {local_bin / 'claude'} setup-token")
+    assert faux.lignes("claude setup-token")
     assert "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-abc_DEF-123" in secrets(instance)
+
+
+def test_auth_claude_sans_claude_installe_renvoie_vers_setup(faux, tmp_path, instance, monkeypatch, capsys):
+    from wap_runtime import cli
+
+    en_root(tmp_path, instance, monkeypatch, str(faux.bin))
+    (faux.bin / "claude").unlink()
+
+    assert cli.main(["auth", "claude"]) != 0
+
+    sortie = capsys.readouterr().out
+    assert sortie.startswith("KO")
+    assert "claude introuvable" in sortie and "sudo wap-runtime setup" in sortie
+    assert not faux.lignes("runuser ")
+    assert secrets(instance) == "GH_TOKEN=ghp_abc\n"
 
 
 def test_setup_token_en_echec_nomme_l_etape_sans_toucher_secrets_env(faux, instance, capsys):
