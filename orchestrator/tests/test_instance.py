@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from wap_runtime.instance import preparer_instance
+from wap_runtime.instance import preparer_instance, ref_des_images
 
 try:
     import tomllib
@@ -55,8 +55,10 @@ def home(tmp_path, monkeypatch) -> Path:
     return home
 
 
-def passe(home: Path, depot_pack: Path, **env) -> Path:
-    return preparer_instance(home, env=env, depot_pack=str(depot_pack))
+def passe(home: Path, depot_pack: Path, direct_url=None, **env) -> Path:
+    return preparer_instance(
+        home, env=env, depot_pack=str(depot_pack), direct_url=direct_url
+    )
 
 
 def lire_config(instance: Path) -> dict:
@@ -341,7 +343,7 @@ def test_dockerfile_du_runner_existe_dans_le_contexte_de_build(home, depot_pack)
     contexte = Path(module.__file__).parents[2]
     runner = service((passe(home, depot_pack) / "compose.yaml").read_text(), "runner")
     chemin = re.search(r"dockerfile: (\S+)", runner).group(1)
-    assert module.CONTEXTE_RUNTIME in runner
+    assert f"context: {module.DEPOT_PACK}.git#{module.REF_PAR_DEFAUT}:orchestrator" in runner
     assert (contexte / chemin).is_file()
 
 
@@ -398,3 +400,82 @@ def test_uninstall_purge_supprime_les_dossiers_du_runner(home, depot_pack, faux_
 
     for nom in ("clones", "jobs", "runner-home"):
         assert not (instance / nom).exists(), nom
+
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def vcs(**vcs_info) -> dict:
+    """`direct_url.json` d’un paquet installé depuis git (PEP 610)."""
+    return {
+        "url": "https://github.com/UlyssouLV/workflow-agents-pack",
+        "vcs_info": {"vcs": "git", **vcs_info},
+        "subdirectory": "orchestrator",
+    }
+
+
+def test_ref_des_images_est_le_commit_du_paquet():
+    assert ref_des_images(vcs(commit_id=SHA, requested_revision="v0.4.1-x")) == SHA
+
+
+def test_ref_des_images_sans_commit_est_le_ref_demande():
+    assert ref_des_images(vcs(requested_revision="v0.4.1-x")) == "v0.4.1-x"
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    [
+        None,
+        {"url": "file:///src/orchestrator", "dir_info": {"editable": True}},
+        {"url": "file:///tmp/wap_runtime-0.4.1.tar.gz", "archive_info": {}},
+        vcs(),
+    ],
+)
+def test_ref_des_images_sans_origine_vcs_est_la_base(direct_url):
+    from wap_runtime.instance import REF_PAR_DEFAUT
+
+    assert ref_des_images(direct_url) == REF_PAR_DEFAUT == "feat/runtime-orchestrator"
+
+
+def test_sans_direct_url_passe_lit_celui_du_paquet_installe(home, depot_pack):
+    from importlib.metadata import distribution
+    import json
+
+    texte = distribution("wap-runtime").read_text("direct_url.json")
+    attendu = ref_des_images(json.loads(texte) if texte else None)
+
+    instance = preparer_instance(home, env={}, depot_pack=str(depot_pack))
+
+    assert f"#{attendu}:orchestrator" in (instance / "compose.yaml").read_text()
+
+
+def test_compose_construit_runtime_et_runner_au_commit_du_paquet(home, depot_pack):
+    compose = (
+        passe(home, depot_pack, direct_url=vcs(commit_id=SHA)) / "compose.yaml"
+    ).read_text()
+
+    contexte = f"context: https://github.com/UlyssouLV/workflow-agents-pack.git#{SHA}:orchestrator"
+    assert contexte in service(compose, "runtime")
+    assert contexte in service(compose, "runner")
+
+
+def test_wap_pack_ref_independant_du_ref_des_images(home, depot_pack):
+    instance = passe(
+        home, depot_pack, direct_url=vcs(commit_id=SHA), WAP_PACK_REF="autre"
+    )
+
+    assert lire_config(instance)["pack_ref"] == "autre"
+    assert git("rev-parse", "HEAD", cwd=instance / "pack") == git(
+        "rev-parse", "autre", cwd=depot_pack
+    )
+
+
+def test_install_sh_installe_le_paquet_depuis_wap_ref():
+    from wap_runtime import instance as module
+
+    script = (Path(module.__file__).parents[2] / "install.sh").read_text()
+    assert 'WAP_REF="${WAP_REF:-feat/runtime-orchestrator}"' in script
+    assert (
+        'PAQUET="git+https://github.com/UlyssouLV/workflow-agents-pack@$WAP_REF'
+        '#subdirectory=orchestrator"'
+    ) in script

@@ -34,6 +34,7 @@ Options, par variables d’environnement passées à `sudo` :
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
+| `WAP_REF` | `feat/runtime-orchestrator` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` ; les images `runtime` et `runner` se construisent au même commit |
 | `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) |
 | `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
 | `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
@@ -43,6 +44,14 @@ Options, par variables d’environnement passées à `sudo` :
 ```bash
 curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 ```
+
+**Tester une branche de version** avant sa fusion (ADR 0005) : `WAP_REF` choisit le ref du paquet, et `setup` construit les images au commit du paquet installé (lu dans `direct_url.json`), donc paquet et images ne se désalignent pas. `WAP_PACK_REF` reste indépendant.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/<ref>/orchestrator/install.sh | sudo WAP_REF=<ref> bash
+```
+
+Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`.
 
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 

@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+from importlib.metadata import distribution
 from pathlib import Path
 from typing import Mapping
 
@@ -18,12 +19,11 @@ from wap_runtime.runner import PORT_RUNNER
 
 NOM_INSTANCE = ".wap-runtime"
 DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
-# Contexte de build du service `runtime` : `orchestrator/` de la branche de base,
-# celle d’où `install.sh` installe le paquet (ADR 0002).
-CONTEXTE_RUNTIME = (
-    "https://github.com/UlyssouLV/workflow-agents-pack.git"
-    "#feat/runtime-orchestrator:orchestrator"
-)
+# Ref des images quand le paquet n’a pas d’origine VCS (installation locale ou
+# éditable) : la base du canal d’intégration, défaut de `WAP_REF` (ADR 0005).
+REF_PAR_DEFAUT = "feat/runtime-orchestrator"
+# `direct_url.json` du paquet installé, lu quand l’appelant n’en passe pas.
+_PAQUET_INSTALLE = object()
 PORT_CONTENEUR = 8787
 # L’instance montée en lecture seule dans `runtime`, pour y lire `repos.toml`.
 INSTANCE_CONTENEUR = "/instance"
@@ -37,9 +37,17 @@ def chemin_instance(home: Path) -> Path:
 
 
 def preparer_instance(
-    home: Path, env: Mapping[str, str] = os.environ, depot_pack: str = DEPOT_PACK
+    home: Path,
+    env: Mapping[str, str] = os.environ,
+    depot_pack: str = DEPOT_PACK,
+    direct_url: Mapping | None = _PAQUET_INSTALLE,
 ) -> Path:
-    """Une passe : crée ou complète l’instance, régénère Compose, aligne le pack."""
+    """Une passe : crée ou complète l’instance, régénère Compose, aligne le pack.
+
+    Les images se construisent au ref lu dans `direct_url` (`ref_des_images`).
+    """
+    if direct_url is _PAQUET_INSTALLE:
+        direct_url = _direct_url_du_paquet()
     instance = chemin_instance(home)
     instance.mkdir(parents=True, exist_ok=True)
     config = _completer_config(instance / "config.toml", _config_par_defaut(instance, env))
@@ -47,10 +55,18 @@ def preparer_instance(
     for nom in DOSSIERS_RUNNER:
         (instance / nom).mkdir(exist_ok=True)
     # Cette passe tourne en utilisateur d’instance : le runner reprend son UID.
-    compose = _compose(config["port"], os.getuid(), os.getgid())
+    contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
+    compose = _compose(contexte, config["port"], os.getuid(), os.getgid())
     (instance / "compose.yaml").write_text(compose)
     _aligner_pack(depot_pack, Path(config["pack_path"]), config["pack_ref"])
     return instance
+
+
+def ref_des_images(direct_url: Mapping | None) -> str:
+    """Ref git des images : le commit du paquet installé (PEP 610), à défaut le ref
+    demandé à l’installation ; sans origine VCS, `REF_PAR_DEFAUT` (ADR 0005)."""
+    vcs = (direct_url or {}).get("vcs_info", {})
+    return vcs.get("commit_id") or vcs.get("requested_revision") or REF_PAR_DEFAUT
 
 
 def lire_config(instance: Path) -> dict:
@@ -113,14 +129,19 @@ def _creer_secrets(chemin: Path) -> None:
     chemin.chmod(0o600)
 
 
-def _compose(port: int, uid: int, gid: int) -> str:
+def _direct_url_du_paquet() -> dict | None:
+    texte = distribution("wap-runtime").read_text("direct_url.json")
+    return json.loads(texte) if texte else None
+
+
+def _compose(contexte: str, port: int, uid: int, gid: int) -> str:
     return f"""\
 # Généré par wap-runtime depuis config.toml : réécrit à chaque passe, ne pas éditer.
 name: wap-runtime
 services:
   runtime:
     build:
-      context: {CONTEXTE_RUNTIME}
+      context: {contexte}
       dockerfile: Dockerfile
     image: wap-runtime:local
     env_file:
@@ -139,7 +160,7 @@ services:
   # parle sur le réseau Compose.
   runner:
     build:
-      context: {CONTEXTE_RUNTIME}
+      context: {contexte}
       dockerfile: runner/Dockerfile
     image: wap-runner:local
     command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "{PORT_RUNNER}"]
