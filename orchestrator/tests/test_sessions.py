@@ -1,8 +1,11 @@
 """Sessions de l’instance : `jobs/<id>/session.json`, et sa clôture selon le code de sortie."""
 
 import json
+import os
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -106,3 +109,32 @@ def test_l_executeur_lance_la_commande_puis_clot_la_session(sessions, tmp_path, 
     close = sessions.lire(session["id"])
     assert (close["etat"], close["code_sortie"]) == (etat, code)
     assert close["fin"] is not None
+
+
+def test_une_session_close_garde_son_etat_final(sessions, horloge):
+    session = creer(sessions)
+    close = sessions.clore(session["id"], 129)
+    horloge.maintenant = DEBUT + timedelta(minutes=5)
+
+    assert sessions.clore(session["id"], 0) == close
+    assert sessions.lire(session["id"]) == close
+
+
+def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path):
+    """**Terminer** : la session tmux se ferme, l’exécuteur et l’agent reçoivent SIGHUP."""
+    session = creer(sessions)
+    pret = tmp_path / "pret"
+    agent = f"import pathlib, time; pathlib.Path({str(pret)!r}).touch(); time.sleep(30)"
+    executeur = subprocess.Popen(
+        [sys.executable, "-m", "wap_runtime.sessions", str(tmp_path / "jobs"), session["id"],
+         sys.executable, "-c", agent],
+        start_new_session=True,
+    )
+    while not pret.exists():
+        time.sleep(0.02)
+
+    os.killpg(executeur.pid, signal.SIGHUP)
+
+    assert executeur.wait(timeout=10) == 129
+    close = sessions.lire(session["id"])
+    assert (close["etat"], close["code_sortie"]) == ("échouée", 129)

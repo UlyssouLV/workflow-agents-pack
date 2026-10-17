@@ -59,3 +59,11 @@ code {
   font-size: 0.85rem;
   margin-left: 0.4rem;
 }
+.terminal {
+  background: #000;
+  height: 70vh;
+  padding: 0.3rem;
+}
+.etat-terminal {
+  color: #59636e;
+}

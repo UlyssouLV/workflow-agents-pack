@@ -9,11 +9,12 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from wap_runtime.sessions import Sessions
+from wap_runtime.sessions import CODE_ARRETEE, OUVERTE, Sessions
 
 DEPOT_GITHUB = "https://github.com/{slug}.git"
 PORT_RUNNER = 8788
@@ -50,10 +51,25 @@ def commande_agent(agent: str, ticket: int) -> list[str]:
 def lanceur_tmux(nom: str, commande: list[str], dossier: Path) -> None:
     """Session tmux détachée : elle survit à la requête, et à l’onglet du cockpit."""
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", nom, "-c", str(dossier), shlex.join(commande)],
+        [
+            "tmux", "new-session", "-d", "-s", nom, "-c", str(dossier), shlex.join(commande),
+            # Le cockpit montre le terminal de l’agent, sans barre ni raccourcis tmux.
+            ";", "set-option", "-t", nom, "status", "off",
+            ";", "set-option", "-t", nom, "prefix", "None",
+        ],
         check=True,
         stdin=subprocess.DEVNULL,
     )
+
+
+def arreteur_tmux(nom: str) -> None:
+    """Ferme la session tmux : son terminal disparaît, l’agent reçoit SIGHUP."""
+    # Déjà partie (agent sorti, runner redémarré) : rien à arrêter.
+    subprocess.run(["tmux", "kill-session", "-t", nom], capture_output=True, stdin=subprocess.DEVNULL)
+
+
+def nom_tmux(id_: str) -> str:
+    return f"wap-{id_}"
 
 
 class Runner:
@@ -63,12 +79,19 @@ class Runner:
         jobs: Path,
         lanceur: Callable[[str, list[str], Path], None] = lanceur_tmux,
         depot: str = DEPOT_GITHUB,
+        arreteur: Callable[[str], None] = arreteur_tmux,
+        attente: float = 10,
     ):
-        """`depot` : URL du dépôt, `{slug}` remplacé (les tests y mettent un dépôt local)."""
+        """`depot` : URL du dépôt, `{slug}` remplacé (les tests y mettent un dépôt local).
+
+        `attente` : secondes laissées à l’agent pour sortir après **Terminer**.
+        """
         self._clones = clones
         self._sessions = Sessions(jobs)
         self._lanceur = lanceur
         self._depot = depot
+        self._arreteur = arreteur
+        self._attente = attente
         # Deux requêtes simultanées ne doivent pas ouvrir deux sessions.
         self._verrou = threading.Lock()
 
@@ -84,11 +107,31 @@ class Runner:
             session = self._sessions.creer(repo, ticket, agent, f'{argv[0]} "{argv[1]}"')
             executeur = [sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), session["id"]]
             try:
-                self._lanceur(f"wap-{session['id']}", [*executeur, *argv], dossier)
+                self._lanceur(nom_tmux(session["id"]), [*executeur, *argv], dossier)
             except (OSError, subprocess.CalledProcessError) as erreur:
                 self._sessions.clore(session["id"], 127)
                 raise RunnerErreur(f"tmux : {erreur}") from erreur
             return self._sessions.lire(session["id"])
+
+    def session(self, id_: str) -> dict | None:
+        return self._sessions.lire(id_)
+
+    def terminer(self, id_: str) -> dict | None:
+        """**Terminer** : arrête l’agent, rend la session close (`None` si inconnue).
+
+        L’exécuteur clôt la session avec le code de sortie de l’agent ; s’il ne l’a pas fait dans
+        le délai (agent sourd à SIGHUP, tmux déjà parti), le runner la clôt lui-même.
+        """
+        session = self._sessions.lire(id_)
+        if session is None or session["etat"] != OUVERTE:
+            return session
+        self._arreteur(nom_tmux(id_))
+        limite = time.monotonic() + self._attente
+        while time.monotonic() < limite:
+            if (lue := self._sessions.lire(id_))["etat"] != OUVERTE:
+                return lue
+            time.sleep(0.05)
+        return self._sessions.clore(id_, CODE_ARRETEE)
 
     def preparer_clone(self, repo: str, branche: str, identite: Identite) -> Path:
         """`clones/<owner>/<name>/` sur `branche` à jour de GitHub, avec l’identité git.
@@ -154,14 +197,36 @@ class ClientRunner:
             raise RunnerErreur(str(detail))
         return reponse.json()
 
+    def terminer(self, id_: str) -> dict:
+        """`RunnerErreur` si le runner est injoignable ou ne connaît pas la session."""
+        import httpx
+
+        try:
+            reponse = self._http.post(f"/sessions/{id_}/terminer", timeout=60)
+        except httpx.HTTPError as erreur:
+            raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
+        if not reponse.is_success:
+            raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
+        return reponse.json()
+
+    def url_terminal(self, id_: str) -> str:
+        """Websocket du terminal de la session, sur le réseau Compose."""
+        base = str(self._http.base_url).rstrip("/")
+        return f"ws{base.removeprefix('http')}/sessions/{id_}/terminal"
+
 
 def creer_app_runner(runner: Runner):
-    """`POST /sessions` : 201 et la session, 409 et la session ouverte, 422 et le message."""
-    from fastapi import FastAPI
+    """`POST /sessions` : 201 et la session, 409 et la session ouverte, 422 et le message.
+
+    `POST /sessions/{id}/terminer` : la session close ; websocket `/sessions/{id}/terminal` : le
+    terminal en direct d’une session ouverte (`wap_runtime.terminal`).
+    """
+    from fastapi import FastAPI, HTTPException, WebSocket
     from fastapi.responses import JSONResponse
     from pydantic import BaseModel
 
     from wap_runtime import __version__
+    from wap_runtime.terminal import Ecrivains, relayer
 
     class Lancement(BaseModel):
         repo: str
@@ -187,6 +252,25 @@ def creer_app_runner(runner: Runner):
             return JSONResponse({"detail": str(refus), "session": refus.session}, status_code=409)
         except RunnerErreur as erreur:
             return JSONResponse({"detail": str(erreur)}, status_code=422)
+
+    @app.post("/sessions/{id_}/terminer")
+    def terminer(id_: str) -> dict:
+        if (session := runner.terminer(id_)) is None:
+            raise HTTPException(404, f"session {id_} inconnue")
+        return session
+
+    ecrivains = Ecrivains()
+
+    @app.websocket("/sessions/{id_}/terminal")
+    async def terminal(websocket: WebSocket, id_: str) -> None:
+        session = runner.session(id_)
+        if session is None or session["etat"] != OUVERTE:
+            # Avant `accept` : la poignée de main est refusée.
+            await websocket.close()
+            return
+        await websocket.accept()
+        with ecrivains.connexion(id_) as ecrit:
+            await relayer(websocket, nom_tmux(id_), ecrit)
 
     return app
 

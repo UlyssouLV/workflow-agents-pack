@@ -158,3 +158,22 @@ export async function lancerSession(repo: string, ticket: number, agent: Agent["
   }
   return corps as Session;
 }
+
+/** **Terminer** : `POST /api/sessions/{id}/terminer`, la session rendue avec son état final. */
+export async function terminerSession(id: string): Promise<Session> {
+  const reponse = await fetch(`/api/sessions/${encodeURIComponent(id)}/terminer`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  const corps = await reponse.json().catch(() => null);
+  if (!reponse.ok) {
+    throw new ErreurApi(corps?.detail ?? `terminer : HTTP ${reponse.status}`);
+  }
+  return corps as Session;
+}
+
+/** Websocket du terminal en direct, sur le cockpit servi (le runtime vérifie son `Origin`). */
+export function urlTerminal(id: string): string {
+  const { protocol, host } = window.location;
+  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
+}

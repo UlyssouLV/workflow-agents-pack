@@ -1,4 +1,8 @@
-"""Service HTTP du runtime (FastAPI) : `GET /health`, l’API du cockpit sous `/api/` et son front."""
+"""Service HTTP du runtime (FastAPI) : `GET /health`, l’API du cockpit sous `/api/` et son front.
+
+Le terminal en direct d’une session (websocket `/api/sessions/{id}/terminal`) est relayé jusqu’au
+runner (`wap_runtime.terminal`).
+"""
 
 import os
 from datetime import datetime, timezone
@@ -7,7 +11,7 @@ from typing import Callable, Mapping
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -27,7 +31,8 @@ from wap_runtime.runner import (
     SessionOuverte,
     email_noreply,
 )
-from wap_runtime.sessions import Sessions
+from wap_runtime.sessions import OUVERTE, Sessions
+from wap_runtime.terminal import relayer_runner
 
 
 class Lancement(BaseModel):
@@ -48,6 +53,17 @@ def _runner_par_defaut() -> httpx.Client:
 
 def _lien(session: dict) -> dict:
     return {"id": session["id"], "url": f"/sessions/{session['id']}", "repo": session["repo"]}
+
+
+def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:
+    """Pas de CORS : seule une page servie par ce cockpit agit (requêtes d’action, websocket)."""
+    http = {"ws": "http", "wss": "https"}.get(schema, schema)
+    return entetes.get("origin") == f"{http}://{entetes.get('host')}"
+
+
+def _verifier_origine(requete: Request) -> None:
+    if not _du_cockpit(requete.headers, requete.url.scheme):
+        raise HTTPException(403, "origine refusée : agis depuis le cockpit")
 
 
 def _front_par_defaut() -> Path | None:
@@ -133,9 +149,7 @@ def creer_app(
 
     @app.post("/api/sessions", status_code=201, response_model=None)
     def lancer(demande: Lancement, requete: Request) -> dict | JSONResponse:
-        # Pas de CORS : seule une page servie par ce cockpit peut lancer une session.
-        if requete.headers.get("origin") != f"{requete.url.scheme}://{requete.headers.get('host')}":
-            raise HTTPException(403, "origine refusée : lance la session depuis le cockpit")
+        _verifier_origine(requete)
         agent = next((a for a in agents if a["id"] == demande.agent), None)
         if agent is None:
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
@@ -164,6 +178,37 @@ def creer_app(
         except RunnerErreur as erreur:
             raise HTTPException(422, str(erreur)) from erreur
         return {**lancee, "url": _lien(lancee)["url"]}
+
+    @app.post("/api/sessions/{id_}/terminer")
+    def terminer(id_: str, requete: Request) -> dict:
+        """**Terminer** : l’agent est arrêté, la session rendue avec son état final."""
+        _verifier_origine(requete)
+        if sessions.lire(id_) is None:
+            raise HTTPException(404, f"session {id_} inconnue")
+        try:
+            close = client_runner.terminer(id_)
+        except RunnerErreur as erreur:
+            raise HTTPException(502, str(erreur)) from erreur
+        return {**close, "url": _lien(close)["url"]}
+
+    @app.websocket("/api/sessions/{id_}/terminal")
+    async def terminal(websocket: WebSocket, id_: str) -> None:
+        from websockets.asyncio.client import connect
+        from websockets.exceptions import WebSocketException
+
+        lue = sessions.lire(id_)
+        # Fermer avant `accept` refuse la poignée de main (403).
+        if not _du_cockpit(websocket.headers, websocket.url.scheme) or lue is None or lue["etat"] != OUVERTE:
+            await websocket.close()
+            return
+        try:
+            amont = await connect(client_runner.url_terminal(id_), max_size=None)
+        except (OSError, TimeoutError, WebSocketException):
+            await websocket.close()
+            return
+        async with amont:
+            await websocket.accept()
+            await relayer_runner(websocket, amont)
 
     front = front or _front_par_defaut()
     if front is not None and (front / "index.html").is_file():
