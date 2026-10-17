@@ -13,14 +13,9 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.3.0** — Registry + cockpit lecture seule : `sudo wap-runtime auth` connecte l’instance à GitHub (device flow quand un terminal existe, `GH_TOKEN` ou `--with-token` sinon ; à relancer après une déconnexion), `wap-runtime repo add|remove|list` gère le registry `repos.toml` des repos liés, et le service `runtime` (FastAPI + front React) sert sur `127.0.0.1` un cockpit en lecture seule : liste (version ouverte, progression X/Y, étape déduite du tracker, badge « Intervention humaine requise », repos qui attendent quelqu’un en tête) et détail par repo relu en direct ; tunnel SSH documenté. Les labels d’état `in-agent-test` / `in-human-test` sont lus, pas encore posés par les skills du pack ([#24](https://github.com/UlyssouLV/workflow-agents-pack/issues/24)) ([#17](https://github.com/UlyssouLV/workflow-agents-pack/issues/17), [spec](../../specs/v0.3.0-registry-cockpit-lecture-seule.md), [ADR 0003](../../adr/0003-authentification-github-de-l-instance.md)).
 - **0.4.0** — Runner distant borné : depuis la vue détail du cockpit, lancer `/implement #n` sur un enfant éligible avec Claude Code ou Cursor (connectés par `sudo wap-runtime auth claude` / `auth agent --with-token`, état dans `auth status` et l’encart **Agents**), sur un clone géré par le nouveau service `runner` (conteneur sans socket Docker ni port publié), dans un vrai terminal tmux affiché par xterm.js ; un onglet écrit, les autres lisent, **Terminer** arrête l’agent ; clone sale → **Reprendre** ou **Jeter** ; une seule session ouverte à la fois (badge **Session en cours**) ; chaque session est enregistrée sous `jobs/<id>/` (`session.json`, `terminal.cast`, transcription) et se rejoue depuis le cockpit. Bugs relevés aux tests humains ([#34](https://github.com/UlyssouLV/workflow-agents-pack/issues/34)), corrigés en 0.4.1 : [#40](https://github.com/UlyssouLV/workflow-agents-pack/issues/40) à [#44](https://github.com/UlyssouLV/workflow-agents-pack/issues/44) ([#27](https://github.com/UlyssouLV/workflow-agents-pack/issues/27), [spec](../../specs/v0.4.0-runner-distant-borne.md), [ADR 0004](../../adr/0004-runner-en-conteneur-agents-interactifs.md)).
 - **0.4.1** — Correctifs du runner distant (tests humains 0.4.0) : le runner lance le `dispatch.py` du clone géré avant l’agent, qui dispose des skills du pack à la version de la branche ; `sudo wap-runtime …` se lance tel quel (lien `/usr/local/bin/wap-runtime` créé par `setup`) et `auth claude` trouve la CLI quel que soit le PATH ; `WAP_REF` installe le paquet depuis un ref choisi et `setup` construit les images au commit du paquet installé ; quitter la page de session libère la main, **Prendre la main** la donne à un onglet en lecture seule ; une session peut ouvrir la suivante (`wap-runtime enchainer`, état `enchaînée`, chaîne `precedente` / `suivante` suivie par le cockpit), la partie pack restant un bug sur `main` ([#54](https://github.com/UlyssouLV/workflow-agents-pack/issues/54)). Bugs corrigés : [#40](https://github.com/UlyssouLV/workflow-agents-pack/issues/40) à [#44](https://github.com/UlyssouLV/workflow-agents-pack/issues/44) ([#45](https://github.com/UlyssouLV/workflow-agents-pack/issues/45), [spec](../../specs/v0.4.1-correctifs-runner-distant.md), [ADR 0005](../../adr/0005-ref-d-installation-images-au-commit-du-paquet.md), [ADR 0006](../../adr/0006-une-session-peut-ouvrir-la-suivante.md)).
+- **0.4.2** — Session libre et réponse attendue : depuis le détail d’un repo, **Nouvelle session** (agent + branche) lance l’agent vide dans le clone géré ; une session ouverte par repo, activité *travaille* / *réponse attendue* / *inconnue* par les hooks, page **Sessions** et compteur de réponses attendues ([#62](https://github.com/UlyssouLV/workflow-agents-pack/issues/62), [spec](../../specs/v0.4.2-session-libre-et-reponse-attendue.md), [ADR 0007](../../adr/0007-sessions-par-repo-activite-par-hooks.md)).
 
-## Prochaine : 0.4.2 — Session libre et réponse attendue
-
-Objectif. Depuis un repo du cockpit, ouvrir une nouvelle session (agent choisi, l’humain tape ce qu’il veut : `/implement #n`, « Ouvre la version », `/th`…) à la place du bouton `/implement #n` par ticket, retrouver la liste des sessions passées, et voir quand une session travaille ou attend une réponse (ex. « réponse attendue — grilling »), pour en lancer une autre pendant qu’une attend.
-
-Hors périmètre : catalogue de boutons par étape, parallélisme de plusieurs sessions qui travaillent.
-
-## Ensuite : 0.5.0 — Autopilot borné
+## Prochaine : 0.5.0 — Autopilot borné
 
 Objectif. Démarrer et surveiller sans humain la chaîne des enfants `ready-for-agent` tant que rien ne bloque (la 0.4.1 enchaîne déjà depuis la session) ; s’arrêter net sur besoin humain ou erreur.
 
@@ -40,22 +35,6 @@ Hors périmètre : SaaS multi-tenant, comptes partagés entre instances.
 
 ## Plus tard (pas encore numéroté)
 
-### Bug — le runner refuse l’enchaînement auto (permissions Claude / Cursor) (#69)
-
-**Constat :** après les tests humains 0.4.1, Claude Code en mode auto peut refuser `$WAP_ENCHAINER`, et Cursor demande une validation hors allowlist, même si le runtime sait enchaîner.
-
-**Reproductibilité :** session runner Claude en mode auto ; laisser `encadrer-implement` (ou un appel direct) lancer l’enchaînement ; observer le refus / la demande d’allowlist.
-
-**Impact :** chaîne de tickets bloquée ou semi-manuelle dans le runner.
-
-**Cause probable :** aucune règle étroite dans `runner-home/` pour les commandes d’enchaînement.
-
-**À corriger :** fusionner au démarrage du runner des allowlist Claude / Cursor pour `enchainer-implement.sh` et `wap-runtime enchainer` (pas `Bash(*)`).
-
-**Hors périmètre :** correctif pack `#54` sur `main` ; politique permissions de l’autopilot 0.5.0.
-
-**Suivi :** [#69](https://github.com/UlyssouLV/workflow-agents-pack/issues/69) · Trouvé dans 0.4.1 · test humain · 2026-10-17 · avant déploiement
-
 ### Style du cockpit
 
 Un vrai design du cockpit (la 0.3.0 livre un style minimal).
@@ -68,9 +47,9 @@ Chaque instance choisit quels labels déclenchent quelle étape (ex. un autre la
 
 Plusieurs jobs agents en parallèle sur la même machine hôte, avec isolation et quotas.
 
-### Plusieurs sessions ouvertes
+### Plusieurs sessions sur le même repo
 
-Plusieurs sessions du runner ouvertes en même temps sur une instance (la 0.4.0 en autorise une, la 0.4.2 une seule qui travaille).
+Plusieurs sessions du runner sur le même clone (worktrees) : la 0.4.2 en autorise une par repo.
 
 ### Labels d’état posés par le pack (#24)
 
