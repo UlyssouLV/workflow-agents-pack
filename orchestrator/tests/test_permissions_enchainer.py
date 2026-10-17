@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from wap_runtime.home_json import sous_racine
 from wap_runtime.permissions_enchainer import (
     CLAUDE_ALLOW,
     CURSOR_TERMINAL_ALLOWLIST,
-    _sous_racine,
     assurer,
     main,
 )
@@ -57,6 +57,7 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
         "Bash(git status)",
         CLAUDE_ALLOW[0],
         CLAUDE_ALLOW[1],
+        CLAUDE_ALLOW[2],
     ]
 
     cursor = json.loads(cursor_path.read_text(encoding="utf-8"))
@@ -64,13 +65,14 @@ def test_assurer_preserve_le_reste_et_est_idempotent(tmp_path: Path):
         "gh issue view",
         CURSOR_TERMINAL_ALLOWLIST[0],
         CURSOR_TERMINAL_ALLOWLIST[1],
+        CURSOR_TERMINAL_ALLOWLIST[2],
     ]
 
 
 def test_sous_racine_refuse_la_traversee(tmp_path: Path):
     racine = os.path.realpath(tmp_path)
     with pytest.raises(ValueError, match="refus"):
-        _sous_racine(racine, "..", "etc", "passwd")
+        sous_racine(racine, "..", "etc", "passwd")
 
 
 def test_main_utilise_le_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

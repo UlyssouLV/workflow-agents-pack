@@ -1,5 +1,6 @@
 """Faux GitHub REST, branché sur le client par un transport `httpx` injecté."""
 
+import base64
 import re
 from dataclasses import dataclass, field
 
@@ -17,6 +18,8 @@ class FauxRepo:
     statuts: dict[str, list[dict]] = field(default_factory=dict)
     # Réponse forcée pour toute route du repo : (code HTTP, en-têtes, message).
     panne: tuple[int, dict, str] | None = None
+    default_branch: str = "main"
+    fichiers: dict[str, str] = field(default_factory=dict)
 
     def version(self, numero: int, enfants: list[tuple[int, str, list[str]]], titre=None, bloques=()):
         """Parent ouvert et ses enfants `(numéro, "open" | "closed", labels)` ; `bloques` : numéros
@@ -103,13 +106,22 @@ class FauxGitHub:
             return httpx.Response(401, json={"message": "Bad credentials"})
         if chemin == "/user":
             return httpx.Response(200, json={"login": self.compte, "id": 583231})
-        m = re.fullmatch(r"/repos/([^/]+/[^/]+)(/.*)", chemin)
+        m = re.fullmatch(r"/repos/([^/]+/[^/]+)(/.*)?", chemin)
         if not m or m[1] not in self.repos:
             return httpx.Response(404, json={"message": "Not Found"})
-        repo, route = self.repos[m[1]], m[2]
+        repo, route = self.repos[m[1]], m[2] or ""
         if repo.panne:
             code, entetes, message = repo.panne
             return httpx.Response(code, headers=entetes, json={"message": message})
+        if route in ("", "/"):
+            return httpx.Response(200, json={"default_branch": repo.default_branch})
+        if m2 := re.fullmatch(r"/contents/(.+)", route):
+            if (texte := repo.fichiers.get(m2[1])) is None:
+                return httpx.Response(404, json={"message": "Not Found"})
+            return httpx.Response(
+                200,
+                json={"encoding": "base64", "content": base64.b64encode(texte.encode()).decode()},
+            )
         if route == "/issues":
             assert requete.url.params.get("state") == "open"
             return httpx.Response(200, json=repo.issues)

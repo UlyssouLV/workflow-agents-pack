@@ -65,6 +65,7 @@ def test_identite_du_repo_et_heure_de_lecture(registry, github, horloge):
     assert corps["versions"] == []
     assert corps["bugs"] == []
     assert corps["etape"]["numero"] == 9
+    assert corps["branches"] == {"proposees": ["main"], "defaut": "main"}
 
 
 def test_le_slug_du_registry_est_retrouve_sans_tenir_compte_de_la_casse(registry, github, horloge):
@@ -273,3 +274,26 @@ def test_sans_token_github_n_est_pas_appele(registry, github, horloge):
 
     assert "sudo wap-runtime auth" in corps["erreur"]
     assert github.appels == []
+
+
+def test_branches_base_du_canal_et_prs_de_version_defaut_pr(registry, github, horloge):
+    repo = github.repo(SLUG)
+    repo.default_branch = "develop"
+    repo.fichiers["agents/integration-channel.yml"] = "base_branch: feat/runtime-orchestrator\n"
+    repo.version(17, [(30, "open", ["ready-for-agent"])])
+    repo.pr(24, "Fixes #17", "sha24", branche="v0.4.0")
+    repo.version(18, [(40, "open", ["ready-for-agent"])])
+    repo.pr(25, "Fixes #18", "sha25", branche="v0.5.0")
+
+    corps = detail(registry, github, horloge)
+
+    assert corps["branches"] == {
+        "proposees": ["feat/runtime-orchestrator", "v0.4.0", "v0.5.0"],
+        "defaut": "v0.4.0",
+    }
+
+
+def test_branches_sans_canal_ni_pr_la_branche_par_defaut(registry, github, horloge):
+    github.repo(SLUG).default_branch = "develop"
+
+    assert detail(registry, github, horloge)["branches"] == {"proposees": ["develop"], "defaut": "develop"}

@@ -110,8 +110,8 @@ def appels(log: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
-def lancer(runner, agent="claude", ticket=30):
-    return runner.lancer(SLUG, ticket, agent, BRANCHE, IDENTITE)
+def lancer(runner, agent="claude", ticket=30, branche=BRANCHE):
+    return runner.lancer(SLUG, ticket, agent, branche, IDENTITE)
 
 
 def test_premier_lancement_clone_sur_la_branche_de_la_pr_avec_l_identite(runner, instance, faux_bin):
@@ -210,13 +210,16 @@ def test_session_enregistree_terminal_et_transcription(runner, instance, agent, 
 
 
 def test_redemarrage_session_ouverte_interrompue_et_nouvelle_session_possible(runner, instance, tmp_path):
-    ouverte = Sessions(instance / "jobs").creer(SLUG, 29, "claude", 'claude "/implement #29"')
+    jobs = Sessions(instance / "jobs")
+    ouverte = jobs.creer(SLUG, 29, "claude", 'claude "/implement #29"')
+    autre = jobs.creer("o/autre", 3, "claude", 'claude "/implement #3"')
 
     redemarre = Runner(instance / "clones", instance / "jobs", depot=str(tmp_path / "github" / "{slug}.git"))
 
     interrompue = redemarre.session(ouverte["id"])
     assert interrompue["etat"] == "interrompue"
     assert interrompue["fin"] is not None
+    assert redemarre.session(autre["id"])["etat"] == "interrompue"
     assert lancer(redemarre)["ticket"] == 30
 
 
@@ -226,15 +229,51 @@ def test_le_runner_ne_pose_aucun_label(runner, faux_bin):
     assert not [l for l in appels(faux_bin) if l.startswith("gh ") and l != "gh auth setup-git"]
 
 
-def test_une_seule_session_ouverte(runner, instance):
+def test_deuxieme_session_sur_le_meme_repo_refusee(runner, instance):
     from wap_runtime.runner import SessionOuverte
 
-    ouverte = Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+    ouverte = Sessions(instance / "jobs").creer(SLUG, 3, "claude", 'claude "/implement #3"')
 
     with pytest.raises(SessionOuverte) as refus:
         lancer(runner)
 
     assert refus.value.session == ouverte
+
+
+def test_session_sur_un_autre_repo_acceptee(runner, instance):
+    Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+
+    lancee = lancer(runner)
+
+    assert lancee["repo"] == SLUG
+    assert lancee["etat"] == "terminée"
+
+
+def test_session_d_un_autre_repo_qui_travaille_refusee(runner, instance):
+    from wap_runtime.runner import SessionQuiTravaille
+
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+
+    with pytest.raises(SessionQuiTravaille) as refus:
+        lancer(runner)
+
+    assert refus.value.session["id"] == autre["id"]
+    assert Sessions(instance / "jobs").ouverte(SLUG) is None
+
+
+@pytest.mark.parametrize("activite", ["attend", "inconnue"])
+def test_session_d_un_autre_repo_attend_ou_inconnue_acceptee(runner, instance, activite):
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    if activite != "inconnue":
+        jobs.enregistrer_etat(autre["id"], activite)
+
+    lancee = lancer(runner)
+
+    assert lancee["repo"] == SLUG
+    assert lancee["etat"] == "terminée"
 
 
 def test_api_interne_lance_une_session(runner, instance):
@@ -256,8 +295,8 @@ def test_api_interne_lance_une_session(runner, instance):
     assert reponse.json()["commande"] == 'agent "/implement #30"'
 
 
-def test_api_interne_409_avec_la_session_ouverte(runner, instance):
-    ouverte = Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+def test_api_interne_409_avec_la_session_ouverte_du_meme_repo(runner, instance):
+    ouverte = Sessions(instance / "jobs").creer(SLUG, 3, "claude", 'claude "/implement #3"')
     client = TestClient(creer_app_runner(runner))
 
     reponse = client.post(
@@ -268,6 +307,38 @@ def test_api_interne_409_avec_la_session_ouverte(runner, instance):
 
     assert reponse.status_code == 409
     assert reponse.json()["session"] == ouverte
+
+
+def test_api_interne_accepte_un_autre_repo(runner, instance):
+    Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
+    client = TestClient(creer_app_runner(runner))
+
+    reponse = client.post(
+        "/sessions",
+        json={"repo": SLUG, "ticket": 30, "agent": "claude", "branche": BRANCHE,
+              "login": IDENTITE.login, "email": IDENTITE.email},
+    )
+
+    assert reponse.status_code == 201
+    assert reponse.json()["repo"] == SLUG
+
+
+def test_api_interne_409_quand_un_autre_repo_travaille(runner, instance):
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+    client = TestClient(creer_app_runner(runner))
+
+    reponse = client.post(
+        "/sessions",
+        json={"repo": SLUG, "ticket": 30, "agent": "claude", "branche": BRANCHE,
+              "login": IDENTITE.login, "email": IDENTITE.email},
+    )
+
+    assert reponse.status_code == 409
+    assert reponse.json()["session"]["id"] == autre["id"]
+    assert reponse.json()["travaille"] is True
+    assert Sessions(instance / "jobs").ouverte(SLUG) is None
 
 
 def test_api_interne_422_avec_le_message_du_runner(runner):
@@ -305,6 +376,7 @@ def test_clone_sale_sans_choix_ne_lance_rien_et_rend_fichiers_et_diff(runner, in
         lancer(runner)
 
     assert refus.value.fichiers == [{"statut": "M", "chemin": "suivi.txt"}, {"statut": "??", "chemin": "nouveau.txt"}]
+    assert refus.value.branche == BRANCHE
     assert "+après" in refus.value.diff and "+non suivi" in refus.value.diff
     assert Sessions(instance / "jobs").toutes() == avant
     assert (clone_sale / "nouveau.txt").exists()
@@ -316,6 +388,7 @@ def test_reprendre_lance_la_session_sur_l_arbre_tel_quel_sans_changer_de_branche
     session = runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE, choix="reprendre")
 
     assert session["ticket"] == 30
+    assert session["branche"] == "travail-en-cours"
     assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone_sale) == "travail-en-cours"
     assert (clone_sale / "suivi.txt").read_text() == "après\n"
     assert (clone_sale / "nouveau.txt").exists()
@@ -342,6 +415,7 @@ def test_clone_propre_aucun_choix_demande(runner, instance, choix):
     session = runner.lancer(SLUG, 31, "claude", BRANCHE, IDENTITE, choix=choix)
 
     assert session["ticket"] == 31
+    assert session["branche"] == BRANCHE
     assert not (instance / "jobs" / session["id"] / "abandon.patch").exists()
 
 
@@ -354,6 +428,7 @@ def test_api_interne_409_avec_le_clone_sale(runner, clone_sale):
 
     assert reponse.status_code == 409
     assert reponse.json()["clone"]["fichiers"][0] == {"statut": "M", "chemin": "suivi.txt"}
+    assert reponse.json()["clone"]["branche"] == BRANCHE
     assert "+après" in reponse.json()["clone"]["diff"]
 
     assert client.post("/sessions", json={**demande, "choix": "jeter"}).status_code == 201
@@ -469,6 +544,18 @@ def test_reprendre_dispatch_sans_compter_les_changements_deja_la(runner, instanc
     assert (clone / "README.md").read_text() == "en cours\n"
 
 
+def test_session_libre_lance_l_agent_sans_argument_sur_la_branche(runner, instance, faux_bin):
+    session = runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    clone = instance / "clones" / "o" / "r"
+    lancee = next(l for l in appels(faux_bin) if l.startswith("claude "))
+    assert lancee == (
+        f"claude  @ {clone.resolve()} @ octocat <583231+octocat@users.noreply.github.com>"
+    )
+    assert (session["ticket"], session["branche"], session["commande"]) == (None, BRANCHE, "claude")
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone) == BRANCHE
+
+
 def test_l_agent_recoit_l_enchaineur_et_un_jeton_propre_a_la_session(runner, tmp_path):
     premiere, seconde = lancer(runner), lancer(runner, ticket=31)
 
@@ -532,6 +619,48 @@ def chaine(instance, tmp_path, faux_bin, github, faux_gh):
         github=ClientGitHub(JETON, transport=faux_gh.transport()),
     )
     return Chaine(runner, lances, arretes)
+
+
+def test_session_sur_la_base_acceptee_sans_pr_de_version(chaine, faux_gh):
+    faux_gh.repo(SLUG).pulls.clear()
+
+    session = chaine.runner.lancer(SLUG, None, "claude", "main", IDENTITE)
+
+    assert session["branche"] == "main"
+    assert session["ticket"] is None
+
+
+def test_branche_hors_liste_refusee_sans_session(chaine, instance):
+    from wap_runtime.runner import RunnerErreur
+
+    with pytest.raises(RunnerErreur, match="non proposée"):
+        chaine.runner.lancer(SLUG, None, "claude", "travail-en-cours", IDENTITE)
+
+    assert Sessions(instance / "jobs").toutes() == []
+
+
+def test_enchaînement_accepte_si_un_autre_repo_travaille(chaine, instance, github):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    jobs = Sessions(instance / "jobs")
+    autre = jobs.creer("o/autre", None, "claude", "claude")
+    jobs.enregistrer_etat(autre["id"], "travaille")
+
+    suivante = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    assert suivante["ticket"] == 31
+    assert jobs.lire(autre["id"])["etat"] == "ouverte"
+
+
+def test_enchaînement_depuis_une_session_libre_sur_la_branche_de_pr(chaine, github):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    suivante = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    assert (courante := chaine.runner.session(courante["id"]))["etat"] == "enchaînée"
+    assert courante["ticket"] is None
+    assert (suivante["ticket"], suivante["commande"], suivante["branche"]) == (
+        31, 'claude "/implement #31"', BRANCHE,
+    )
 
 
 def test_suivante_acceptee_enchaine_sur_le_meme_agent_et_la_meme_branche(chaine, instance, github):
@@ -712,6 +841,61 @@ def test_api_interne_suivante_session_inconnue_403(client_chaine):
     assert reponse.status_code in (403, 404)
 
 
+def test_etat_avec_le_jeton_met_a_jour_activite_et_reste_reutilisable(chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    premiere = chaine.runner.enregistrer_etat(
+        courante["id"], chaine.jeton(), "travaille", prompt="Ouvre la version"
+    )
+    seconde = chaine.runner.enregistrer_etat(
+        courante["id"], chaine.jeton(), "attend", skill="grilling", prompt="autre"
+    )
+
+    assert (premiere["activite"], premiere["titre"]) == ("travaille", "Ouvre la version")
+    assert (seconde["activite"], seconde["skill"], seconde["titre"]) == (
+        "attend", "grilling", "Ouvre la version",
+    )
+
+
+def test_etat_mauvais_jeton_ou_session_close_refuse(chaine):
+    from wap_runtime.runner import JetonRefuse
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    with pytest.raises(JetonRefuse, match="jeton refusé"):
+        chaine.runner.enregistrer_etat(courante["id"], "pas-le-bon", "travaille")
+
+    chaine.runner.terminer(courante["id"])
+    with pytest.raises(JetonRefuse, match="jeton refusé"):
+        chaine.runner.enregistrer_etat(courante["id"], chaine.jeton(), "travaille")
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
+def test_api_interne_etat_met_a_jour_la_session(chaine, client_chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/etat",
+        json={"jeton": chaine.jeton(), "activite": "travaille", "prompt": "Ouvre la version"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["activite"] == "travaille"
+    assert chaine.runner.session(courante["id"])["titre"] == "Ouvre la version"
+
+
+def test_api_interne_etat_mauvais_jeton_403(chaine, client_chaine):
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+
+    reponse = client_chaine.post(
+        f"/sessions/{courante['id']}/etat",
+        json={"jeton": "faux", "activite": "travaille"},
+    )
+
+    assert reponse.status_code == 403
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
 @pytest.fixture
 def runner_servi(chaine):
     import threading
@@ -759,3 +943,93 @@ def test_wap_runtime_enchainer_hors_session_ko(monkeypatch, capsys):
 
     assert main(["enchainer", "31"]) == 1
     assert capsys.readouterr().out.startswith("KO — ")
+
+
+def _env_session(chaine, monkeypatch, runner_servi):
+    commande, _ = chaine.lances[-1]
+    for affectation in commande[1:4]:
+        monkeypatch.setenv(*affectation.split("=", 1))
+    monkeypatch.setenv("WAP_RUNNER", runner_servi)
+
+
+def test_wap_runtime_etat_met_a_jour_avec_le_jeton_et_rend_0(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "travaille"
+    assert main(["etat", "attend", "--skill", "grilling"]) == 0
+    lue = chaine.runner.session(courante["id"])
+    assert (lue["activite"], lue["skill"]) == ("attend", "grilling")
+
+
+def test_wap_runtime_etat_premier_message_devient_le_titre(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {"read": lambda self: json.dumps({"prompt": "Ouvre la version"})})(),
+    )
+
+    assert main(["etat", "travaille"]) == 0
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {"read": lambda self: json.dumps({"prompt": "autre"})})(),
+    )
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["titre"] == "Ouvre la version"
+
+
+def test_wap_runtime_etat_skill_depuis_l_outil(chaine, runner_servi, monkeypatch):
+    """`etat skill` retient le skill sans écraser une activité `attend`."""
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    chaine.runner.enregistrer_etat(courante["id"], chaine.jeton(), "attend")
+    _env_session(chaine, monkeypatch, runner_servi)
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("Stdin", (), {
+            "read": lambda self: json.dumps(
+                {"tool_name": "Skill", "tool_input": {"skill": "grilling"}}
+            )
+        })(),
+    )
+
+    assert main(["etat", "skill"]) == 0
+    lue = chaine.runner.session(courante["id"])
+    assert (lue["activite"], lue["skill"]) == ("attend", "grilling")
+
+
+@pytest.mark.parametrize("argv, env", [
+    (["etat", "travaille"], False),
+    (["etat", "travaille"], True),
+])
+def test_wap_runtime_etat_refus_rend_quand_meme_0(chaine, runner_servi, monkeypatch, argv, env):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    if env:
+        _env_session(chaine, monkeypatch, runner_servi)
+        monkeypatch.setenv("WAP_SESSION_JETON", "pas-le-bon")
+    else:
+        monkeypatch.delenv("WAP_SESSION", raising=False)
+        monkeypatch.delenv("WAP_SESSION_JETON", raising=False)
+
+    assert main(argv) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"
+
+
+def test_wap_runtime_etat_session_close_rend_0(chaine, runner_servi, monkeypatch):
+    from wap_runtime.cli import main
+
+    courante = chaine.runner.lancer(SLUG, None, "claude", BRANCHE, IDENTITE)
+    _env_session(chaine, monkeypatch, runner_servi)
+    chaine.runner.terminer(courante["id"])
+
+    assert main(["etat", "travaille"]) == 0
+    assert chaine.runner.session(courante["id"])["activite"] == "inconnue"

@@ -1,5 +1,5 @@
 import type { Liste, Repo } from "./api";
-import { BandeauAuth, EncartAgents, LibelleEtape, heure, nomAffiche } from "./commun";
+import { BadgeSession, BandeauAuth, EncartAgents, Entete, LibelleEtape, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
 
 /** `/` : une ligne par repo lié, ceux qui attendent quelqu’un en tête. */
@@ -8,6 +8,7 @@ export function VueListe() {
 
   return (
     <main>
+      <Entete />
       <h1>Cockpit</h1>
       {erreur && <p className="erreur">Lecture impossible : {erreur}</p>}
       {donnees && <Contenu liste={donnees} />}
@@ -61,9 +62,7 @@ function Ligne({ repo }: { repo: Repo }) {
         {repo.session && (
           <>
             {" "}
-            <a className="badge session" href={repo.session.url}>
-              Session en cours
-            </a>
+            <BadgeSession session={repo.session} />
           </>
         )}
       </td>

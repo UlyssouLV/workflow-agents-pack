@@ -20,7 +20,7 @@ from wap_runtime import __version__
 from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
-from wap_runtime.eligibilite import enfant_de_version, lancements, raison_grisee
+from wap_runtime.eligibilite import lancements
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
 from wap_runtime.registry import RegistryErreur, chemin_registry
@@ -32,16 +32,17 @@ from wap_runtime.runner import (
     Identite,
     RunnerErreur,
     SessionOuverte,
+    SessionQuiTravaille,
     email_noreply,
 )
-from wap_runtime.sessions import OUVERTE, Sessions
+from wap_runtime.sessions import OUVERTE, Sessions, publique
 from wap_runtime.terminal import relayer_runner
 
 
 class Lancement(BaseModel):
     repo: str
-    ticket: int
     agent: str
+    branche: str
     # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
     choix: Choix | None = None
 
@@ -59,12 +60,18 @@ def _runner_par_defaut() -> httpx.Client:
 
 
 def _lien(session: dict) -> dict:
-    return {"id": session["id"], "url": f"/sessions/{session['id']}", "repo": session["repo"]}
+    vue = publique(session)
+    return {
+        "id": vue["id"],
+        "url": f"/sessions/{vue['id']}",
+        "repo": vue["repo"],
+        "activite": vue["activite"],
+    }
 
 
 def _avec_url(session: dict) -> dict:
     """La session, avec l’adresse de sa page dans le cockpit."""
-    return {**session, "url": _lien(session)["url"]}
+    return {**publique(session), "url": _lien(session)["url"]}
 
 
 def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:
@@ -128,19 +135,16 @@ def creer_app(
     @app.get("/api/repos")
     def repos() -> dict:
         liste = cockpit.liste()
-        ouverte = sessions.ouverte()
-        # Badge « Session en cours » : la session ouverte de l’instance, sur son repo.
-        sur = ouverte["repo"].lower() if ouverte else None
-        repos_ = [
-            {**r, "session": _lien(ouverte) if r["slug"].lower() == sur else None}
-            for r in liste["repos"]
-        ]
+        # Badge « Session en cours » : au plus une session ouverte par repo.
+        ouvertes = {s["repo"].lower(): _lien(s) for s in sessions.toutes() if s["etat"] == OUVERTE}
+        repos_ = [{**r, "session": ouvertes.get(r["slug"].lower())} for r in liste["repos"]]
         return {**liste, "repos": repos_, "agents": agents}
 
     @app.get("/api/repos/{owner}/{name}")
     def repo(owner: str, name: str) -> dict:
-        ouverte = sessions.ouverte()
-        detail = lancements(_detail(f"{owner}/{name}"), ouverte, agents)
+        slug = f"{owner}/{name}"
+        ouverte = sessions.ouverte(slug)
+        detail = lancements(_detail(slug), ouverte, agents)
         return {**detail, "agents": agents, "session": ouverte and _lien(ouverte)}
 
     @app.get("/api/repos/{owner}/{name}/sessions")
@@ -156,6 +160,11 @@ def creer_app(
         if detail is None:
             raise HTTPException(404, f"{slug} absent du registry : `sudo wap-runtime repo add {slug}`")
         return detail
+
+    @app.get("/api/sessions")
+    def toutes_les_sessions() -> dict:
+        """Toutes les sessions de l’instance, de la plus récente à la plus ancienne."""
+        return {"sessions": [_avec_url(s) for s in sessions.toutes()]}
 
     @app.get("/api/sessions/{id_}")
     def session(id_: str) -> dict:
@@ -177,27 +186,29 @@ def creer_app(
         agent = next((a for a in agents if a["id"] == demande.agent), None)
         if agent is None:
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
-        if (ouverte := sessions.ouverte()) is not None:
+        if not agent["connecte"]:
+            raise HTTPException(422, "agent non connecté")
+        if (ouverte := sessions.ouverte(demande.repo)) is not None:
             return _deja_ouverte(ouverte)
+        if (autre := sessions.qui_travaille(sauf=demande.repo)) is not None:
+            return _session_qui_travaille(autre)
         detail = _detail(demande.repo)
         if detail["erreur"]:
             raise HTTPException(502, detail["erreur"])
-        trouve = enfant_de_version(detail["versions"], demande.ticket)
-        if trouve is None:
-            raise HTTPException(404, f"#{demande.ticket} n’est l’enfant d’aucune version ouverte")
-        enfant, pr = trouve
-        if raison := raison_grisee(enfant, pr, None, agent["connecte"]):
-            raise HTTPException(422, raison)
+        if demande.branche not in detail["branches"]["proposees"]:
+            raise HTTPException(422, f"branche {demande.branche} non proposée")
         try:
             compte = client.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
             lancee = client_runner.lancer(
-                detail["slug"], demande.ticket, demande.agent, pr["branche"], identite, demande.choix
+                detail["slug"], None, demande.agent, demande.branche, identite, demande.choix
             )
         except GitHubErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur
         except SessionOuverte as refus:
             return _deja_ouverte(refus.session)
+        except SessionQuiTravaille as refus:
+            return _session_qui_travaille(refus.session)
         except CloneSale as refus:
             return JSONResponse(refus.corps(), status_code=409)
         except RunnerErreur as erreur:
@@ -248,6 +259,17 @@ def _deja_ouverte(session: dict) -> JSONResponse:
     )
 
 
+def _session_qui_travaille(session: dict) -> JSONResponse:
+    lien = _lien(session)
+    return JSONResponse(
+        {
+            "detail": f"une session travaille sur {lien['repo']} : {lien['url']}",
+            "session": lien,
+        },
+        status_code=409,
+    )
+
+
 def _servir_front(app: FastAPI, front: Path) -> None:
     """Les routes du front rendent `index.html` ; le routage se fait dans le navigateur."""
     index = front / "index.html"
@@ -258,6 +280,10 @@ def _servir_front(app: FastAPI, front: Path) -> None:
 
     @app.get("/repos/{owner}/{name}", include_in_schema=False)
     def detail(owner: str, name: str) -> FileResponse:
+        return FileResponse(index)
+
+    @app.get("/sessions", include_in_schema=False)
+    def sessions_page() -> FileResponse:
         return FileResponse(index)
 
     @app.get("/sessions/{id_}", include_in_schema=False)

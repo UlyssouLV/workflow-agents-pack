@@ -45,11 +45,15 @@ export interface VersionResume {
   pr: PrResume | null;
 }
 
-/** Lien vers la session ouverte de l’instance (une seule à la fois). */
+/** Activité d’une session ouverte, remontée par les hooks (`inconnue` au départ). */
+export type ActiviteSession = "travaille" | "attend" | "inconnue";
+
+/** Lien vers une session ouverte (au plus une par repo, ADR 0007). */
 export interface LienSession {
   id: string;
   url: string;
   repo: string;
+  activite?: ActiviteSession | null;
 }
 
 /** `interrompue` : le runner a redémarré pendant la session. `enchaînée` : close par l’ouverture
@@ -61,7 +65,10 @@ export interface Session {
   id: string;
   url: string;
   repo: string;
-  ticket: number;
+  /** `null` : session libre ; un numéro : session `/implement #n` (enchaînée). */
+  ticket: number | null;
+  /** Branche du clone au lancement ; `null` sur une session d’avant 0.4.2. */
+  branche: string | null;
   agent: Agent["id"];
   commande: string;
   debut: string;
@@ -71,6 +78,10 @@ export interface Session {
   /** Identifiants des sessions voisines dans la chaîne ; `null` hors chaîne. */
   precedente: string | null;
   suivante: string | null;
+  activite: ActiviteSession;
+  skill: string | null;
+  /** Premier message soumis, sinon le nom de l’agent. */
+  titre: string;
 }
 
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */
@@ -125,12 +136,18 @@ export interface Bug {
   labels: string[];
 }
 
+export interface BranchesSession {
+  proposees: string[];
+  defaut: string;
+}
+
 /** `GET /api/repos/{owner}/{name}`. */
 export interface Detail extends Omit<Repo<Version>, "session"> {
   bugs: Bug[];
   agents: Agent[];
-  /** Session ouverte de l’instance, quel que soit son repo. */
+  /** Session ouverte de ce repo, s’il y en a une (ADR 0007). */
   session: LienSession | null;
+  branches: BranchesSession;
 }
 
 /** Changement non commité du clone géré (`git status --porcelain` : `M`, `??`…). */
@@ -144,6 +161,8 @@ export interface CloneSale {
   fichiers: FichierModifie[];
   /** `git diff HEAD` et les fichiers non suivis. */
   diff: string;
+  /** Branche actuelle du clone (celle de **Reprendre**). */
+  branche: string;
 }
 
 /** Réponse au clone sale : **Reprendre** sur l’arbre tel quel, ou **Jeter** (patch gardé). */
@@ -169,7 +188,7 @@ export async function lire<T>(chemin: string): Promise<T> {
   return (await reponse.json()) as T;
 }
 
-/** `GET /api/repos/{owner}/{name}/sessions` : de la plus récente à la plus ancienne. */
+/** `GET /api/sessions` et `GET /api/repos/{owner}/{name}/sessions` : plus récentes d’abord. */
 export interface SessionsDuRepo {
   sessions: Session[];
 }
@@ -189,14 +208,14 @@ export async function lireEnregistrement(id: string): Promise<string> {
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
 export async function lancerSession(
   repo: string,
-  ticket: number,
   agent: Agent["id"],
+  branche: string,
   choix?: ChoixClone,
 ): Promise<Session> {
   const reponse = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ repo, ticket, agent, ...(choix && { choix }) }),
+    body: JSON.stringify({ repo, agent, branche, ...(choix && { choix }) }),
   });
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {

@@ -24,8 +24,22 @@ describe("page de session", () => {
     rendre();
 
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session /implement #23");
+    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
     expect(screen.getByRole("link", { name: "o/r" })).toHaveAttribute("href", "/repos/o/r");
     expect(screen.getByText('claude "/implement #23"')).toBeInTheDocument();
+  });
+
+  it("session libre : le titre reprend la commande", async () => {
+    rendre(session({ ticket: null, commande: "claude" }));
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session claude");
+  });
+
+  it("montre le titre et l’activité", async () => {
+    rendre(session({ titre: "Ouvre la version", activite: "attend", skill: "grilling" }));
+
+    expect(await screen.findByText("Ouvre la version")).toBeInTheDocument();
+    expect(screen.getByText("Réponse attendue — grilling")).toBeInTheDocument();
   });
 
   it("session ouverte : état et durée depuis le début", async () => {

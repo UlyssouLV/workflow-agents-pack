@@ -33,8 +33,8 @@ def sessions(tmp_path, horloge):
     return Sessions(tmp_path / "jobs", horloge)
 
 
-def creer(sessions, repo="o/r", ticket=30):
-    return sessions.creer(repo, ticket, "claude", 'claude "/implement #30"')
+def creer(sessions, repo="o/r", ticket=30, branche="v0.4.0"):
+    return sessions.creer(repo, ticket, "claude", 'claude "/implement #30"', branche=branche)
 
 
 @pytest.fixture
@@ -66,6 +66,7 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "id": session["id"],
         "repo": "o/r",
         "ticket": 30,
+        "branche": "v0.4.0",
         "agent": "claude",
         "commande": 'claude "/implement #30"',
         "debut": DEBUT.isoformat(),
@@ -74,14 +75,102 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "code_sortie": None,
         "precedente": None,
         "suivante": None,
+        "activite": "inconnue",
+        "skill": None,
+        "titre": None,
     }
 
 
-def test_ouverte_rend_la_session_ouverte_de_l_instance(sessions):
-    assert sessions.ouverte() is None
+def test_session_libre_ticket_null_et_branche(sessions):
+    session = sessions.creer("o/r", None, "claude", "claude", branche="main")
+
+    assert session["ticket"] is None
+    assert session["branche"] == "main"
+    assert session["commande"] == "claude"
+
+
+def test_session_d_avant_la_branche_sans_branche(sessions, tmp_path):
+    """Un `session.json` écrit par une 0.4.1 n’a pas `branche`."""
+    session = creer(sessions)
+    chemin = tmp_path / "jobs" / session["id"] / "session.json"
+    ancien = {k: v for k, v in json.loads(chemin.read_text()).items() if k != "branche"}
+    chemin.write_text(json.dumps(ancien))
+
+    assert sessions.lire(session["id"])["branche"] is None
+
+
+def test_session_d_avant_l_activite_sans_activite_ni_titre(sessions, tmp_path):
+    """Un `session.json` écrit avant 0.4.2 n’a pas `activite` / `skill` / `titre`."""
+    session = creer(sessions)
+    chemin = tmp_path / "jobs" / session["id"] / "session.json"
+    ancien = {
+        k: v
+        for k, v in json.loads(chemin.read_text()).items()
+        if k not in ("activite", "skill", "titre")
+    }
+    chemin.write_text(json.dumps(ancien))
+
+    lue = sessions.lire(session["id"])
+    assert (lue["activite"], lue["skill"], lue["titre"]) == ("inconnue", None, None)
+
+
+def test_enregistrer_etat_met_a_jour_activite_skill_et_le_premier_titre(sessions):
     session = creer(sessions)
 
-    assert sessions.ouverte() == session
+    premiere = sessions.enregistrer_etat(session["id"], "travaille", prompt="Ouvre la version")
+    seconde = sessions.enregistrer_etat(session["id"], "attend", skill="grilling", prompt="autre")
+
+    assert premiere["activite"] == "travaille"
+    assert premiere["titre"] == "Ouvre la version"
+    assert (seconde["activite"], seconde["skill"], seconde["titre"]) == (
+        "attend",
+        "grilling",
+        "Ouvre la version",
+    )
+    assert sessions.lire(session["id"]) == seconde
+
+
+def test_enregistrer_etat_sans_activite_retient_seulement_le_skill(sessions):
+    session = creer(sessions)
+    sessions.enregistrer_etat(session["id"], "attend")
+
+    maj = sessions.enregistrer_etat(session["id"], activite=None, skill="grilling")
+
+    assert (maj["activite"], maj["skill"]) == ("attend", "grilling")
+
+
+def test_enregistrer_etat_refuse_une_session_close(sessions):
+    session = creer(sessions)
+    sessions.clore(session["id"], 0)
+
+    with pytest.raises(ValueError, match="close"):
+        sessions.enregistrer_etat(session["id"], "travaille")
+
+
+def test_qui_travaille_ignore_le_repo_sauf_et_les_sessions_closes(sessions):
+    ici = creer(sessions)
+    sessions.enregistrer_etat(ici["id"], "travaille")
+    autre = creer(sessions, repo="o/autre")
+    sessions.enregistrer_etat(autre["id"], "travaille")
+    close = creer(sessions, repo="o/close")
+    sessions.enregistrer_etat(close["id"], "travaille")
+    sessions.clore(close["id"], 0)
+
+    assert sessions.qui_travaille(sauf="o/r")["id"] == autre["id"]
+    assert sessions.qui_travaille(sauf="o/autre")["id"] == ici["id"]
+    assert sessions.qui_travaille()["id"] in {ici["id"], autre["id"]}
+
+
+def test_ouverte_rend_la_session_ouverte_du_repo(sessions):
+    assert sessions.ouverte("o/r") is None
+    session = creer(sessions)
+
+    assert sessions.ouverte("o/r") == session
+    assert sessions.ouverte("O/R") == session
+    assert sessions.ouverte("o/autre") is None
+    autre = creer(sessions, repo="o/autre")
+    assert sessions.ouverte("o/autre") == autre
+    assert sessions.ouverte("o/r") == session
 
 
 @pytest.mark.parametrize("code, etat", [(0, "terminée"), (3, "échouée")])
@@ -95,7 +184,7 @@ def test_clore_selon_le_code_de_sortie(sessions, horloge, code, etat):
     assert close["code_sortie"] == code
     assert close["fin"] == (DEBUT + timedelta(minutes=5)).isoformat()
     assert sessions.lire(session["id"]) == close
-    assert sessions.ouverte() is None
+    assert sessions.ouverte("o/r") is None
 
 
 def test_toutes_les_sessions_de_la_plus_recente_a_la_plus_ancienne(sessions, horloge):
@@ -143,6 +232,16 @@ def test_l_executeur_lance_l_agent_de_la_session_sur_son_ticket(sessions, tmp_pa
     subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
 
     assert json.loads(recu.read_text()) == ["/implement #42"]
+
+
+def test_l_executeur_lance_l_agent_sans_argument_pour_une_session_libre(sessions, tmp_path, faux_claude):
+    session = sessions.creer("o/r", None, "claude", "claude", branche="main")
+    recu = tmp_path / "recu"
+    faux_claude(f"import json, pathlib, sys; pathlib.Path({str(recu)!r}).write_text(json.dumps(sys.argv[1:]))")
+
+    subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
+
+    assert json.loads(recu.read_text()) == []
 
 
 @pytest.mark.parametrize("id_", ["../x", "20261017-090000-zzzzzz"])
@@ -226,6 +325,7 @@ def test_interrompre_les_sessions_restees_ouvertes(sessions, horloge):
     sessions.clore(close["id"], 0)
     horloge.maintenant = DEBUT + timedelta(minutes=1)
     ouverte = creer(sessions)
+    autre = creer(sessions, repo="o/autre")
     horloge.maintenant = DEBUT + timedelta(minutes=9)
 
     sessions.interrompre()
@@ -233,8 +333,10 @@ def test_interrompre_les_sessions_restees_ouvertes(sessions, horloge):
     interrompue = sessions.lire(ouverte["id"])
     assert (interrompue["etat"], interrompue["code_sortie"]) == ("interrompue", None)
     assert interrompue["fin"] == (DEBUT + timedelta(minutes=9)).isoformat()
+    assert sessions.lire(autre["id"])["etat"] == "interrompue"
     assert sessions.lire(close["id"])["etat"] == "terminée"
-    assert sessions.ouverte() is None
+    assert sessions.ouverte("o/r") is None
+    assert sessions.ouverte("o/autre") is None
     # L’exécuteur d’avant le redémarrage ne la rouvre pas.
     assert sessions.clore(ouverte["id"], 0) == interrompue
 

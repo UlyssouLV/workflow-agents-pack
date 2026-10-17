@@ -4,6 +4,9 @@ body {
   margin: 1.5rem;
   color: #1f2328;
 }
+header {
+  margin-bottom: 1rem;
+}
 table {
   border-collapse: collapse;
   margin: 0.5rem 0 1rem;

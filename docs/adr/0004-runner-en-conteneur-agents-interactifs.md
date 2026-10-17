@@ -13,12 +13,12 @@ La 0.4.0 lance depuis le cockpit `/implement #n` avec Claude Code ou Cursor, sur
 1. **Les sessions tournent dans un service Compose `runner`** dédié, image construite localement : `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par SHA-256), Python + venv, Node, `tmux`, skills de Matt Pocock installés par la CLI `skills` à un commit épinglé ; rien de téléchargé n’est exécuté sans vérification, et les scripts d’installation npm des dépendances ne tournent pas. UID d’`orchestrator`, **pas de socket Docker**, montages en écriture limités à `clones/`, `jobs/` et `runner-home/` de l’instance, aucun port publié : le `runtime` lui parle sur le réseau Compose.
 2. **Identités** : `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` et `CURSOR_API_KEY` dans `secrets.env`, lus par `env_file`. Les CLIs de l’hôte (0.2.0) ne servent qu’à obtenir les tokens (`wap-runtime auth claude`). Le point 1 de l’ADR 0003 (« le runner appellera `gh` sur l’hôte ») est remplacé : le runner utilise le `gh` de son image avec `GH_TOKEN`.
 3. **L’agent tourne en mode interactif** dans une session `tmux`, affichée dans le cockpit par xterm.js et websocket. Pas de mode `-p` ni de chat : le cockpit reproduit le terminal local et le workflow des skills s’y tape tel quel.
-4. **Une seule session ouverte par instance** en 0.4.0. Sans hooks des agents, le runner ne sait que si la session est ouverte ou fermée.
+4. **Une seule session ouverte par instance** en 0.4.0. Sans hooks des agents, le runner ne sait que si la session est ouverte ou fermée. **Remplacé en 0.4.2 par l’ADR 0007** (une ouverte par repo ; activité par hooks).
 
 ## Conséquences
 
 - Un agent sans permissions ne peut toucher que le clone, les sessions et le `HOME` du runner, pas l’hôte ni Docker.
 - Un repo métier qui exige d’autres outils que Python ou Node échoue dans le runner ; il faut enrichir l’image.
 - Mettre à jour Cursor = relancer `setup` (reconstruction de l’image) ; sa version n’est pas reproductible d’un build à l’autre.
-- L’orchestrateur ne lit pas la conversation de façon structurée : l’enregistrement est le flux du terminal (`.cast`) plus la transcription native de l’agent. Les états « en train de travailler » / « réponse attendue » viendront des hooks des agents (0.4.2).
+- L’orchestrateur ne lit pas la conversation de façon structurée : l’enregistrement est le flux du terminal (`.cast`) plus la transcription native de l’agent. Les états « en train de travailler » / « réponse attendue » viennent des hooks des agents (ADR 0007).
 - Avec plusieurs instances (0.6.0), chacune aura son `runner`, ses clones et son `HOME`.

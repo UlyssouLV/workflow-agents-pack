@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
-import { LIBELLES_ETAT_SESSION, LiensChaine, lienSession } from "./commun";
-import { useRafraichi } from "./rafraichi";
+import { Entete, LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
+import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
 
-/** L’état d’une session ouverte change sans GitHub : relu plus souvent que les repos. */
-export const RAFRAICHISSEMENT_SESSION_MS = 5_000;
+export { RAFRAICHISSEMENT_SESSION_MS } from "./rafraichi";
 
 /** Clé du `sessionStorage` de l’onglet : la page qui bascule vers la suivante y laisse d’où elle
  * vient et si elle avait la main ; la page de la suivante la lit au chargement. */
@@ -57,9 +56,7 @@ export function VueSession({ id }: { id: string }) {
 
   return (
     <main>
-      <p>
-        <a href="/">← Tous les repos</a>
-      </p>
+      <Entete />
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && (
         <Contenu session={donnees} arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null} />
@@ -94,7 +91,7 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
 
   return (
     <>
-      <h1>Session /implement #{session.ticket}</h1>
+      <h1>{session.ticket != null ? `Session /implement #${session.ticket}` : `Session ${session.commande}`}</h1>
       {arrivee && (
         <p role="status" className="enchainee">
           Session enchaînée : /implement #{session.ticket}
@@ -109,6 +106,10 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
         </p>
       )}
       <dl>
+        <dt>Titre</dt>
+        <dd>{session.titre}</dd>
+        <dt>Activité</dt>
+        <dd>{libelleActivite(session)}</dd>
         <dt>État</dt>
         <dd>{precision(session) ? `${etat} (${precision(session)})` : etat}</dd>
         <dt>Durée</dt>

@@ -24,9 +24,22 @@ from wap_runtime.fichiers import remplacer
 OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
 # Close par l’ouverture de la suivante (ADR 0006) : `suivante` la désigne.
 ENCHAINEE = "enchaînée"
+# Activité d’une session ouverte : hooks → `wap-runtime etat`.
+INCONNUE, TRAVAILLE, ATTEND = "inconnue", "travaille", "attend"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
 ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+
+
+def publique(session: dict) -> dict:
+    """Champs d’API : titre absent → nom de l’agent."""
+    agent = agent_par_id(session["agent"])
+    return {
+        **session,
+        "activite": session.get("activite") or INCONNUE,
+        "skill": session.get("skill"),
+        "titre": session.get("titre") or (agent.nom if agent else session["agent"]),
+    }
 
 
 class Sessions:
@@ -36,13 +49,22 @@ class Sessions:
         self.jobs = jobs
         self._horloge = horloge
 
-    def creer(self, repo: str, ticket: int, agent: str, commande: str, precedente: str | None = None) -> dict:
-        """`precedente` : la session enchaînée qui ouvre celle-ci."""
+    def creer(
+        self,
+        repo: str,
+        ticket: int | None,
+        agent: str,
+        commande: str,
+        precedente: str | None = None,
+        branche: str | None = None,
+    ) -> dict:
+        """`ticket` nul : session libre. `precedente` : la session enchaînée qui ouvre celle-ci."""
         debut = self._horloge()
         session = {
             "id": f"{debut:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}",
             "repo": repo,
             "ticket": ticket,
+            "branche": branche,
             "agent": agent,
             "commande": commande,
             "debut": debut.isoformat(),
@@ -51,6 +73,9 @@ class Sessions:
             "code_sortie": None,
             "precedente": precedente,
             "suivante": None,
+            "activite": INCONNUE,
+            "skill": None,
+            "titre": None,
         }
         (self.jobs / session["id"]).mkdir(parents=True)
         self._ecrire(session)
@@ -64,8 +89,16 @@ class Sessions:
             lue = json.loads((self.jobs / id_ / "session.json").read_text())
         except (OSError, ValueError):
             return None
-        # Écrite avant la 0.4.1 : hors de toute chaîne.
-        return {"precedente": None, "suivante": None, **lue}
+        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche` ni d’activité.
+        return {
+            "precedente": None,
+            "suivante": None,
+            "branche": None,
+            "activite": INCONNUE,
+            "skill": None,
+            "titre": None,
+            **lue,
+        }
 
     def toutes(self) -> list[dict]:
         """De la plus récente à la plus ancienne (l’identifiant commence par le début)."""
@@ -78,9 +111,25 @@ class Sessions:
         """Celles de `slug` (casse ignorée, comme GitHub), de la plus récente à la plus ancienne."""
         return [s for s in self.toutes() if s["repo"].lower() == slug.lower()]
 
-    def ouverte(self) -> dict | None:
-        """La session ouverte de l’instance : une seule à la fois (ADR 0004)."""
-        return next((s for s in self.toutes() if s["etat"] == OUVERTE), None)
+    def ouverte(self, repo: str) -> dict | None:
+        """La session ouverte de `repo` : au plus une par clone géré (ADR 0007)."""
+        return next(
+            (s for s in self.toutes() if s["etat"] == OUVERTE and s["repo"].lower() == repo.lower()),
+            None,
+        )
+
+    def qui_travaille(self, sauf: str | None = None) -> dict | None:
+        """Session ouverte d’activité *travaille*, hors `sauf` (lancement sur un autre repo)."""
+        return next(
+            (
+                s
+                for s in self.toutes()
+                if s["etat"] == OUVERTE
+                and s.get("activite") == TRAVAILLE
+                and (sauf is None or s["repo"].lower() != sauf.lower())
+            ),
+            None,
+        )
 
     def clore(self, id_: str, code: int) -> dict:
         """Une session déjà close garde son état final."""
@@ -95,6 +144,33 @@ class Sessions:
         self._ecrire(session)
         return session
 
+    def enregistrer_etat(
+        self,
+        id_: str,
+        activite: str | None = None,
+        skill: str | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        """Met à jour l’activité et/ou le skill d’une session ouverte.
+
+        `activite` à `None` : ne change que le skill (outil `Skill` des hooks).
+        Le premier `prompt` devient le titre.
+        """
+        session = self.lire(id_)
+        if session is None or session["etat"] != OUVERTE:
+            raise ValueError(f"session {id_} close ou inconnue")
+        if activite is not None and activite not in (TRAVAILLE, ATTEND):
+            raise ValueError(f"activité inconnue : {activite}")
+        maj = {**session}
+        if activite is not None:
+            maj["activite"] = activite
+        if skill:
+            maj["skill"] = skill
+        if prompt and session["titre"] is None:
+            maj["titre"] = prompt
+        self._ecrire(maj)
+        return maj
+
     def enchainer(self, id_: str, suivante: str) -> dict:
         """La session ouverte `id_` passe `enchaînée` vers `suivante` ; l’exécuteur, en la clôturant
         ensuite, lui laisse cet état."""
@@ -103,8 +179,8 @@ class Sessions:
         return session
 
     def interrompre(self) -> list[dict]:
-        """Au démarrage du runner : une session restée ouverte n’a plus d’agent (runner redémarré
-        pendant la session) ; elle passe `interrompue`, ce qui libère l’instance."""
+        """Au démarrage du runner : les sessions restées ouvertes n’ont plus d’agent (runner
+        redémarré pendant la session) ; elles passent `interrompue`, ce qui libère leurs clones."""
         interrompues = []
         for session in self.toutes():
             if session["etat"] == OUVERTE:
@@ -123,14 +199,15 @@ def executer(jobs: Path, id_: str) -> int:
     """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
     une fois le terminal enregistré, la transcription copiée et la session close.
 
-    La commande se déduit de la session (agent connu, ticket) : rien de la ligne de commande
-    n’arrive aux arguments de l’agent."""
+    La commande se déduit de la session (agent connu, ticket s’il y en a) : rien de la ligne
+    de commande n’arrive aux arguments de l’agent."""
     if not ID_SESSION.fullmatch(id_):
         raise SystemExit(f"session invalide : {id_}")
     session = Sessions(jobs).lire(id_)
     if session is None or (agent := agent_par_id(session["agent"])) is None:
         raise SystemExit(f"session {id_} inconnue")
-    code = enregistrer(commande_agent(agent, int(session["ticket"])), jobs / id_ / CAST)
+    ticket = None if session["ticket"] is None else int(session["ticket"])
+    code = enregistrer(commande_agent(agent, ticket), jobs / id_ / CAST)
     depuis = datetime.fromisoformat(session["debut"]).timestamp()
     copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
     Sessions(jobs).clore(id_, code)

@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VueListe } from "../src/VueListe";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { CLAUDE, CURSOR, PAS_DE_VERSION, QUESTION, liste, repo, simulerApi, version } from "./donnees";
+import { CLAUDE, CURSOR, PAS_DE_VERSION, QUESTION, liste, repo, session, simulerApi, version } from "./donnees";
 
 async function lignes() {
   const tableau = await screen.findByRole("table");
@@ -10,6 +10,45 @@ async function lignes() {
 }
 
 describe("vue liste", () => {
+  it("compte les réponses attendues dans l’en-tête et le titre d’onglet", async () => {
+    simulerApi({
+      "/api/repos": liste(),
+      "/api/sessions": {
+        sessions: [
+          session({ activite: "attend", etat: "ouverte" }),
+          session({
+            id: "20261017-100000-bbbbbb",
+            activite: "attend",
+            etat: "ouverte",
+            repo: "o/autre",
+          }),
+          session({ activite: "travaille", etat: "ouverte", id: "20261017-110000-cccccc" }),
+          session({ activite: "attend", etat: "terminée", id: "20261017-080000-dddddd" }),
+        ],
+      },
+    });
+
+    render(<VueListe />);
+
+    expect(await screen.findByRole("link", { name: "2 réponse(s) attendue(s)" })).toHaveAttribute(
+      "href",
+      "/sessions",
+    );
+    expect(document.title).toBe("(2) Cockpit wap-runtime");
+  });
+
+  it("ne change pas le titre d’onglet sans réponse attendue", async () => {
+    simulerApi({
+      "/api/repos": liste(),
+      "/api/sessions": { sessions: [session({ activite: "travaille" })] },
+    });
+
+    render(<VueListe />);
+
+    await screen.findByRole("link", { name: "0 réponse(s) attendue(s)" });
+    expect(document.title).toBe("Cockpit wap-runtime");
+  });
+
   it("montre une ligne par repo : nom, version ouverte, X/Y, étape, heure de lecture", async () => {
     simulerApi({ "/api/repos": liste() });
 
@@ -17,6 +56,11 @@ describe("vue liste", () => {
 
     const [ligne] = await lignes();
     expect(within(ligne).getByRole("link", { name: "o/r" })).toHaveAttribute("href", "/repos/o/r");
+    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
+    expect(screen.getByRole("link", { name: "0 réponse(s) attendue(s)" })).toHaveAttribute(
+      "href",
+      "/sessions",
+    );
     expect(within(ligne).getByRole("link", { name: /v0\.3\.0 — registry/ })).toHaveAttribute(
       "href",
       "https://github.com/o/r/issues/17",
@@ -154,7 +198,7 @@ describe("vue liste", () => {
 
     await act(() => vi.advanceTimersByTimeAsync(RAFRAICHISSEMENT_MS));
 
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls.filter(([chemin]) => chemin === "/api/repos")).toHaveLength(2);
     expect(await screen.findByRole("link", { name: "o/nouveau" })).toBeInTheDocument();
   });
 
@@ -191,17 +235,28 @@ describe("vue liste", () => {
     });
   });
 
-  it("badge « Session en cours » sur le repo de la session ouverte, lié à sa page", async () => {
+  it.each([
+    [undefined, "Session en cours"],
+    ["inconnue", "Session en cours"],
+    ["travaille", "Travaille"],
+    ["attend", "Réponse attendue"],
+  ] as const)("badge d’activité %s : %s", async (activite, libelle) => {
     simulerApi({
       "/api/repos": liste({
-        repos: [repo({ slug: "o/a" }), repo({ slug: "o/b", session: { id: "x", url: "/sessions/x", repo: "o/b" } })],
+        repos: [
+          repo({ slug: "o/a" }),
+          repo({
+            slug: "o/b",
+            session: { id: "x", url: "/sessions/x", repo: "o/b", ...(activite && { activite }) },
+          }),
+        ],
       }),
     });
 
     render(<VueListe />);
 
     const [a, b] = await lignes();
-    expect(within(a).queryByText("Session en cours")).toBeNull();
-    expect(within(b).getByRole("link", { name: "Session en cours" })).toHaveAttribute("href", "/sessions/x");
+    expect(within(a).queryByText(libelle)).toBeNull();
+    expect(within(b).getByRole("link", { name: libelle })).toHaveAttribute("href", "/sessions/x");
   });
 });

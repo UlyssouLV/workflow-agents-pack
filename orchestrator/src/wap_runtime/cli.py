@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import select
 import subprocess
 import sys
 import urllib.error
@@ -85,6 +86,72 @@ def _runner(hote: str, port: int) -> int:
         return 1
     print(f"wap-runtime runner écoute sur {hote}:{port}", flush=True)
     servir_runner(hote, port)
+    return 0
+
+
+def _lire_stdin() -> str:
+    """JSON déjà pipé par un hook ; ne bloque pas si stdin est un TTY ou vide."""
+    try:
+        if sys.stdin.isatty():
+            return ""
+        pret, _, _ = select.select([sys.stdin], [], [], 0)
+        if not pret:
+            return ""
+        return sys.stdin.read()
+    except (AttributeError, OSError, ValueError, TypeError):
+        try:
+            return sys.stdin.read()
+        except (OSError, ValueError):
+            return ""
+
+
+def _depuis_hook(texte: str) -> tuple[str | None, str | None]:
+    """JSON des hooks : `prompt` (titre) et nom du skill si l’outil `Skill` a tourné."""
+    try:
+        data = json.loads(texte)
+    except ValueError:
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    prompt = data.get("prompt")
+    prompt = prompt.strip() if isinstance(prompt, str) and prompt.strip() else None
+    skill = None
+    if str(data.get("tool_name") or "") == "Skill":
+        entree = data.get("tool_input")
+        if isinstance(entree, dict):
+            for cle in ("skill", "name"):
+                valeur = entree.get(cle)
+                if isinstance(valeur, str) and valeur.strip():
+                    skill = valeur.strip()
+                    break
+    return prompt, skill
+
+
+def _etat(activite: str, skill: str | None) -> int:
+    """Dans une session du runner : met à jour l’activité. Rend 0 même en cas de refus (hooks).
+
+    `activite` `skill` : ne retient que le nom du skill (outil `Skill`), sans changer l’activité.
+    """
+    id_, jeton = os.environ.get("WAP_SESSION"), os.environ.get("WAP_SESSION_JETON")
+    prompt, skill_hook = _depuis_hook(_lire_stdin())
+    skill = skill or skill_hook
+    if not (id_ and jeton):
+        return 0
+    base = os.environ.get("WAP_RUNNER", f"http://127.0.0.1:{PORT_RUNNER}").rstrip("/")
+    # `skill` seul : pas d’`activite` dans le corps → le runner ne change pas travaille/attend.
+    activite_corps = None if activite == "skill" else activite
+    corps = {"jeton": jeton, "activite": activite_corps, "skill": skill, "prompt": prompt}
+    requete = urllib.request.Request(
+        f"{base}/sessions/{urllib.parse.quote(id_, safe='')}/etat",
+        data=json.dumps(corps).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(requete, timeout=10) as reponse:
+            reponse.read()
+    except (urllib.error.HTTPError, OSError, ValueError):
+        pass
     return 0
 
 
@@ -237,6 +304,16 @@ def main(argv=None) -> int:
     # Lancé par l’agent d’une session du runner, via `WAP_ENCHAINER`.
     enchainer = sous.add_parser("enchainer", help="dans une session du runner : ouvre /implement #n à sa suite")
     enchainer.add_argument("ticket", type=int)
+    etat = sous.add_parser(
+        "etat",
+        help="dans une session du runner : signale travaille, attend, ou retient un skill",
+    )
+    etat.add_argument(
+        "activite",
+        choices=["travaille", "attend", "skill"],
+        help="`skill` : retient le nom du skill sans changer l’activité",
+    )
+    etat.add_argument("--skill", help="dernier skill chargé")
     uninstall = sous.add_parser(
         "uninstall", help="arrête et retire le Compose de l’instance"
     )
@@ -282,6 +359,8 @@ def main(argv=None) -> int:
         return _runner(args.host, args.port)
     if args.commande == "enchainer":
         return _enchainer(args.ticket)
+    if args.commande == "etat":
+        return _etat(args.activite, args.skill)
     if args.commande == "uninstall":
         return _uninstall(args.purge)
     return _health(args.port)
