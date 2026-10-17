@@ -355,5 +355,26 @@ describe("vue détail", () => {
       const section = await screen.findByRole("region", { name: "Sessions" });
       expect(await within(section).findByText('claude "/implement #23"')).toBeInTheDocument();
     });
+
+    it("chaîne : état enchaînée, liens précédente et suivante", async () => {
+      const [a, b] = ["20261017-090000-aaaaaa", "20261017-093000-bbbbbb"];
+      rendre({
+        "/api/repos/o/r": detail(),
+        [SESSIONS]: {
+          sessions: [
+            session({ id: b, url: `/sessions/${b}`, ticket: 24, commande: 'claude "/implement #24"', precedente: a }),
+            session({ id: a, url: `/sessions/${a}`, etat: "enchaînée", fin: "2026-10-17T09:30:00+00:00", suivante: b }),
+          ],
+        },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      const [suivante, enchainee] = (await within(section).findAllByRole("row")).slice(1);
+      expect(within(suivante).getByRole("link", { name: "précédente" })).toHaveAttribute("href", `/sessions/${a}`);
+      expect(within(suivante).queryByRole("link", { name: "suivante" })).not.toBeInTheDocument();
+      expect(enchainee).toHaveTextContent("Enchaînée");
+      expect(within(enchainee).getByRole("link", { name: "suivante" })).toHaveAttribute("href", `/sessions/${b}`);
+      expect(within(enchainee).queryByRole("link", { name: "précédente" })).not.toBeInTheDocument();
+    });
   });
 });

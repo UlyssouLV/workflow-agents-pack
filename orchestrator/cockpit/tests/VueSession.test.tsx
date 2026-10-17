@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import { VueSession } from "../src/VueSession";
+import { RAFRAICHISSEMENT_SESSION_MS, VueSession } from "../src/VueSession";
 import { session, simulerApi } from "./donnees";
+import { RECONNEXION_MS } from "../src/TerminalEnDirect";
 import { FauxTerminal, FauxWebSocket } from "./simulations";
 
 const CAST = [
@@ -149,6 +150,19 @@ describe("terminal en direct", () => {
 
     expect(screen.getByText("Terminal déconnecté.")).toBeInTheDocument();
     expect(ws.envoyes).not.toContainEqual({ saisie: "perdu" });
+  });
+
+  it("websocket fermé, session toujours ouverte : le terminal se reconnecte", async () => {
+    // La suivante d’une chaîne est ouverte avant que son tmux tourne.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { ws } = await ouvrir();
+
+    act(() => ws.fermer());
+    await act(() => vi.advanceTimersByTimeAsync(RECONNEXION_MS));
+
+    expect(FauxWebSocket.instances).toHaveLength(2);
+    act(() => FauxWebSocket.instances[1].role("ecriture"));
+    expect(screen.queryByText("Terminal déconnecté.")).not.toBeInTheDocument();
   });
 
   it("quitter la page ferme le websocket, pas la session", async () => {
@@ -314,5 +328,109 @@ describe("relecture", () => {
     await screen.findByRole("region", { name: "Terminal" });
     expect(screen.queryByRole("region", { name: "Relecture" })).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith(`${CHEMIN}/terminal.cast`, expect.anything());
+  });
+});
+
+describe("chaîne de sessions", () => {
+  const SUIVANTE = "20261017-093000-123456";
+  const CHEMIN_SUIVANTE = `/api/sessions/${SUIVANTE}`;
+  const ENCHAINEE = session({ etat: "enchaînée", fin: "2026-10-17T09:30:00+00:00", suivante: SUIVANTE });
+
+  /** La page voit la session ouverte, puis `enchaînée` à la relecture suivante. */
+  async function enchainer(role: "ecriture" | "lecture") {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    let lue = session();
+    simulerApi({ [CHEMIN]: () => lue });
+    render(<VueSession id="20261017-090000-abcdef" />);
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(1));
+    act(() => FauxWebSocket.instances[0].role(role));
+
+    lue = ENCHAINEE;
+    act(() => FauxWebSocket.instances[0].fermer());
+    await act(() => vi.advanceTimersByTimeAsync(RAFRAICHISSEMENT_SESSION_MS));
+    return assign;
+  }
+
+  function arriver(depuis: { depuis: string; main: boolean } | null) {
+    if (depuis) sessionStorage.setItem("wap:enchainement", JSON.stringify(depuis));
+    simulerApi({
+      [CHEMIN_SUIVANTE]: session({
+        id: SUIVANTE,
+        url: `/sessions/${SUIVANTE}`,
+        ticket: 24,
+        commande: 'claude "/implement #24"',
+        precedente: "20261017-090000-abcdef",
+      }),
+    });
+    render(<VueSession id={SUIVANTE} />);
+  }
+
+  it("session ouverte qui passe enchaînée : la page bascule vers la suivante", async () => {
+    const assign = await enchainer("ecriture");
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(`/sessions/${SUIVANTE}`));
+    expect(JSON.parse(sessionStorage.getItem("wap:enchainement")!)).toEqual({
+      depuis: "20261017-090000-abcdef",
+      main: true,
+    });
+  });
+
+  it("onglet en lecture seule : bascule sans la main", async () => {
+    const assign = await enchainer("lecture");
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(`/sessions/${SUIVANTE}`));
+    expect(JSON.parse(sessionStorage.getItem("wap:enchainement")!)).toMatchObject({ main: false });
+  });
+
+  it("arrivée par l’enchaînement : bandeau, et l’onglet qui avait la main la reprend", async () => {
+    arriver({ depuis: "20261017-090000-abcdef", main: true });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Session enchaînée : /implement #24");
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(1));
+    const [ws] = FauxWebSocket.instances;
+    act(() => ws.role("lecture"));
+    expect(ws.envoyes).toEqual([{ prendre: true }]);
+    act(() => ws.role("ecriture"));
+    act(() => ws.role("lecture"));
+    // Perdue ensuite au profit d’un autre onglet : pas reprise d’office.
+    expect(ws.envoyes.filter((m) => JSON.stringify(m) === '{"prendre":true}')).toHaveLength(1);
+    expect(sessionStorage.getItem("wap:enchainement")).toBeNull();
+  });
+
+  it("arrivée par l’enchaînement sans la main : bandeau, rien n’est pris", async () => {
+    arriver({ depuis: "20261017-090000-abcdef", main: false });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Session enchaînée : /implement #24");
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(1));
+    act(() => FauxWebSocket.instances[0].role("lecture"));
+    expect(FauxWebSocket.instances[0].envoyes).toEqual([]);
+  });
+
+  it("ouverte directement : ni bandeau ni prise de main, lien vers la précédente", async () => {
+    arriver(null);
+
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Session précédente" })).toHaveAttribute(
+      "href",
+      "/sessions/20261017-090000-abcdef",
+    );
+    await waitFor(() => expect(FauxWebSocket.instances).toHaveLength(1));
+    act(() => FauxWebSocket.instances[0].role("lecture"));
+    expect(FauxWebSocket.instances[0].envoyes).toEqual([]);
+  });
+
+  it("relecture d’une session enchaînée : état, lien vers la suivante, pas de bascule", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    simulerApi({ [CHEMIN]: ENCHAINEE, [`${CHEMIN}/terminal.cast`]: new Response(CAST) });
+    render(<VueSession id="20261017-090000-abcdef" />);
+
+    expect(await screen.findByText("Enchaînée")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Session suivante" })).toHaveAttribute("href", `/sessions/${SUIVANTE}`);
+    expect(await screen.findByRole("region", { name: "Relecture" })).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
   });
 });

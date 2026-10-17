@@ -83,3 +83,8 @@ code {
   overflow: auto;
   padding: 0.5rem;
 }
+.enchainee {
+  background: #ddf4ff;
+  border: 1px solid #54aeff;
+  padding: 0.6rem 0.8rem;
+}
