@@ -414,7 +414,7 @@ Ouvre la version 1.3.0
 
 **Corps :** inutile en général (le ticket suffit).
 
-TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci #<n>`**, puis le suivant `ready-for-agent`. Quand il n’en reste plus : remplit le **plan** sur le ticket tests humains et renvoie vers **`/th`** (pas `/code-review` tant que ce ticket est Open). Quand tout est Closed : **`/code-review`**, puis **Finalise la version**. Pas de quality gate ici. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
+TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci #<n>`**, puis auto-enchaînement du suivant `ready-for-agent` via `agents/scripts/enchainer-implement.sh` (nouvelle fenêtre Terminal.app + Claude Code vierge sur `/implement #<next>` ; macOS ; fallback : demander une nouvelle session). Pas de `/clear` de la conversation finie. Quand il n’en reste plus : remplit le **plan** sur le ticket tests humains et renvoie vers **`/th`** (pas `/code-review` tant que ce ticket est Open). Quand tout est Closed : **`/code-review`**, puis **Finalise la version**. Pas de quality gate ici. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
 
 **Exemple :**
 

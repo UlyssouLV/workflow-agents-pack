@@ -108,7 +108,7 @@ if [ -d "$PACK/agents/hooks" ]; then
 fi
 
 mkdir -p "$TARGET/agents/scripts"
-for f in dispatch.py gate-code-review.py update-from-pack.sh adopter-le-pack.sh scaffold-docs-site.sh; do
+for f in dispatch.py gate-code-review.py update-from-pack.sh adopter-le-pack.sh scaffold-docs-site.sh enchainer-implement.sh; do
   if [ -f "$PACK/agents/scripts/$f" ]; then
     rsync -a "$PACK/agents/scripts/$f" "$TARGET/agents/scripts/$f"
     chmod +x "$TARGET/agents/scripts/$f" 2>/dev/null || true
