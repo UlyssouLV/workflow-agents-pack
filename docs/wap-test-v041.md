@@ -2,3 +2,4 @@
 
 Fichier factice pour les tests humains de l’orchestrateur (#53).
 - A
+- B
