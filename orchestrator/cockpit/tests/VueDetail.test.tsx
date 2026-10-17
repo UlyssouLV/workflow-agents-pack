@@ -202,6 +202,79 @@ describe("vue détail", () => {
       expect(lien).toHaveAttribute("href", "/sessions/x");
     });
 
+    describe("clone sale", () => {
+      const SALE = {
+        detail: "le clone a des changements non commités : Reprendre ou Jeter",
+        clone: {
+          fichiers: [
+            { statut: "M", chemin: "src/a.py" },
+            { statut: "??", chemin: "notes.txt" },
+          ],
+          diff: "--- a/src/a.py\n+++ b/src/a.py\n-avant\n+après\n",
+        },
+      };
+
+      function rendreSale(corps: unknown[], assign = vi.fn()) {
+        vi.stubGlobal("location", { ...window.location, assign });
+        rendre({
+          "/api/repos/o/r": detail(),
+          "POST /api/sessions": (init?: RequestInit) => {
+            const demande = JSON.parse(String(init?.body));
+            corps.push(demande);
+            return demande.choix
+              ? new Response(JSON.stringify(session()), { status: 201 })
+              : new Response(JSON.stringify(SALE), { status: 409 });
+          },
+        });
+        return assign;
+      }
+
+      it("montre les fichiers modifiés et le diff, sans lancer", async () => {
+        const assign = rendreSale([]);
+        const [, eligible] = await boutons();
+
+        fireEvent.click(eligible);
+
+        const choix = await screen.findByRole("dialog", { name: /changements non commités/i });
+        expect(within(choix).getByRole("list", { name: "Fichiers modifiés" })).toHaveTextContent(
+          /M src\/a\.py.*\?\? notes\.txt/,
+        );
+        expect(within(choix).getByLabelText("Diff")).toHaveTextContent("+après");
+        expect(within(choix).getByRole("button", { name: "Reprendre" })).toBeEnabled();
+        expect(within(choix).getByRole("button", { name: "Jeter" })).toBeEnabled();
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it.each(["reprendre", "jeter"])("%s relance avec ce choix puis ouvre la session", async (choix) => {
+        const corps: unknown[] = [];
+        const assign = rendreSale(corps);
+        const [, eligible] = await boutons();
+        fireEvent.click(eligible);
+        const ecran = await screen.findByRole("dialog");
+
+        fireEvent.click(within(ecran).getByRole("button", { name: choix === "jeter" ? "Jeter" : "Reprendre" }));
+
+        await waitFor(() => expect(assign).toHaveBeenCalledWith("/sessions/20261017-090000-abcdef"));
+        expect(corps).toEqual([
+          { repo: "o/r", ticket: 23, agent: "claude" },
+          { repo: "o/r", ticket: 23, agent: "claude", choix },
+        ]);
+      });
+
+      it("Annuler ferme l’écran sans rien lancer", async () => {
+        const corps: unknown[] = [];
+        rendreSale(corps);
+        const [, eligible] = await boutons();
+        fireEvent.click(eligible);
+        const ecran = await screen.findByRole("dialog");
+
+        fireEvent.click(within(ecran).getByRole("button", { name: "Annuler" }));
+
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(corps).toHaveLength(1);
+      });
+    });
+
     it("un autre refus affiche son message", async () => {
       rendre({
         "/api/repos/o/r": detail(),

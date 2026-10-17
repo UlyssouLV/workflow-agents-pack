@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Agent, Auth, Bug, Detail, Enfant, EtatCi, LienSession, Version } from "./api";
+import type { Agent, Auth, Bug, ChoixClone, CloneSale, Detail, Enfant, EtatCi, LienSession, Version } from "./api";
 import { ErreurApi, lancerSession } from "./api";
 import { BadgeHumain, BandeauAuth, LibelleEtape, heure, nomAffiche } from "./commun";
 import { useRafraichi } from "./rafraichi";
@@ -34,13 +34,21 @@ function Contenu({ detail }: { detail: Detail }) {
     () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
   );
   const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
+  // Clone sale au lancement : rien n’est lancé tant que l’utilisateur n’a pas choisi.
+  const [sale, setSale] = useState<{ ticket: number; clone: CloneSale } | null>(null);
 
-  const lancer = (ticket: number) => {
+  const lancer = (ticket: number, choix?: ChoixClone) => {
     setRefus(null);
-    lancerSession(detail.slug, ticket, agent).then(
+    setSale(null);
+    lancerSession(detail.slug, ticket, agent, choix).then(
       (session) => window.location.assign(session.url),
-      (erreur: Error) =>
-        setRefus({ message: erreur.message, session: erreur instanceof ErreurApi ? erreur.session : null }),
+      (erreur: Error) => {
+        if (erreur instanceof ErreurApi && erreur.clone) {
+          setSale({ ticket, clone: erreur.clone });
+        } else {
+          setRefus({ message: erreur.message, session: erreur instanceof ErreurApi ? erreur.session : null });
+        }
+      },
     );
   };
 
@@ -88,6 +96,14 @@ function Contenu({ detail }: { detail: Detail }) {
                 </>
               )}
             </p>
+          )}
+          {sale && (
+            <ChoixCloneSale
+              ticket={sale.ticket}
+              clone={sale.clone}
+              choisir={(choix) => lancer(sale.ticket, choix)}
+              annuler={() => setSale(null)}
+            />
           )}
           {detail.versions.map((v) => (
             <SectionVersion key={v.numero} version={v} agent={agent} lancer={lancer} />
@@ -181,6 +197,51 @@ function BoutonImplement({ enfant, agent, lancer }: { enfant: Enfant } & Lanceur
       </button>
       {raison && <span className="raison">{raison}</span>}
     </>
+  );
+}
+
+/** Clone sale : les changements laissés par une session précédente, à reprendre ou jeter. */
+function ChoixCloneSale({
+  ticket,
+  clone,
+  choisir,
+  annuler,
+}: {
+  ticket: number;
+  clone: CloneSale;
+  choisir: (choix: ChoixClone) => void;
+  annuler: () => void;
+}) {
+  return (
+    <section role="dialog" aria-labelledby="titre-clone-sale" className="clone-sale">
+      <h2 id="titre-clone-sale">Le clone a des changements non commités</h2>
+      <p>
+        Une session précédente les a laissés. <strong>Reprendre</strong> lance /implement #{ticket} sur cet arbre,
+        sans changer de branche ; <strong>Jeter</strong> les garde dans <code>abandon.patch</code> de la session,
+        remet le clone à zéro puis lance.
+      </p>
+      <ul aria-label="Fichiers modifiés">
+        {clone.fichiers.map((f) => (
+          <li key={f.chemin}>
+            <code>
+              {f.statut} {f.chemin}
+            </code>
+          </li>
+        ))}
+      </ul>
+      <pre aria-label="Diff">{clone.diff}</pre>
+      <p>
+        <button type="button" onClick={() => choisir("reprendre")}>
+          Reprendre
+        </button>{" "}
+        <button type="button" onClick={() => choisir("jeter")}>
+          Jeter
+        </button>{" "}
+        <button type="button" onClick={annuler}>
+          Annuler
+        </button>
+      </p>
+    </section>
   );
 }
 

@@ -18,11 +18,15 @@ CONNECTES = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-x"}
 
 
 class FauxRunner:
-    """`POST /sessions` du runner : crée la session dans `jobs/` et note la demande."""
+    """`POST /sessions` du runner : crée la session dans `jobs/` et note la demande.
+
+    `sale` : le clone a ces changements non commités, la demande doit porter un `choix`.
+    """
 
     def __init__(self, jobs):
         self.sessions = Sessions(jobs)
         self.demandes: list[dict] = []
+        self.sale: dict | None = None
 
     def client(self) -> httpx.Client:
         return httpx.Client(base_url="http://runner:8788", transport=httpx.MockTransport(self._repondre))
@@ -33,6 +37,8 @@ class FauxRunner:
         self.demandes.append(demande)
         if demande["branche"] == "casse":
             return httpx.Response(422, json={"detail": "git fetch a échoué"})
+        if self.sale and "choix" not in demande:
+            return httpx.Response(409, json={"detail": "clone sale", "clone": self.sale})
         session = self.sessions.creer(
             demande["repo"], demande["ticket"], demande["agent"], f'claude "/implement #{demande["ticket"]}"'
         )
@@ -74,9 +80,10 @@ def api(tmp_path, github, jobs, runner):
     return TestClient(app)
 
 
-def lancer(api, ticket=30, agent="claude", origine=COCKPIT, repo=SLUG):
+def lancer(api, ticket=30, agent="claude", origine=COCKPIT, repo=SLUG, **choix):
     entetes = {"Origin": origine} if origine else {}
-    return api.post("/api/sessions", json={"repo": repo, "ticket": ticket, "agent": agent}, headers=entetes)
+    demande = {"repo": repo, "ticket": ticket, "agent": agent, **choix}
+    return api.post("/api/sessions", json=demande, headers=entetes)
 
 
 def test_lancement_demande_au_runner_la_branche_de_la_pr_et_l_identite(api, runner):
@@ -213,3 +220,32 @@ def test_liste_badge_session_en_cours_sur_le_repo_de_la_session(api, tmp_path):
     repos = {r["slug"]: r["session"] for r in api.get("/api/repos").json()["repos"]}
 
     assert repos == {SLUG: {"id": session["id"], "url": session["url"], "repo": SLUG}, "o/autre": None}
+
+
+SALE = {"fichiers": [{"statut": "M", "chemin": "a.py"}], "diff": "-avant\n+après\n"}
+
+
+def test_clone_sale_sans_choix_409_avec_fichiers_et_diff_sans_session(api, runner, jobs):
+    runner.sale = SALE
+
+    reponse = lancer(api)
+
+    assert reponse.status_code == 409
+    assert reponse.json()["clone"] == SALE
+    assert "session" not in reponse.json()
+    assert Sessions(jobs).toutes() == []
+
+
+@pytest.mark.parametrize("choix", ["reprendre", "jeter"])
+def test_choix_relaye_au_runner(api, runner, choix):
+    runner.sale = SALE
+
+    reponse = lancer(api, choix=choix)
+
+    assert reponse.status_code == 201
+    assert runner.demandes[-1]["choix"] == choix
+
+
+def test_choix_inconnu_422(api, runner):
+    assert lancer(api, choix="effacer").status_code == 422
+    assert runner.demandes == []

@@ -128,9 +128,27 @@ export interface Detail extends Omit<Repo<Version>, "session"> {
   session: LienSession | null;
 }
 
+/** Changement non commité du clone géré (`git status --porcelain` : `M`, `??`…). */
+export interface FichierModifie {
+  statut: string;
+  chemin: string;
+}
+
+/** `409` au lancement : le clone géré a des changements non commités, rien n’est lancé. */
+export interface CloneSale {
+  fichiers: FichierModifie[];
+  /** `git diff HEAD` et les fichiers non suivis. */
+  diff: string;
+}
+
+/** Réponse au clone sale : **Reprendre** sur l’arbre tel quel, ou **Jeter** (patch gardé). */
+export type ChoixClone = "reprendre" | "jeter";
+
 export class ErreurApi extends Error {
   /** `409` : la session déjà ouverte. */
   session: LienSession | null = null;
+  /** `409` : le clone sale, à reprendre ou jeter. */
+  clone: CloneSale | null = null;
 }
 
 export async function lire<T>(chemin: string): Promise<T> {
@@ -144,16 +162,22 @@ export async function lire<T>(chemin: string): Promise<T> {
 }
 
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
-export async function lancerSession(repo: string, ticket: number, agent: Agent["id"]): Promise<Session> {
+export async function lancerSession(
+  repo: string,
+  ticket: number,
+  agent: Agent["id"],
+  choix?: ChoixClone,
+): Promise<Session> {
   const reponse = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ repo, ticket, agent }),
+    body: JSON.stringify({ repo, ticket, agent, ...(choix && { choix }) }),
   });
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {
     const erreur = new ErreurApi(corps?.detail ?? `lancement : HTTP ${reponse.status}`);
     erreur.session = corps?.session ?? null;
+    erreur.clone = corps?.clone ?? null;
     throw erreur;
   }
   return corps as Session;

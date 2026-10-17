@@ -224,3 +224,79 @@ def test_api_interne_422_avec_le_message_du_runner(runner):
 
     assert reponse.status_code == 422
     assert "inexistante" in reponse.json()["detail"]
+
+
+@pytest.fixture
+def clone_sale(runner, instance):
+    """Clone d’une session précédente laissé avec une modification et un fichier non suivi."""
+    lancer(runner)
+    clone = instance / "clones" / "o" / "r"
+    (clone / "suivi.txt").write_text("avant\n")
+    git("add", "suivi.txt", cwd=clone)
+    git("commit", "--quiet", "-m", "suivi", cwd=clone)
+    (clone / "suivi.txt").write_text("après\n")
+    (clone / "nouveau.txt").write_text("non suivi\n")
+    return clone
+
+
+def test_clone_sale_sans_choix_ne_lance_rien_et_rend_fichiers_et_diff(runner, instance, clone_sale):
+    from wap_runtime.runner import CloneSale
+
+    avant = Sessions(instance / "jobs").toutes()
+
+    with pytest.raises(CloneSale) as refus:
+        lancer(runner)
+
+    assert refus.value.fichiers == [{"statut": "M", "chemin": "suivi.txt"}, {"statut": "??", "chemin": "nouveau.txt"}]
+    assert "+après" in refus.value.diff and "+non suivi" in refus.value.diff
+    assert Sessions(instance / "jobs").toutes() == avant
+    assert (clone_sale / "nouveau.txt").exists()
+
+
+def test_reprendre_lance_la_session_sur_l_arbre_tel_quel_sans_changer_de_branche(runner, clone_sale, faux_bin):
+    git("switch", "--quiet", "-c", "travail-en-cours", cwd=clone_sale)
+
+    session = runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE, choix="reprendre")
+
+    assert session["ticket"] == 30
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone_sale) == "travail-en-cours"
+    assert (clone_sale / "suivi.txt").read_text() == "après\n"
+    assert (clone_sale / "nouveau.txt").exists()
+
+
+def test_jeter_enregistre_le_patch_nettoie_l_arbre_et_lance(runner, instance, clone_sale):
+    session = runner.lancer(SLUG, 30, "claude", BRANCHE, IDENTITE, choix="jeter")
+
+    patch = (instance / "jobs" / session["id"] / "abandon.patch").read_text()
+    assert "-avant" in patch and "+après" in patch
+    assert "nouveau.txt" in patch and "+non suivi" in patch
+    assert git("status", "--porcelain", cwd=clone_sale) == ""
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=clone_sale) == BRANCHE
+    # Le patch rejoue les modifications jetées.
+    git("apply", str(instance / "jobs" / session["id"] / "abandon.patch"), cwd=clone_sale)
+    assert (clone_sale / "suivi.txt").read_text() == "après\n"
+    assert (clone_sale / "nouveau.txt").read_text() == "non suivi\n"
+
+
+@pytest.mark.parametrize("choix", [None, "reprendre", "jeter"])
+def test_clone_propre_aucun_choix_demande(runner, instance, choix):
+    lancer(runner)
+
+    session = runner.lancer(SLUG, 31, "claude", BRANCHE, IDENTITE, choix=choix)
+
+    assert session["ticket"] == 31
+    assert not (instance / "jobs" / session["id"] / "abandon.patch").exists()
+
+
+def test_api_interne_409_avec_le_clone_sale(runner, clone_sale):
+    client = TestClient(creer_app_runner(runner))
+    demande = {"repo": SLUG, "ticket": 30, "agent": "claude", "branche": BRANCHE,
+               "login": "octocat", "email": "e"}
+
+    reponse = client.post("/sessions", json=demande)
+
+    assert reponse.status_code == 409
+    assert reponse.json()["clone"]["fichiers"][0] == {"statut": "M", "chemin": "suivi.txt"}
+    assert "+après" in reponse.json()["clone"]["diff"]
+
+    assert client.post("/sessions", json={**demande, "choix": "jeter"}).status_code == 201

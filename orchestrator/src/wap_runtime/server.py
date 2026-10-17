@@ -7,7 +7,7 @@ runner (`wap_runtime.terminal`).
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Literal, Mapping
 
 import httpx
 import uvicorn
@@ -26,6 +26,7 @@ from wap_runtime.registry import RegistryErreur, chemin_registry
 from wap_runtime.runner import (
     PORT_RUNNER,
     ClientRunner,
+    CloneSale,
     Identite,
     RunnerErreur,
     SessionOuverte,
@@ -39,6 +40,8 @@ class Lancement(BaseModel):
     repo: str
     ticket: int
     agent: str
+    # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
+    choix: Literal["reprendre", "jeter"] | None = None
 
 
 def _instance_par_defaut() -> Path:
@@ -170,11 +173,18 @@ def creer_app(
         try:
             compte = client.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
-            lancee = client_runner.lancer(detail["slug"], demande.ticket, demande.agent, pr["branche"], identite)
+            lancee = client_runner.lancer(
+                detail["slug"], demande.ticket, demande.agent, pr["branche"], identite, demande.choix
+            )
         except GitHubErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur
         except SessionOuverte as refus:
             return _deja_ouverte(refus.session)
+        except CloneSale as refus:
+            return JSONResponse(
+                {"detail": str(refus), "clone": {"fichiers": refus.fichiers, "diff": refus.diff}},
+                status_code=409,
+            )
         except RunnerErreur as erreur:
             raise HTTPException(422, str(erreur)) from erreur
         return {**lancee, "url": _lien(lancee)["url"]}

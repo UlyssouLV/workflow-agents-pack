@@ -20,10 +20,22 @@ DEPOT_GITHUB = "https://github.com/{slug}.git"
 PORT_RUNNER = 8788
 # Programme de chaque agent, lancé en mode interactif sur `/implement #n`.
 PROGRAMMES = {"claude": "claude", "cursor": "agent"}
+# Réponses au clone sale ; sans l’une d’elles, rien n’est lancé (pas de remise à zéro automatique).
+REPRENDRE, JETER = "reprendre", "jeter"
+CHOIX = (REPRENDRE, JETER)
 
 
 class RunnerErreur(Exception):
     """Lancement impossible ; le message tient sur une ligne."""
+
+
+class CloneSale(Exception):
+    """Changements non commités dans le clone géré : le lancement attend **Reprendre** ou **Jeter**."""
+
+    def __init__(self, fichiers: list[dict], diff: str):
+        super().__init__("le clone a des changements non commités : Reprendre ou Jeter")
+        self.fichiers = fichiers
+        self.diff = diff
 
 
 class SessionOuverte(Exception):
@@ -95,16 +107,41 @@ class Runner:
         # Deux requêtes simultanées ne doivent pas ouvrir deux sessions.
         self._verrou = threading.Lock()
 
-    def lancer(self, repo: str, ticket: int, agent: str, branche: str, identite: Identite) -> dict:
-        """Lève `SessionOuverte` s’il y en a déjà une, `RunnerErreur` si le clone ne se prépare pas."""
+    def lancer(
+        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: str | None = None
+    ) -> dict:
+        """Lève `SessionOuverte` s’il y en a déjà une, `CloneSale` si le clone a des changements
+        non commités et que `choix` ne dit pas quoi en faire, `RunnerErreur` si le clone ne se
+        prépare pas.
+
+        `choix` (ignoré sur un clone propre) : `reprendre` lance sur l’arbre tel quel, sans
+        changer de branche ; `jeter` enregistre les changements dans `jobs/<id>/abandon.patch`,
+        puis `reset --hard` et `clean -fd` avant le lancement normal.
+        """
         if agent not in PROGRAMMES:
             raise RunnerErreur(f"agent inconnu : {agent}")
+        if choix is not None and choix not in CHOIX:
+            raise RunnerErreur(f"choix inconnu : {choix}")
         with self._verrou:
             if (ouverte := self._sessions.ouverte()) is not None:
                 raise SessionOuverte(ouverte)
-            dossier = self.preparer_clone(repo, branche, identite)
+            dossier = self.recuperer_clone(repo, branche)
+            fichiers = changements(dossier)
+            if fichiers and choix is None:
+                raise CloneSale(fichiers, diff_complet(dossier))
             argv = commande_agent(agent, ticket)
             session = self._sessions.creer(repo, ticket, agent, f'{argv[0]} "{argv[1]}"')
+            try:
+                if fichiers and choix == JETER:
+                    # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
+                    patch = self._sessions.jobs / session["id"] / "abandon.patch"
+                    patch.write_text(diff_complet(dossier))
+                    _git("-C", str(dossier), "reset", "--quiet", "--hard")
+                    _git("-C", str(dossier), "clean", "--quiet", "-fd")
+                self.positionner_clone(dossier, branche, identite, sur_place=bool(fichiers) and choix == REPRENDRE)
+            except RunnerErreur:
+                self._sessions.clore(session["id"], 127)
+                raise
             executeur = [sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), session["id"]]
             try:
                 self._lanceur(nom_tmux(session["id"]), [*executeur, *argv], dossier)
@@ -133,8 +170,8 @@ class Runner:
             time.sleep(0.05)
         return self._sessions.clore(id_, CODE_ARRETEE)
 
-    def preparer_clone(self, repo: str, branche: str, identite: Identite) -> Path:
-        """`clones/<owner>/<name>/` sur `branche` à jour de GitHub, avec l’identité git.
+    def recuperer_clone(self, repo: str, branche: str) -> Path:
+        """`clones/<owner>/<name>/` à jour de GitHub, sans toucher à l’arbre ; `branche` doit y exister.
 
         Créé au premier lancement (HTTPS, `GH_TOKEN` par `gh auth setup-git`), sinon `fetch`.
         """
@@ -149,20 +186,61 @@ class Runner:
             _git("-C", str(dossier), "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branche}")
         except RunnerErreur:
             raise RunnerErreur(f"branche {branche} inexistante sur GitHub") from None
-        _git("-C", str(dossier), "switch", "--quiet", branche)
-        _git("-C", str(dossier), "merge", "--quiet", "--ff-only", f"origin/{branche}")
-        _git("-C", str(dossier), "config", "user.name", identite.login)
-        _git("-C", str(dossier), "config", "user.email", identite.email)
         return dossier
 
+    def positionner_clone(self, dossier: Path, branche: str, identite: Identite, sur_place: bool = False) -> None:
+        """Sur `branche` à jour de `origin` (`sur_place` : la branche courante, pour **Reprendre**),
+        avec l’identité git."""
+        if not sur_place:
+            _git("-C", str(dossier), "switch", "--quiet", branche)
+            _git("-C", str(dossier), "merge", "--quiet", "--ff-only", f"origin/{branche}")
+        _git("-C", str(dossier), "config", "user.name", identite.login)
+        _git("-C", str(dossier), "config", "user.email", identite.email)
 
-def _git(*args: str) -> None:
-    _executer(["git", *args], f"git {args[2] if args[0] == '-C' else args[0]}")
+
+def changements(dossier: Path) -> list[dict]:
+    """Changements non commités du clone (fichiers non suivis compris, ignorés exclus) ; `[]` sans clone."""
+    if not (dossier / ".git").is_dir():
+        return []
+    sortie = _git("-C", str(dossier), "status", "--porcelain", "--untracked-files=all", "-z")
+    fichiers, entrees = [], iter(sortie.split("\0"))
+    for entree in entrees:
+        if not entree:
+            continue
+        statut = entree[:2].strip()
+        if statut[0] in "RC":
+            # `-z` : l’ancien chemin d’un renommage suit, dans sa propre entrée.
+            next(entrees, None)
+        fichiers.append({"statut": statut, "chemin": entree[3:]})
+    return fichiers
 
 
-def _executer(commande: list[str], etape: str) -> None:
+def diff_complet(dossier: Path) -> str:
+    """`git diff HEAD` et les fichiers non suivis, en un patch que `git apply` rejoue."""
+    racine = ["git", "-C", str(dossier)]
+    diff = _git("-C", str(dossier), "diff", "--binary", "HEAD")
+    sortie = _git("-C", str(dossier), "ls-files", "--others", "--exclude-standard", "-z")
+    for chemin in filter(None, sortie.split("\0")):
+        # `--no-index` sort en 1 quand les fichiers diffèrent : c’est le cas attendu.
+        nouveau = subprocess.run(
+            [*racine, "diff", "--binary", "--no-index", "--", "/dev/null", chemin],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        )
+        if nouveau.returncode not in (0, 1):
+            raise RunnerErreur(f"git diff a échoué : {nouveau.stderr.strip()}")
+        diff += nouveau.stdout
+    return diff
+
+
+def _git(*args: str) -> str:
+    return _executer(["git", *args], f"git {args[2] if args[0] == '-C' else args[0]}")
+
+
+def _executer(commande: list[str], etape: str) -> str:
     try:
-        subprocess.run(commande, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        return subprocess.run(
+            commande, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        ).stdout
     except FileNotFoundError as erreur:
         raise RunnerErreur(f"{etape} : {erreur}") from erreur
     except subprocess.CalledProcessError as erreur:
@@ -176,19 +254,26 @@ class ClientRunner:
     def __init__(self, http):
         self._http = http
 
-    def lancer(self, repo: str, ticket: int, agent: str, branche: str, identite: Identite) -> dict:
+    def lancer(
+        self, repo: str, ticket: int, agent: str, branche: str, identite: Identite, choix: str | None = None
+    ) -> dict:
         """Mêmes erreurs que `Runner.lancer` ; `RunnerErreur` aussi si le runner est injoignable."""
         import httpx
 
         demande = {"repo": repo, "ticket": ticket, "agent": agent, "branche": branche,
                    "login": identite.login, "email": identite.email}
+        if choix is not None:
+            demande["choix"] = choix
         try:
             # Le premier clone d’un gros repo peut être long.
             reponse = self._http.post("/sessions", json=demande, timeout=300)
         except httpx.HTTPError as erreur:
             raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
         if reponse.status_code == 409:
-            raise SessionOuverte(reponse.json()["session"])
+            corps = reponse.json()
+            if "clone" in corps:
+                raise CloneSale(corps["clone"]["fichiers"], corps["clone"]["diff"])
+            raise SessionOuverte(corps["session"])
         if not reponse.is_success:
             try:
                 detail = reponse.json()["detail"]
@@ -216,7 +301,8 @@ class ClientRunner:
 
 
 def creer_app_runner(runner: Runner):
-    """`POST /sessions` : 201 et la session, 409 et la session ouverte, 422 et le message.
+    """`POST /sessions` : 201 et la session, 409 et la session ouverte ou le clone sale (fichiers et
+    diff), 422 et le message.
 
     `POST /sessions/{id}/terminer` : la session close ; websocket `/sessions/{id}/terminal` : le
     terminal en direct d’une session ouverte (`wap_runtime.terminal`).
@@ -235,6 +321,7 @@ def creer_app_runner(runner: Runner):
         branche: str
         login: str
         email: str
+        choix: str | None = None
 
     app = FastAPI(title="wap-runner", version=__version__, docs_url=None, redoc_url=None)
 
@@ -247,9 +334,14 @@ def creer_app_runner(runner: Runner):
     def lancer(demande: Lancement):
         identite = Identite(demande.login, demande.email)
         try:
-            return runner.lancer(demande.repo, demande.ticket, demande.agent, demande.branche, identite)
+            return runner.lancer(
+                demande.repo, demande.ticket, demande.agent, demande.branche, identite, demande.choix
+            )
         except SessionOuverte as refus:
             return JSONResponse({"detail": str(refus), "session": refus.session}, status_code=409)
+        except CloneSale as refus:
+            clone = {"fichiers": refus.fichiers, "diff": refus.diff}
+            return JSONResponse({"detail": str(refus), "clone": clone}, status_code=409)
         except RunnerErreur as erreur:
             return JSONResponse({"detail": str(erreur)}, status_code=422)
 

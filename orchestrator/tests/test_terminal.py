@@ -50,7 +50,8 @@ def jobs(tmp_path):
 @pytest.fixture
 def runner(tmp_path, jobs, etat_tmux, monkeypatch):
     runner = Runner(tmp_path / "clones", jobs)
-    monkeypatch.setattr(runner, "preparer_clone", lambda *_: tmp_path)
+    monkeypatch.setattr(runner, "recuperer_clone", lambda *_: tmp_path)
+    monkeypatch.setattr(runner, "positionner_clone", lambda *_, **__: None)
     return runner
 
 
