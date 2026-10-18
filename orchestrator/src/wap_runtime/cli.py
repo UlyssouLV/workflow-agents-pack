@@ -13,6 +13,7 @@ from pathlib import Path
 
 from wap_runtime.agents import AGENTS, CURSOR, connecte, lancer_auth_agent
 from wap_runtime.auth import lancer_auth, lire_secrets, statut
+from wap_runtime.identifiants_cockpit import definir as definir_identifiants_cockpit
 from wap_runtime.instance import chemin_instance, desinstaller, lire_config
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
@@ -233,6 +234,46 @@ def _repo(action: str, slug: str | None, nom: str | None) -> int:
     return 0
 
 
+def _cockpit_auth(login: str, avec_password: bool) -> int:
+    """Crée ou change les identifiants cockpit (distinct de `wap-runtime auth`)."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    login = (login or "").strip()
+    if not login:
+        print("KO — login requis : `wap-runtime cockpit-auth --login <login>`")
+        return 1
+    if avec_password:
+        mot_de_passe = sys.stdin.read()
+        if mot_de_passe.endswith("\n"):
+            mot_de_passe = mot_de_passe[:-1]
+        if mot_de_passe.endswith("\r"):
+            mot_de_passe = mot_de_passe[:-1]
+    else:
+        import getpass
+
+        mot_de_passe = getpass.getpass("Mot de passe cockpit : ")
+    if not mot_de_passe:
+        print("KO — mot de passe vide")
+        return 1
+    try:
+        action = definir_identifiants_cockpit(instance, login, mot_de_passe)
+    except ValueError as erreur:
+        print(f"KO — {erreur}")
+        return 1
+    except OSError as erreur:
+        print(f"KO — écriture des identifiants impossible ({erreur})")
+        return 1
+    if action == "cree":
+        print(f"OK — identifiants cockpit créés (login « {login} »)")
+    else:
+        print(
+            f"OK — mot de passe cockpit changé (login « {login} ») ; "
+            "sessions invalidées"
+        )
+    return 0
+
+
 def _auth(cible: str | None, avec_jeton: bool) -> int:
     """`cible` : `None` (GitHub), `status`, `claude` ou `agent` (Cursor)."""
     instance = _instance_existante()
@@ -340,6 +381,17 @@ def main(argv=None) -> int:
     auth.add_argument(
         "--with-token", action="store_true", help="lit le token (ou la clé API) sur stdin"
     )
+    cockpit_auth = sous.add_parser(
+        "cockpit-auth",
+        help="crée ou change les identifiants d’accès web au cockpit "
+        "(distinct de `auth` GitHub / agents)",
+    )
+    cockpit_auth.add_argument("--login", required=True, help="login unique de l’instance")
+    cockpit_auth.add_argument(
+        "--with-password",
+        action="store_true",
+        help="lit le mot de passe sur stdin",
+    )
     setup_ = sous.add_parser(
         "setup",
         help="provisionne la machine : socle, instance, Compose, attente de /health",
@@ -351,6 +403,8 @@ def main(argv=None) -> int:
         return _setup(args.instance_seule)
     if args.commande == "auth":
         return _auth(args.cible, args.with_token)
+    if args.commande == "cockpit-auth":
+        return _cockpit_auth(args.login, args.with_password)
     if args.commande == "repo":
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
