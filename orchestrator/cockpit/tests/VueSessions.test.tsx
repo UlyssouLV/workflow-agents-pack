@@ -75,6 +75,18 @@ describe("page Sessions", () => {
     expect(lignes[2]).not.toHaveTextContent("composer-2");
   });
 
+  it("sans session Cursor, pas de colonne Modèle", async () => {
+    simulerApi({
+      "/api/agents": { agents: [CLAUDE] },
+      "/api/sessions": { sessions: [session({ titre: "Claude Code" })] },
+    });
+
+    render(<App chemin="/sessions" />);
+
+    expect(await screen.findByRole("columnheader", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Modèle" })).toBeNull();
+  });
+
   it("aucune session", async () => {
     simulerApi({ "/api/agents": { agents: [CLAUDE] }, "/api/sessions": { sessions: [] } });
 

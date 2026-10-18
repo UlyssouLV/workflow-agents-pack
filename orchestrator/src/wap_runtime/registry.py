@@ -124,14 +124,13 @@ def _ecrire(chemin: Path, repos: list[RepoLie]) -> None:
 
 def _modele(valeur: object) -> str | None:
     """Auto / vide : pas de champ. Un ID CLI est une chaîne non vide."""
+    from wap_runtime.agents import id_modele
+
     if valeur is None:
         return None
     if not isinstance(valeur, str):
         raise RegistryErreur("chaque [[repos]] : `modele` doit être une chaîne")
-    texte = valeur.strip()
-    if not texte or texte.lower() == "auto":
-        return None
-    return texte
+    return id_modele(valeur)
 
 
 def _repo(entree: dict) -> RepoLie:

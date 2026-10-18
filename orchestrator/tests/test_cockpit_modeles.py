@@ -50,6 +50,29 @@ def test_cursor_connecte_renvoie_auto_et_les_modeles_de_la_cli(tmp_path, monkeyp
     }
 
 
+def test_sortie_cli_reelle_ignore_en_tete_et_auto(tmp_path, monkeypatch):
+    """`agent models` réel : en-tête, `auto - …`, puis `id - libellé`."""
+    script = (
+        "printf '%s\\n' "
+        "'Available models' "
+        "'auto - Auto (current, default)' "
+        "'composer-2.5 - Composer 2.5' "
+        "'grok-4.7-high - Grok 4.7 High'"
+    )
+    env = faux_agent(tmp_path, monkeypatch, script)
+
+    reponse = api(tmp_path, env).get("/api/modeles")
+
+    assert reponse.status_code == 200
+    assert reponse.json() == {
+        "modeles": [
+            {"id": None, "libelle": "Auto"},
+            {"id": "composer-2.5", "libelle": "composer-2.5"},
+            {"id": "grok-4.7-high", "libelle": "grok-4.7-high"},
+        ]
+    }
+
+
 def test_echec_de_la_cli_renvoie_une_erreur_explicite_sans_inventer_de_liste(
     tmp_path, monkeypatch
 ):
@@ -86,4 +109,73 @@ def test_agent_introuvable_est_une_erreur_explicite(tmp_path, monkeypatch):
     assert reponse.status_code == 503
     assert reponse.json() == {
         "detail": "liste des modèles Cursor indisponible : agent introuvable"
+    }
+
+
+def test_api_interne_runner_sert_la_liste_des_modeles(tmp_path, monkeypatch):
+    """Le runner expose `GET /modeles` (l’image runtime n’a pas `agent`)."""
+    from wap_runtime.runner import creer_app_runner
+
+    faux_agent(tmp_path, monkeypatch, "printf 'composer-2\\n'")
+    monkeypatch.setenv("CURSOR_API_KEY", "key_x")
+
+    reponse = TestClient(creer_app_runner(object())).get("/modeles")
+
+    assert reponse.status_code == 200
+    assert reponse.json() == {
+        "modeles": [
+            {"id": None, "libelle": "Auto"},
+            {"id": "composer-2", "libelle": "composer-2"},
+        ]
+    }
+
+
+def test_avec_wap_runner_la_liste_vient_du_runner(tmp_path, monkeypatch):
+    """En Compose, `agent` est dans le runner : le runtime délègue `GET /modeles`."""
+    import httpx
+
+    attendu = {
+        "modeles": [
+            {"id": None, "libelle": "Auto"},
+            {"id": "composer-2", "libelle": "composer-2"},
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/modeles"
+        return httpx.Response(200, json=attendu)
+
+    monkeypatch.setenv("WAP_RUNNER", "http://runner-test")
+    client_http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://runner-test"
+    )
+
+    reponse = TestClient(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http)
+    ).get("/api/modeles")
+
+    assert reponse.status_code == 200
+    assert reponse.json() == attendu
+
+
+def test_avec_wap_runner_une_liste_ko_est_propagee(tmp_path, monkeypatch):
+    """Le runtime relais le 503 du runner, sans inventer de liste locale."""
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/modeles"
+        return httpx.Response(503, json={"detail": "liste des modèles Cursor indisponible : quota exceeded"})
+
+    monkeypatch.setenv("WAP_RUNNER", "http://runner-test")
+    client_http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://runner-test"
+    )
+
+    reponse = TestClient(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http)
+    ).get("/api/modeles")
+
+    assert reponse.status_code == 503
+    assert reponse.json() == {
+        "detail": "liste des modèles Cursor indisponible : quota exceeded"
     }

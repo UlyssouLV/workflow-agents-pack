@@ -425,6 +425,17 @@ describe("vue détail", () => {
       expect(claude).not.toHaveTextContent("composer-2");
     });
 
+    it("sans session Cursor, pas de colonne Modèle", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        [SESSIONS]: { sessions: [session({ titre: "Claude Code" })] },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      expect(await within(section).findByRole("columnheader", { name: "Agent" })).toBeInTheDocument();
+      expect(within(section).queryByRole("columnheader", { name: "Modèle" })).toBeNull();
+    });
+
     it("chaîne : état enchaînée, liens précédente et suivante", async () => {
       const [a, b] = ["20261017-090000-aaaaaa", "20261017-093000-bbbbbb"];
       rendre({

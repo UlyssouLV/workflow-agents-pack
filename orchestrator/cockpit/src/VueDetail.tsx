@@ -58,6 +58,7 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
 function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
   const { donnees, erreur } = useRafraichi<SessionsDuRepo>(chemin, RAFRAICHISSEMENT_SESSION_MS);
   const nom = (id: Agent["id"]) => agents.find((a) => a.id === id)?.nom ?? id;
+  const avecModele = (donnees?.sessions ?? []).some((s) => s.agent === "cursor");
 
   return (
     <section aria-label="Sessions">
@@ -72,7 +73,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
               <tr>
                 <th>Date</th>
                 <th>Agent</th>
-                <th>Modèle</th>
+                {avecModele && <th>Modèle</th>}
                 <th>Commande</th>
                 <th>État</th>
                 <th>Chaîne</th>
@@ -85,7 +86,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
                     <a href={s.url}>{dateHeure(s.debut)}</a>
                   </td>
                   <td>{nom(s.agent)}</td>
-                  <td>{libelleModele(s) ?? "—"}</td>
+                  {avecModele && <td>{libelleModele(s)}</td>}
                   <td>
                     <code>{s.commande}</code>
                   </td>
@@ -240,21 +241,12 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
               </select>
             </label>{" "}
             {montreModele && modeles && (
-              <label>
-                Modèle{" "}
-                <select
-                  value={modelePref ?? ""}
-                  onChange={(e) =>
-                    persister({ pilote, agent, modele: e.target.value === "" ? null : e.target.value })
-                  }
-                >
-                  {modeles.map((m) => (
-                    <option key={m.id ?? "auto"} value={m.id ?? ""}>
-                      {m.libelle}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SelectModele
+                libelle="Modèle"
+                value={modelePref}
+                modeles={modeles}
+                onChange={(modele) => persister({ pilote, agent, modele })}
+              />
             )}{" "}
             <label>
               Branche{" "}
@@ -267,19 +259,12 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
               </select>
             </label>{" "}
             {montreModele && modeles && (
-              <label>
-                Modèle de la session{" "}
-                <select
-                  value={modeleLancement ?? ""}
-                  onChange={(e) => setModeleLancement(e.target.value === "" ? null : e.target.value)}
-                >
-                  {modeles.map((m) => (
-                    <option key={m.id ?? "auto"} value={m.id ?? ""}>
-                      {m.libelle}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SelectModele
+                libelle="Modèle de la session"
+                value={modeleLancement}
+                modeles={modeles}
+                onChange={setModeleLancement}
+              />
             )}{" "}
             <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer()}>
               Nouvelle session
@@ -323,6 +308,34 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
         </>
       )}
     </>
+  );
+}
+
+function SelectModele({
+  libelle,
+  value,
+  modeles,
+  onChange,
+}: {
+  libelle: string;
+  value: string | null;
+  modeles: ModeleCursor[];
+  onChange: (modele: string | null) => void;
+}) {
+  return (
+    <label>
+      {libelle}{" "}
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      >
+        {modeles.map((m) => (
+          <option key={m.id ?? "auto"} value={m.id ?? ""}>
+            {m.libelle}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

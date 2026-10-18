@@ -72,8 +72,10 @@ def faux_bin(tmp_path, monkeypatch):
         "agent",
         'if [ "$1" = models ]; then\n'
         '  if [ -n "$FAUX_MODELS_KO" ]; then echo "$FAUX_MODELS_KO" >&2; exit 1; fi\n'
-        "  echo composer-2\n"
-        "  echo grok-4.6\n"
+        "  echo Available models\n"
+        "  echo 'auto - Auto (current, default)'\n"
+        "  echo 'composer-2 - Composer 2'\n"
+        "  echo 'grok-4.6 - Grok 4.6'\n"
         "  exit 0\n"
         "fi\n"
         f'echo "agent $* @ $(pwd) @ $(git config user.name) <$(git config user.email)>"'

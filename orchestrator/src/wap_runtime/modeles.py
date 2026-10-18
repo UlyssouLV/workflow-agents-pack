@@ -41,11 +41,26 @@ def lister_modeles_cursor(env: Mapping[str, str]) -> list[dict]:
     if resultat.returncode != 0:
         detail = (resultat.stderr or resultat.stdout or f"code {resultat.returncode}").strip()
         raise ModelesErreur(f"liste des modèles Cursor indisponible : {detail}")
-    ids = [
-        ligne.split()[0]
-        for ligne in resultat.stdout.splitlines()
-        if ligne.strip() and ligne.split()[0].lower() != "auto"
-    ]
+    ids = _ids_depuis_sortie(resultat.stdout)
     if not ids:
         raise ModelesErreur("liste des modèles Cursor indisponible : aucun modèle dans sa sortie")
     return [AUTO, *({"id": i, "libelle": i} for i in ids)]
+
+
+def _ids_depuis_sortie(sortie: str) -> list[str]:
+    """IDs de `agent models` : lignes `id - libellé`, ou un id seul (tests). Ignore Auto et les en-têtes."""
+    ids: list[str] = []
+    for ligne in sortie.splitlines():
+        ligne = ligne.strip()
+        if not ligne:
+            continue
+        if " - " in ligne:
+            id_ = ligne.split(" - ", 1)[0].strip()
+        elif " " not in ligne:
+            id_ = ligne
+        else:
+            continue
+        if not id_ or id_.lower() == "auto":
+            continue
+        ids.append(id_)
+    return ids

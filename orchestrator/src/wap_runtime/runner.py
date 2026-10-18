@@ -620,6 +620,35 @@ class ClientRunner:
         base = str(self._http.base_url).rstrip("/")
         return f"ws{base.removeprefix('http')}/sessions/{quote(id_, safe='')}/terminal"
 
+    def lister_modeles(self) -> list[dict]:
+        """`GET /modeles` du runner ; même contrat que `lister_modeles_cursor`."""
+        import httpx
+
+        from wap_runtime.modeles import ModelesErreur
+
+        try:
+            reponse = self._http.get("/modeles", timeout=60)
+        except httpx.HTTPError as erreur:
+            raise ModelesErreur(
+                f"liste des modèles Cursor indisponible : runner injoignable ({erreur})"
+            ) from erreur
+        if reponse.status_code in (422, 503):
+            try:
+                detail = reponse.json()["detail"]
+            except (ValueError, KeyError, TypeError):
+                detail = f"le runner a répondu {reponse.status_code}"
+            raise ModelesErreur(str(detail), reponse.status_code)
+        if not reponse.is_success:
+            raise ModelesErreur(
+                f"liste des modèles Cursor indisponible : le runner a répondu {reponse.status_code}"
+            )
+        try:
+            return list(reponse.json()["modeles"])
+        except (ValueError, KeyError, TypeError) as erreur:
+            raise ModelesErreur(
+                "liste des modèles Cursor indisponible : réponse runner invalide"
+            ) from erreur
+
 
 def creer_app_runner(runner: Runner):
     """`POST /sessions` : 201 et la session, 409 et la session ouverte ou le clone sale (fichiers et
@@ -663,6 +692,16 @@ def creer_app_runner(runner: Runner):
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/modeles")
+    def modeles() -> dict:
+        """Liste `agent models` pour le runtime (l’image `runtime` n’embarque pas `agent`)."""
+        from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
+
+        try:
+            return {"modeles": lister_modeles_cursor(os.environ)}
+        except ModelesErreur as erreur:
+            raise HTTPException(erreur.code, erreur.detail) from erreur
 
     # `def` : FastAPI l’exécute hors de la boucle, le clone peut prendre du temps.
     @app.post("/sessions", status_code=201)

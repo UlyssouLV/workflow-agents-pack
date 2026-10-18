@@ -7,6 +7,7 @@ export function VueSessions() {
   const { donnees, erreur } = useRafraichi<SessionsDuRepo>("/api/sessions", RAFRAICHISSEMENT_SESSION_MS);
   const agents = useRafraichi<{ agents: Agent[] }>("/api/agents");
   const nom = (id: Agent["id"]) => agents.donnees?.agents.find((a) => a.id === id)?.nom ?? id;
+  const avecModele = (donnees?.sessions ?? []).some((s) => s.agent === "cursor");
 
   return (
     <main>
@@ -22,7 +23,7 @@ export function VueSessions() {
               <tr>
                 <th>Repo</th>
                 <th>Agent</th>
-                <th>Modèle</th>
+                {avecModele && <th>Modèle</th>}
                 <th>Branche</th>
                 <th>Titre</th>
                 <th>État</th>
@@ -34,7 +35,7 @@ export function VueSessions() {
                 <tr key={s.id}>
                   <td>{s.repo}</td>
                   <td>{nom(s.agent)}</td>
-                  <td>{libelleModele(s) ?? "—"}</td>
+                  {avecModele && <td>{libelleModele(s)}</td>}
                   <td>{s.branche ?? "—"}</td>
                   <td>
                     <a href={s.url}>{s.titre}</a>

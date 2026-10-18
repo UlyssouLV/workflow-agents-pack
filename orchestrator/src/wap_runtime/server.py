@@ -218,8 +218,14 @@ def creer_app(
 
     @app.get("/api/modeles")
     def modeles() -> dict:
+        # En Compose (`WAP_RUNNER`), `agent` n’est que dans le runner (ADR 0004).
         try:
-            return {"modeles": lister_modeles_cursor(env)}
+            liste = (
+                client_runner.lister_modeles()
+                if os.environ.get("WAP_RUNNER")
+                else lister_modeles_cursor(env)
+            )
+            return {"modeles": liste}
         except ModelesErreur as erreur:
             raise HTTPException(erreur.code, erreur.detail) from erreur
 
