@@ -44,7 +44,12 @@ class FauxRunner:
         ticket = demande.get("ticket")
         commande = f'claude "/implement #{ticket}"' if ticket is not None else "claude"
         session = self.sessions.creer(
-            demande["repo"], ticket, demande["agent"], commande, branche=demande.get("branche")
+            demande["repo"],
+            ticket,
+            demande["agent"],
+            commande,
+            branche=demande.get("branche"),
+            modele=demande.get("modele"),
         )
         return httpx.Response(201, json=session)
 
@@ -113,6 +118,59 @@ def test_lancement_de_session_n_ecrit_pas_le_modele_du_registry(
     assert reponse.status_code == 201
     assert lire_registry(registry)[0].modele == "composer-2"
     assert registry.read_text() == avant
+
+
+def _api_cursor(tmp_path, github, jobs, runner, modele_repo=None):
+    registry = tmp_path / "repos.toml"
+    ajouter(registry, SLUG, None)
+    if modele_repo is not None:
+        enregistrer(registry, SLUG, pilote=False, agent="cursor", modele=modele_repo)
+    return TestClient(
+        creer_app(
+            registry=registry,
+            jeton=JETON,
+            transport=github.transport(),
+            env={"CURSOR_API_KEY": "key_x"},
+            jobs=jobs,
+            runner=runner.client(),
+        )
+    ), registry
+
+
+def test_override_nouvelle_session_passe_le_modele_sans_ecrire_le_registry(
+    tmp_path, github, jobs, runner
+):
+    api, registry = _api_cursor(tmp_path, github, jobs, runner, modele_repo="grok-4.6")
+
+    reponse = lancer(api, agent="cursor", modele="composer-2")
+
+    assert reponse.status_code == 201
+    assert reponse.json()["modele"] == "composer-2"
+    assert runner.demandes[-1]["modele"] == "composer-2"
+    assert lire_registry(registry)[0].modele == "grok-4.6"
+
+
+def test_sans_override_le_lancement_cursor_envoie_la_preference_repo(
+    tmp_path, github, jobs, runner
+):
+    api, _ = _api_cursor(tmp_path, github, jobs, runner, modele_repo="composer-2")
+
+    reponse = lancer(api, agent="cursor")
+
+    assert reponse.status_code == 201
+    assert reponse.json()["modele"] == "composer-2"
+    assert runner.demandes[-1]["modele"] == "composer-2"
+
+
+def test_override_auto_ignore_la_preference_repo(tmp_path, github, jobs, runner):
+    api, registry = _api_cursor(tmp_path, github, jobs, runner, modele_repo="composer-2")
+
+    reponse = lancer(api, agent="cursor", modele=None)
+
+    assert reponse.status_code == 201
+    assert reponse.json()["modele"] is None
+    assert "modele" not in runner.demandes[-1]
+    assert lire_registry(registry)[0].modele == "composer-2"
 
 
 def test_lancement_demande_au_runner_agent_branche_et_identite_sans_ticket(api, runner):

@@ -103,7 +103,9 @@ def tourner(
         try:
             compte = github.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
-            session = runner.lancer(repo.slug, None, repo.agent, branche, identite)
+            session = runner.lancer(
+                repo.slug, None, repo.agent, branche, identite, modele=repo.modele
+            )
         except SessionQuiTravaille:
             # Une autre session *travaille* : on attend le prochain tour, sans stop collant.
             return None

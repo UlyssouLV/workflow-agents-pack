@@ -78,6 +78,7 @@ def test_creer_ecrit_session_json_ouverte(sessions, tmp_path):
         "activite": "inconnue",
         "skill": None,
         "titre": None,
+        "modele": None,
     }
 
 
@@ -87,6 +88,25 @@ def test_session_libre_ticket_null_et_branche(sessions):
     assert session["ticket"] is None
     assert session["branche"] == "main"
     assert session["commande"] == "claude"
+
+
+def test_creer_enregistre_le_modele_effectif(sessions, tmp_path):
+    session = sessions.creer(
+        "o/r", None, "cursor", "agent --model composer-2", modele="composer-2"
+    )
+
+    assert session["modele"] == "composer-2"
+    sur_disque = json.loads((tmp_path / "jobs" / session["id"] / "session.json").read_text())
+    assert sur_disque["modele"] == "composer-2"
+
+
+def test_session_sans_modele_se_lit_comme_auto(sessions, tmp_path):
+    session = creer(sessions)
+    chemin = tmp_path / "jobs" / session["id"] / "session.json"
+    ancien = {k: v for k, v in json.loads(chemin.read_text()).items() if k != "modele"}
+    chemin.write_text(json.dumps(ancien))
+
+    assert sessions.lire(session["id"])["modele"] is None
 
 
 def test_session_d_avant_la_branche_sans_branche(sessions, tmp_path):
@@ -242,6 +262,26 @@ def test_l_executeur_lance_l_agent_sans_argument_pour_une_session_libre(sessions
     subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
 
     assert json.loads(recu.read_text()) == []
+
+
+def test_l_executeur_passe_model_lu_dans_session_json(sessions, tmp_path, monkeypatch):
+    session = sessions.creer(
+        "o/r", 31, "cursor", 'agent --model composer-2 "/implement #31"', modele="composer-2"
+    )
+    recu = tmp_path / "recu"
+    bin_ = tmp_path / "bin"
+    bin_.mkdir(exist_ok=True)
+    agent = bin_ / "agent"
+    agent.write_text(
+        f"#!{sys.executable}\nimport json, pathlib, sys\n"
+        f"pathlib.Path({str(recu)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+    )
+    agent.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}{os.pathsep}{os.environ['PATH']}")
+
+    subprocess.run(executeur(tmp_path, session), stdin=subprocess.DEVNULL, check=True)
+
+    assert json.loads(recu.read_text()) == ["--model", "composer-2", "/implement #31"]
 
 
 @pytest.mark.parametrize("id_", ["../x", "20261017-090000-zzzzzz"])

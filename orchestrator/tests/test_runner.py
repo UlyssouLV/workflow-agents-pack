@@ -56,22 +56,38 @@ def faux_bin(tmp_path, monkeypatch):
         # Le vrai rend la main tout de suite, quel que soit le sort de la commande.
         'cd "$6" && eval "$7"\nexit 0\n',
     )
-    for agent in ("claude", "agent"):
-        executable(
-            bin_,
-            agent,
-            f'echo "{agent} $* @ $(pwd) @ $(git config user.name) <$(git config user.email)>"'
-            f' >> {log}\n'
-            # Affiché dans son terminal, et sa transcription native sous `HOME`.
-            f'echo "{agent} prêt : $*"\n'
-            f'echo "$WAP_ENCHAINER|$WAP_SESSION|$WAP_SESSION_JETON" >> {tmp_path / "env.log"}\n'
-            f'mkdir -p "$HOME/{TRANSCRIPTIONS[agent]}"\n'
-            f'echo \'{{"agent": "{agent}"}}\' > "$HOME/{TRANSCRIPTIONS[agent]}/t.jsonl"\n'
-            'exit "${FAUX_CODE:-0}"\n',
-        )
+    executable(
+        bin_,
+        "claude",
+        f'echo "claude $* @ $(pwd) @ $(git config user.name) <$(git config user.email)>"'
+        f' >> {log}\n'
+        f'echo "claude prêt : $*"\n'
+        f'echo "$WAP_ENCHAINER|$WAP_SESSION|$WAP_SESSION_JETON" >> {tmp_path / "env.log"}\n'
+        f'mkdir -p "$HOME/{TRANSCRIPTIONS["claude"]}"\n'
+        f'echo \'{{"agent": "claude"}}\' > "$HOME/{TRANSCRIPTIONS["claude"]}/t.jsonl"\n'
+        'exit "${FAUX_CODE:-0}"\n',
+    )
+    executable(
+        bin_,
+        "agent",
+        'if [ "$1" = models ]; then\n'
+        '  if [ -n "$FAUX_MODELS_KO" ]; then echo "$FAUX_MODELS_KO" >&2; exit 1; fi\n'
+        "  echo composer-2\n"
+        "  echo grok-4.6\n"
+        "  exit 0\n"
+        "fi\n"
+        f'echo "agent $* @ $(pwd) @ $(git config user.name) <$(git config user.email)>"'
+        f' >> {log}\n'
+        f'echo "agent prêt : $*"\n'
+        f'echo "$WAP_ENCHAINER|$WAP_SESSION|$WAP_SESSION_JETON" >> {tmp_path / "env.log"}\n'
+        f'mkdir -p "$HOME/{TRANSCRIPTIONS["agent"]}"\n'
+        f'echo \'{{"agent": "agent"}}\' > "$HOME/{TRANSCRIPTIONS["agent"]}/t.jsonl"\n'
+        'exit "${FAUX_CODE:-0}"\n',
+    )
     monkeypatch.setenv("PATH", f"{bin_}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CURSOR_API_KEY", "key_x")
     return log
 
 
@@ -110,8 +126,8 @@ def appels(log: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
-def lancer(runner, agent="claude", ticket=30, branche=BRANCHE):
-    return runner.lancer(SLUG, ticket, agent, branche, IDENTITE)
+def lancer(runner, agent="claude", ticket=30, branche=BRANCHE, modele=None):
+    return runner.lancer(SLUG, ticket, agent, branche, IDENTITE, modele=modele)
 
 
 def test_premier_lancement_clone_sur_la_branche_de_la_pr_avec_l_identite(runner, instance, faux_bin):
@@ -184,6 +200,45 @@ def test_commande_lancee_selon_l_agent_dans_le_clone_et_dans_tmux(
     )
     assert session["commande"] == f'{programme} "/implement #30"'
     assert session["agent"] == agent
+
+
+def test_cursor_avec_modele_passe_model_et_l_enregistre(runner, instance, faux_bin):
+    session = lancer(runner, agent="cursor", modele="composer-2")
+
+    assert session["modele"] == "composer-2"
+    assert session["commande"] == 'agent --model composer-2 "/implement #30"'
+    assert any(l.startswith("agent --model composer-2") for l in appels(faux_bin))
+    assert json.loads((instance / "jobs" / session["id"] / "session.json").read_text())[
+        "modele"
+    ] == "composer-2"
+
+
+def test_cursor_auto_n_ajoute_pas_model(runner, faux_bin):
+    session = lancer(runner, agent="cursor")
+
+    assert session["modele"] is None
+    assert session["commande"] == 'agent "/implement #30"'
+    assert not any("--model" in l for l in appels(faux_bin) if l.startswith("agent "))
+
+
+def test_cursor_refuse_si_la_liste_echoue(runner, instance, monkeypatch):
+    from wap_runtime.runner import RunnerErreur
+
+    monkeypatch.setenv("FAUX_MODELS_KO", "quota exceeded")
+
+    with pytest.raises(RunnerErreur, match="liste des modèles Cursor indisponible"):
+        lancer(runner, agent="cursor", modele="composer-2")
+
+    assert Sessions(instance / "jobs").toutes() == []
+
+
+def test_cursor_refuse_un_id_hors_liste(runner, instance):
+    from wap_runtime.runner import RunnerErreur
+
+    with pytest.raises(RunnerErreur, match="absent"):
+        lancer(runner, agent="cursor", modele="disparu")
+
+    assert Sessions(instance / "jobs").toutes() == []
 
 
 @pytest.mark.parametrize("code, etat", [("0", "terminée"), ("1", "échouée")])
@@ -719,6 +774,18 @@ def test_suivante_acceptee_enchaine_sur_le_meme_agent_et_la_meme_branche(chaine,
     assert chaine.jeton() != chaine.jeton(0)
     assert commande[-2:] == [str(instance / "jobs"), suivante["id"]]
     assert not any(option in " ".join(commande) for option in ("--continue", "--resume"))
+
+
+def test_enchainer_reprend_le_modele_de_la_precedente(chaine, github):
+    courante = chaine.runner.lancer(SLUG, 30, "cursor", BRANCHE, IDENTITE, modele="composer-2")
+    git("commit", "--quiet", "--allow-empty", "-m", "poussé par l’agent", cwd=github)
+    git("push", "--quiet", "origin", BRANCHE, cwd=github)
+
+    suivante = chaine.runner.enchainer(courante["id"], 31, chaine.jeton())()
+
+    assert suivante["modele"] == "composer-2"
+    assert suivante["commande"] == 'agent --model composer-2 "/implement #31"'
+    assert suivante["precedente"] == courante["id"]
 
 
 def test_l_executeur_lance_la_suivante_sans_reprise(chaine, instance, faux_bin):

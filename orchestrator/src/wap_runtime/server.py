@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from wap_runtime import __version__
-from wap_runtime.agents import etat_agents
+from wap_runtime.agents import etat_agents, id_modele
 from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
@@ -49,6 +49,8 @@ class Lancement(BaseModel):
     branche: str
     # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
     choix: Choix | None = None
+    # Override Nouvelle session (Cursor). Absent : préférence repo. `null` / Auto : pas de `--model`.
+    modele: str | None = None
 
 
 class PreferencePilote(BaseModel):
@@ -102,6 +104,17 @@ def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:
 def _verifier_origine(requete: Request) -> None:
     if not _du_cockpit(requete.headers, requete.url.scheme):
         raise HTTPException(403, "origine refusée : agis depuis le cockpit")
+
+
+def _modele_du_lancement(demande: Lancement, registry: Path) -> str | None:
+    """Override Nouvelle session, sinon préférence repo. Claude : toujours Auto."""
+    if demande.agent != "cursor":
+        return None
+    if "modele" in demande.model_fields_set:
+        return id_modele(demande.modele)
+    lie = next((r for r in lire_registry(registry) if r.designe(demande.repo)), None)
+    return lie.modele if lie else None
+
 
 
 def _front_par_defaut() -> Path | None:
@@ -317,7 +330,13 @@ def creer_app(
             compte = client.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
             lancee = client_runner.lancer(
-                detail["slug"], None, demande.agent, demande.branche, identite, demande.choix
+                detail["slug"],
+                None,
+                demande.agent,
+                demande.branche,
+                identite,
+                demande.choix,
+                _modele_du_lancement(demande, registry),
             )
         except GitHubErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur

@@ -57,8 +57,12 @@ class Sessions:
         commande: str,
         precedente: str | None = None,
         branche: str | None = None,
+        modele: str | None = None,
     ) -> dict:
-        """`ticket` nul : session libre. `precedente` : la session enchaînée qui ouvre celle-ci."""
+        """`ticket` nul : session libre. `precedente` : la session enchaînée qui ouvre celle-ci.
+
+        `modele` : ID Cursor effectif, ou `None` (Auto / Claude).
+        """
         debut = self._horloge()
         session = {
             "id": f"{debut:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}",
@@ -76,6 +80,7 @@ class Sessions:
             "activite": INCONNUE,
             "skill": None,
             "titre": None,
+            "modele": modele,
         }
         (self.jobs / session["id"]).mkdir(parents=True)
         self._ecrire(session)
@@ -89,7 +94,8 @@ class Sessions:
             lue = json.loads((self.jobs / id_ / "session.json").read_text())
         except (OSError, ValueError):
             return None
-        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche` ni d’activité.
+        # Écrite avant la 0.4.1 : hors de toute chaîne ; avant la 0.4.2 : pas de `branche` ni d’activité ;
+        # avant la 0.5.1 : pas de modèle Cursor.
         return {
             "precedente": None,
             "suivante": None,
@@ -97,6 +103,7 @@ class Sessions:
             "activite": INCONNUE,
             "skill": None,
             "titre": None,
+            "modele": None,
             **lue,
         }
 
@@ -207,7 +214,7 @@ def executer(jobs: Path, id_: str) -> int:
     if session is None or (agent := agent_par_id(session["agent"])) is None:
         raise SystemExit(f"session {id_} inconnue")
     ticket = None if session["ticket"] is None else int(session["ticket"])
-    code = enregistrer(commande_agent(agent, ticket), jobs / id_ / CAST)
+    code = enregistrer(commande_agent(agent, ticket, session.get("modele")), jobs / id_ / CAST)
     depuis = datetime.fromisoformat(session["debut"]).timestamp()
     copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
     Sessions(jobs).clore(id_, code)
