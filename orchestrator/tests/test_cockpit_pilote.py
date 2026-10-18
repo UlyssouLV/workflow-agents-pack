@@ -40,7 +40,7 @@ def test_patch_persiste_pilote_et_agent_sur_le_disque_et_les_lectures(tmp_path):
     )
 
     assert reponse.status_code == 200
-    assert reponse.json() == {"pilote": True, "agent": "cursor"}
+    assert reponse.json() == {"pilote": True, "agent": "cursor", "modele": None}
     assert lire_registry(registry)[0].pilote is True
     assert lire_registry(registry)[0].agent == "cursor"
     detail = api.get(f"/api/repos/{SLUG}").json()
@@ -77,6 +77,44 @@ def test_la_liste_relit_le_toggle_meme_si_le_cache_github_est_chaud(tmp_path):
     )
 
     assert api.get("/api/repos").json()["repos"][0]["pilote"] is True
+
+
+def test_patch_lit_et_ecrit_la_preference_modele_sur_le_detail(tmp_path):
+    registry = tmp_path / "repos.toml"
+    ajouter(registry, SLUG)
+    api = TestClient(app(registry))
+
+    reponse = api.patch(
+        f"/api/repos/{SLUG}",
+        json={"pilote": True, "agent": "cursor", "modele": "composer-2"},
+        headers={"Origin": COCKPIT},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json() == {"pilote": True, "agent": "cursor", "modele": "composer-2"}
+    assert lire_registry(registry)[0].modele == "composer-2"
+    assert api.get(f"/api/repos/{SLUG}").json()["modele"] == "composer-2"
+    assert api.get("/api/repos").json()["repos"][0]["modele"] == "composer-2"
+
+
+def test_patch_claude_n_exige_pas_le_modele_et_conserve_la_preference(tmp_path):
+    from wap_runtime.registry import enregistrer
+
+    registry = tmp_path / "repos.toml"
+    ajouter(registry, SLUG)
+    enregistrer(registry, SLUG, pilote=True, agent="cursor", modele="composer-2")
+    api = TestClient(app(registry))
+
+    reponse = api.patch(
+        f"/api/repos/{SLUG}",
+        json={"pilote": False, "agent": "claude"},
+        headers={"Origin": COCKPIT},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json() == {"pilote": False, "agent": "claude", "modele": "composer-2"}
+    assert lire_registry(registry)[0].modele == "composer-2"
+    assert api.get(f"/api/repos/{SLUG}").json()["modele"] == "composer-2"
 
 
 def test_patch_sans_origine_cockpit_est_refuse(tmp_path):

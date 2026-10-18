@@ -53,6 +53,8 @@ class Lancement(BaseModel):
 class PreferencePilote(BaseModel):
     pilote: bool
     agent: str
+    # Absent : on conserve la préférence actuelle. `null` / Auto : aucun modèle.
+    modele: str | None = None
 
 
 def _instance_par_defaut() -> Path:
@@ -69,7 +71,10 @@ def _runner_par_defaut() -> httpx.Client:
 
 def _prefs_registry(chemin: Path) -> dict[str, dict]:
     """Toggle et agent préféré, relu hors cache GitHub de la liste."""
-    return {r.slug.lower(): {"pilote": r.pilote, "agent": r.agent} for r in lire_registry(chemin)}
+    return {
+        r.slug.lower(): {"pilote": r.pilote, "agent": r.agent, "modele": r.modele}
+        for r in lire_registry(chemin)
+    }
 
 
 def _lien(session: dict) -> dict:
@@ -233,8 +238,10 @@ def creer_app(
         _detail(slug)
         if demande.agent not in AGENTS:
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
+        actuel = next(r for r in lire_registry(registry) if r.designe(slug))
+        modele = demande.modele if "modele" in demande.model_fields_set else actuel.modele
         try:
-            repo = enregistrer(registry, slug, demande.pilote, demande.agent)
+            repo = enregistrer(registry, slug, demande.pilote, demande.agent, modele)
         except RegistryErreur as erreur:
             raise HTTPException(500, str(erreur)) from erreur
         except OSError as erreur:
@@ -246,7 +253,7 @@ def creer_app(
             acquittements_pilote[cle] = derniere["id"]
         else:
             acquittements_pilote.pop(cle, None)
-        return {"pilote": repo.pilote, "agent": repo.agent}
+        return {"pilote": repo.pilote, "agent": repo.agent, "modele": repo.modele}
 
     @app.get("/api/repos/{owner}/{name}/sessions")
     def sessions_du_repo(owner: str, name: str) -> dict:

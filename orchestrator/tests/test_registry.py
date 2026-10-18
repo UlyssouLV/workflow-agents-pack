@@ -169,6 +169,57 @@ def test_edition_a_la_main_de_pilote_et_agent_est_relue(instance):
     ]
 
 
+def test_preference_modele_cursor_est_lue_ecrite_et_relue_sur_disque(instance):
+    from wap_runtime.registry import enregistrer
+
+    repo("add", "mon-org/a")
+    chemin = instance / "repos.toml"
+
+    enregistre = enregistrer(
+        chemin, "mon-org/a", pilote=True, agent="cursor", modele="composer-2"
+    )
+
+    assert enregistre == RepoLie(
+        "mon-org/a", pilote=True, agent="cursor", modele="composer-2"
+    )
+    assert tomllib.loads(chemin.read_text())["repos"] == [
+        {
+            "slug": "mon-org/a",
+            "pilote": True,
+            "agent": "cursor",
+            "modele": "composer-2",
+        }
+    ]
+    assert lire_registry(chemin) == [
+        RepoLie("mon-org/a", pilote=True, agent="cursor", modele="composer-2")
+    ]
+
+
+def test_preference_modele_absente_ou_auto_n_est_pas_ecrite_dans_le_toml(instance):
+    from wap_runtime.registry import enregistrer
+
+    repo("add", "mon-org/a")
+    chemin = instance / "repos.toml"
+
+    for valeur in (None, "", "auto", "Auto"):
+        enregistre = enregistrer(
+            chemin, "mon-org/a", pilote=False, agent="cursor", modele=valeur
+        )
+        assert enregistre.modele is None
+        assert "modele" not in tomllib.loads(chemin.read_text())["repos"][0]
+        assert lire_registry(chemin)[0].modele is None
+
+
+def test_edition_a_la_main_du_modele_est_relue(instance):
+    (instance / "repos.toml").write_text(
+        '[[repos]]\nslug = "mon-org/a"\nagent = "cursor"\nmodele = "composer-2"\n'
+    )
+
+    assert lire_registry(instance / "repos.toml") == [
+        RepoLie("mon-org/a", agent="cursor", modele="composer-2")
+    ]
+
+
 def test_en_root_les_commandes_visent_l_instance_d_orchestrator(
     tmp_path, instance, monkeypatch
 ):

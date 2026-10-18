@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from faux_github import JETON, FauxGitHub
-from wap_runtime.registry import ajouter
+from wap_runtime.registry import ajouter, enregistrer, lire_registry
 from wap_runtime.server import creer_app
 from wap_runtime.sessions import Sessions, publique
 
@@ -88,6 +88,31 @@ def lancer(api, agent="claude", origine=COCKPIT, repo=SLUG, branche="v0.4.0", **
     entetes = {"Origin": origine} if origine else {}
     demande = {"repo": repo, "agent": agent, "branche": branche, **choix}
     return api.post("/api/sessions", json=demande, headers=entetes)
+
+
+def test_lancement_de_session_n_ecrit_pas_le_modele_du_registry(
+    tmp_path, github, jobs, runner
+):
+    registry = tmp_path / "repos.toml"
+    ajouter(registry, SLUG, None)
+    enregistrer(registry, SLUG, pilote=False, agent="cursor", modele="composer-2")
+    api = TestClient(
+        creer_app(
+            registry=registry,
+            jeton=JETON,
+            transport=github.transport(),
+            env=CONNECTES,
+            jobs=jobs,
+            runner=runner.client(),
+        )
+    )
+
+    avant = registry.read_text()
+    reponse = lancer(api)
+
+    assert reponse.status_code == 201
+    assert lire_registry(registry)[0].modele == "composer-2"
+    assert registry.read_text() == avant
 
 
 def test_lancement_demande_au_runner_agent_branche_et_identite_sans_ticket(api, runner):
