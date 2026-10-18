@@ -195,14 +195,44 @@ export class ErreurApi extends Error {
   clone: CloneSale | null = null;
 }
 
+/** Session cockpit expirée / absente : vers la surface de login (sauf l’appel login lui-même). */
+function redirigerSiAuthRequise(reponse: Response): void {
+  if (reponse.status === 401) {
+    window.location.assign("/login");
+  }
+}
+
 export async function lire<T>(chemin: string): Promise<T> {
   const reponse = await fetch(chemin, { headers: { Accept: "application/json" } });
+  redirigerSiAuthRequise(reponse);
   if (!reponse.ok) {
     // FastAPI rend `{"detail": "<message>"}` (404 : repo absent du registry).
     const corps = await reponse.json().catch(() => null);
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return (await reponse.json()) as T;
+}
+
+/** `POST /api/cockpit/login` : pose le cookie de session httpOnly. */
+export async function connecterCockpit(login: string, password: string): Promise<void> {
+  const reponse = await fetch("/api/cockpit/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ login, password }),
+  });
+  if (!reponse.ok) {
+    const corps = await reponse.json().catch(() => null);
+    throw new ErreurApi(corps?.detail ?? `login : HTTP ${reponse.status}`);
+  }
+}
+
+/** `POST /api/cockpit/logout` puis retour à `/login`. */
+export async function deconnecterCockpit(): Promise<void> {
+  await fetch("/api/cockpit/logout", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  window.location.assign("/login");
 }
 
 /** `GET /api/sessions` et `GET /api/repos/{owner}/{name}/sessions` : plus récentes d’abord. */
@@ -215,6 +245,7 @@ export async function lireEnregistrement(id: string): Promise<string> {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const chemin = `/api/sessions/${encodeURIComponent(id)}/terminal.cast`;
   const reponse = await fetch(chemin);
+  redirigerSiAuthRequise(reponse);
   if (!reponse.ok) {
     const corps = await reponse.json().catch(() => null);
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
@@ -240,6 +271,7 @@ export async function enregistrerPilote(
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(modele === undefined ? { pilote, agent } : { pilote, agent, modele }),
   });
+  redirigerSiAuthRequise(reponse);
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {
     throw new ErreurApi(corps?.detail ?? `pilote : HTTP ${reponse.status}`);
@@ -266,6 +298,7 @@ export async function lancerSession(
       ...(modele !== undefined ? { modele } : {}),
     }),
   });
+  redirigerSiAuthRequise(reponse);
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {
     const erreur = new ErreurApi(corps?.detail ?? `lancement : HTTP ${reponse.status}`);
@@ -283,6 +316,7 @@ export async function terminerSession(id: string): Promise<Session> {
     method: "POST",
     headers: { Accept: "application/json" },
   });
+  redirigerSiAuthRequise(reponse);
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {
     throw new ErreurApi(corps?.detail ?? `terminer : HTTP ${reponse.status}`);

@@ -117,7 +117,9 @@ def test_surface_login_et_assets_restent_publics(app, instance, tmp_path):
 
     assert c.get("/login").status_code == 200
     assert c.get("/assets/app.js").status_code == 200
-    assert c.get("/").status_code == 401
+    sans_session = c.get("/", follow_redirects=False)
+    assert sans_session.status_code == 302
+    assert sans_session.headers["location"] == "/login"
 
 
 def test_session_injectee_autorise_sur_loopback(app, instance):

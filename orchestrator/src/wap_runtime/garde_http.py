@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from starlette.types import ASGIApp
 
 from wap_runtime.identifiants_cockpit import (
@@ -137,7 +137,10 @@ class GardeSession(BaseHTTPMiddleware):
             return await call_next(request)
         id_ = session_du_cookie(request)
         if not session_valide(self._instance, id_):
-            return JSONResponse({"detail": "authentification requise"}, status_code=401)
+            # API : 401 JSON ; pages HTML du cockpit : redirection vers la surface de login.
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "authentification requise"}, status_code=401)
+            return RedirectResponse(url="/login", status_code=302)
         return await call_next(request)
 
 
