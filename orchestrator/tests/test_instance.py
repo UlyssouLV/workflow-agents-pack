@@ -87,6 +87,7 @@ def test_config_par_defaut(home, depot_pack):
         "pack_path": str(instance / "pack"),
         "version": __version__,
         "exposition": False,
+        "domaine": "",
     }
 
 

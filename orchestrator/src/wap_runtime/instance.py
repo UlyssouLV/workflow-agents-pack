@@ -69,11 +69,12 @@ def regenerer_compose(
         direct_url = _direct_url_du_paquet()
     config = lire_config(instance)
     exposition = bool(config.get("exposition", False))
+    domaine = str(config.get("domaine") or "").strip()
     contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
     (instance / "compose.yaml").write_text(
         _compose(contexte, config["port"], os.getuid(), os.getgid(), exposition)
     )
-    _ecrire_caddyfile(instance, exposition)
+    _ecrire_caddyfile(instance, exposition, domaine)
 
 
 def ref_des_images(direct_url: Mapping | None) -> str:
@@ -90,6 +91,11 @@ def lire_config(instance: Path) -> dict:
 def definir_exposition(instance: Path, actif: bool) -> None:
     """Écrit `exposition` dans `config.toml` (la passe Compose lit cette clé)."""
     _ecrire_cle_config(instance / "config.toml", "exposition", bool(actif))
+
+
+def definir_domaine(instance: Path, domaine: str) -> None:
+    """Écrit `domaine` dans `config.toml` (hôte pour TLS Let’s Encrypt via Caddy)."""
+    _ecrire_cle_config(instance / "config.toml", "domaine", str(domaine).strip())
 
 
 def desinstaller(home: Path, purge: bool) -> Path | None:
@@ -118,6 +124,7 @@ def _config_par_defaut(instance: Path, env: Mapping[str, str]) -> dict:
         "pack_path": str(instance / "pack"),
         "version": __version__,
         "exposition": False,
+        "domaine": "",
     }
 
 
@@ -171,14 +178,17 @@ def _ecrire_cle_config(chemin: Path, cle: str, valeur) -> None:
     chemin.write_text(debut + ligne + "\n" + (("\n" + fin) if fin else ""))
 
 
-def _ecrire_caddyfile(instance: Path, exposition: bool) -> None:
+def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> None:
     chemin = instance / "Caddyfile"
     if not exposition:
         chemin.unlink(missing_ok=True)
         return
     # Relais borné au cockpit de cette instance (`runtime`) — ADR 0011.
+    # Avec domaine : site nommé → HTTPS automatique Let’s Encrypt (pas de HTTP public).
+    # Sans domaine : écoute :80 locale / lab seulement (mode prod public non supporté).
+    site = domaine if domaine else ":80"
     chemin.write_text(
-        f""":80 {{
+        f"""{site} {{
 	reverse_proxy runtime:{PORT_CONTENEUR}
 }}
 """
@@ -206,6 +216,8 @@ def _compose(contexte: str, port: int, uid: int, gid: int, exposition: bool = Fa
       - "443:443"
     volumes:
       - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "./caddy-data:/data"
+      - "./caddy-config:/config"
     depends_on:
       - runtime
     restart: unless-stopped

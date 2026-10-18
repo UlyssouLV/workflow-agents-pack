@@ -12,6 +12,10 @@
 
 **Exposition web** — mise à disposition du cockpit derrière le reverse proxy Caddy de l’instance (ports 80/443 sur la machine hôte), activable ou désactivable ; sans exposition, l’accès reste local ou par tunnel SSH.
 
+**Domaine** — nom d’hôte configuré sur l’instance (`wap-runtime domaine`) pour que Caddy obtienne et renouvelle un certificat Let’s Encrypt ; sans domaine, pas de mode officiel « HTTP public ».
+
+**Diagnostic** — commande CLI (`wap-runtime diagnostic`) qui sépare ce que l’instance a fait (Caddy, ports, auth cockpit, domaine) du reste côté opérateur (DNS, NAT, limites CGNAT).
+
 **Machine hôte** — la machine de l’utilisateur (Linux) qui fait tourner le runtime. Pas un VPS imposé.
 
 **Instance** — une installation du runtime sur une machine hôte, avec sa configuration et ses secrets hors git (`~/.wap-runtime/`).
