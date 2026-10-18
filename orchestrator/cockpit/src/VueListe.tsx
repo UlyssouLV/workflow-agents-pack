@@ -76,7 +76,7 @@ function Ligne({ repo }: { repo: Repo }) {
             {repo.pilote_stop && (
               <>
                 {" "}
-                <BadgePause />
+                <BadgePause stop={repo.pilote_stop} />
               </>
             )}
           </>

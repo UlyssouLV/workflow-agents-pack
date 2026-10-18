@@ -32,6 +32,7 @@ class FauxRunner:
         self.saisies: list[tuple[str, str]] = []
         self.enchainements: list[dict] = []
         self.sale: dict | None = None
+        self.occupe = False
 
     def client(self) -> httpx.Client:
         return httpx.Client(base_url="http://runner:8788", transport=httpx.MockTransport(self._repondre))
@@ -51,6 +52,15 @@ class FauxRunner:
         self.demandes.append(demande)
         if self.sale and "choix" not in demande:
             return httpx.Response(409, json={"detail": "clone sale", "clone": self.sale})
+        if self.occupe:
+            autre = {
+                "id": "autre",
+                "repo": "o/autre",
+                "agent": "claude",
+                "etat": "ouverte",
+                "activite": "travaille",
+            }
+            return httpx.Response(409, json={"detail": "occupe", "travaille": True, "session": autre})
         ticket = demande.get("ticket")
         commande = f'claude "/implement #{ticket}"' if ticket is not None else "claude"
         session = self.sessions.creer(
@@ -169,6 +179,62 @@ def test_tour_ne_lance_pas_si_le_clone_est_sale(registry, github, jobs, runner):
     assert tourner(**monde(registry, github, jobs, runner)) is None
     assert runner.saisies == []
     assert api(registry, github, jobs, runner).get("/api/sessions").json()["sessions"] == []
+
+
+def test_tour_reprend_quand_le_clone_n_est_plus_sale(registry, github, jobs, runner):
+    """CloneSale notifie mais ne bloque pas la reprise une fois le clone propre (US6, US12)."""
+    echecs: dict[str, bool] = {}
+    runner.sale = {
+        "fichiers": [{"statut": "M", "chemin": "a.py"}],
+        "diff": "-avant\n+après\n",
+        "branche": "travail",
+    }
+    kwargs = monde(registry, github, jobs, runner)
+
+    assert tourner(**kwargs, echecs=echecs) is None
+    assert echecs.get(SLUG.lower()) is True
+
+    runner.sale = None
+    session = tourner(**kwargs, echecs=echecs)
+
+    assert session is not None
+    assert runner.saisies == [(session["id"], "/implement #30\r")]
+    assert SLUG.lower() not in echecs
+
+
+def test_tour_attend_son_tour_si_une_autre_session_travaille(registry, github, jobs, runner):
+    """SessionQuiTravaille : file d’attente, pas un stop permanent (US13)."""
+    echecs: dict[str, bool] = {}
+    runner.occupe = True
+    kwargs = monde(registry, github, jobs, runner)
+
+    assert tourner(**kwargs, echecs=echecs) is None
+    assert echecs == {}
+
+    runner.occupe = False
+    session = tourner(**kwargs, echecs=echecs)
+
+    assert session is not None
+    assert runner.saisies[-1] == (session["id"], "/implement #30\r")
+
+
+def test_tour_reprend_apres_session_echouee_si_le_pilote_est_acquitte(
+    registry, github, jobs, runner
+):
+    """échouée notifie ; PATCH (acquittement) débloque la reprise (US11–12)."""
+    sessions = Sessions(jobs)
+    ratee = sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")
+    sessions.clore(ratee["id"], 1)
+    kwargs = monde(registry, github, jobs, runner)
+    acquittements: dict[str, str] = {}
+
+    assert tourner(**kwargs, acquittements=acquittements) is None
+
+    acquittements[SLUG.lower()] = ratee["id"]
+    session = tourner(**kwargs, acquittements=acquittements)
+
+    assert session is not None
+    assert session["id"] != ratee["id"]
 
 
 def test_tour_ne_lance_pas_sans_pr_de_version(registry, github, jobs, runner):
@@ -300,6 +366,24 @@ def test_l_api_expose_le_stop_apres_une_session_echouee(registry, github, jobs, 
     sessions.clore(sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")["id"], 1)
 
     assert api(registry, github, jobs, runner).get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "echouee"
+
+
+def test_l_api_acquitte_le_stop_echouee_via_patch_pilote(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    sessions.clore(sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")["id"], 1)
+    client = api(registry, github, jobs, runner)
+
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "echouee"
+    assert (
+        client.patch(
+            f"/api/repos/{SLUG}",
+            json={"pilote": True, "agent": "claude"},
+            headers={"Origin": "http://testserver"},
+        ).status_code
+        == 200
+    )
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] is None
+    assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] is None
 
 
 def test_l_api_expose_le_stop_sans_enfant_eligible(registry, github, jobs, runner):

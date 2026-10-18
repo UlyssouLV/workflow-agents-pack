@@ -56,11 +56,11 @@ def entree(corps, slug=SLUG):
     return next(r for r in corps["repos"] if r["slug"] == slug)
 
 
-def test_health_rend_le_statut_et_la_version_0_4_0(registry, github, horloge):
+def test_health_rend_le_statut_et_la_version(registry, github, horloge):
     reponse = client(registry, github, horloge).get("/health")
 
     assert reponse.status_code == 200
-    assert reponse.json() == {"status": "ok", "version": "0.4.2"}
+    assert reponse.json() == {"status": "ok", "version": "0.5.0"}
 
 
 def test_une_entree_par_repo_lie_dans_l_ordre_du_registry(registry, github, horloge):

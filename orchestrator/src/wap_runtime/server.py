@@ -135,15 +135,24 @@ def creer_app(
     sessions = Sessions(jobs or registry.parent / "jobs")
     client_runner = ClientRunner(runner or _runner_par_defaut())
     echecs_pilote: dict[str, bool] = {}
+    # Sessions échouée/interrompue acquittées (PATCH pilote) : la reprise peut reprendre (US12).
+    acquittements_pilote: dict[str, str] = {}
 
     def _stop(slug: str, detail: dict | None) -> str | None:
         lie = next((r for r in lire_registry(registry) if r.designe(slug)), None)
         if lie is None:
             return None
+        cle = lie.slug.lower()
         ouverte = sessions.ouverte(lie.slug)
         derniere = next(iter(sessions.du_repo(lie.slug)), None)
         return stop_du_pilote(
-            lie, detail, ouverte, derniere, agents, echecs_pilote.get(lie.slug.lower(), False)
+            lie,
+            detail,
+            ouverte,
+            derniere,
+            agents,
+            echecs_pilote.get(cle, False),
+            acquittements_pilote.get(cle),
         )
 
     @asynccontextmanager
@@ -154,7 +163,14 @@ def creer_app(
             while not stop.is_set():
                 try:
                     tourner(
-                        registry, cockpit, sessions, client_runner, agents, client, echecs_pilote
+                        registry,
+                        cockpit,
+                        sessions,
+                        client_runner,
+                        agents,
+                        client,
+                        echecs_pilote,
+                        acquittements_pilote,
                     )
                 except Exception:
                     # Un tour raté ne tue pas la surveillance.
@@ -223,6 +239,13 @@ def creer_app(
             raise HTTPException(500, str(erreur)) from erreur
         except OSError as erreur:
             raise HTTPException(500, f"écriture de {registry} impossible ({erreur})") from erreur
+        cle = slug.lower()
+        echecs_pilote.pop(cle, None)
+        derniere = next(iter(sessions.du_repo(slug)), None)
+        if derniere is not None:
+            acquittements_pilote[cle] = derniere["id"]
+        else:
+            acquittements_pilote.pop(cle, None)
         return {"pilote": repo.pilote, "agent": repo.agent}
 
     @app.get("/api/repos/{owner}/{name}/sessions")

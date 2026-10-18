@@ -79,10 +79,10 @@ describe("vue liste", () => {
 
     const [ligne] = await lignes();
     expect(within(ligne).getByText("Pilote")).toBeInTheDocument();
-    expect(within(ligne).queryByText("En pause")).toBeNull();
+    expect(within(ligne).queryByText("Réponse attendue")).toBeNull();
   });
 
-  it("affiche le badge En pause quand le pilote est stoppé", async () => {
+  it("affiche la raison du stop quand le pilote est en pause", async () => {
     simulerApi({
       "/api/repos": liste({ repos: [repo({ pilote: true, pilote_stop: "attend" })] }),
     });
@@ -91,7 +91,25 @@ describe("vue liste", () => {
 
     const [ligne] = await lignes();
     expect(within(ligne).getByText("Pilote")).toBeInTheDocument();
-    expect(within(ligne).getByText("En pause")).toBeInTheDocument();
+    expect(within(ligne).getByText("Réponse attendue")).toBeInTheDocument();
+    expect(within(ligne).queryByText("En pause")).toBeNull();
+  });
+
+  it("montre humain requis et échec de lancement sur la liste", async () => {
+    simulerApi({
+      "/api/repos": liste({
+        repos: [
+          repo({ slug: "o/a", pilote: true, pilote_stop: "humain_requis" }),
+          repo({ slug: "o/b", pilote: true, pilote_stop: "echec_lancement" }),
+        ],
+      }),
+    });
+
+    render(<VueListe />);
+
+    const [a, b] = await lignes();
+    expect(within(a).getByText("Intervention humaine requise")).toBeInTheDocument();
+    expect(within(b).getByText("Échec de lancement")).toBeInTheDocument();
   });
 
   describe("notifications pilote", () => {

@@ -12,7 +12,7 @@ import type {
   SessionsDuRepo,
 } from "./api";
 import { ID_SESSION } from "./api";
-import { demanderPermissionNotifications, notifierStops } from "./notifications";
+import { LIBELLES_STOP, demanderPermissionNotifications, notifierStops } from "./notifications";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 const TITRE_ONGLET = "Cockpit wap-runtime";
@@ -99,8 +99,8 @@ export function BadgePilote() {
   return <span className="badge pilote">Pilote</span>;
 }
 
-export function BadgePause() {
-  return <span className="badge pause">En pause</span>;
+export function BadgePause({ stop }: { stop: NonNullable<Repo["pilote_stop"]> }) {
+  return <span className="badge pause">{LIBELLES_STOP[stop]}</span>;
 }
 
 export function LibelleEtape({ etape }: { etape: Etape | null }) {
