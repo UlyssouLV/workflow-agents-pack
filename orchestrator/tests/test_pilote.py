@@ -16,7 +16,7 @@ from wap_runtime.pilote import tourner
 from wap_runtime.registry import ajouter, enregistrer
 from wap_runtime.runner import ClientRunner
 from wap_runtime.server import creer_app
-from wap_runtime.sessions import Sessions
+from wap_runtime.sessions import ATTEND, Sessions
 
 SLUG = "o/r"
 CONNECTES = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-x"}
@@ -176,6 +176,148 @@ def test_tour_ne_lance_pas_sans_pr_de_version(registry, github, jobs, runner):
 
     assert tourner(**monde(registry, github, jobs, runner)) is None
     assert runner.demandes == []
+
+
+def test_tour_ne_lance_pas_si_humain_requis(registry, github, jobs, runner):
+    github.repo(SLUG).sous_issues[17][0]["labels"].append({"name": "needs-info"})
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+    assert runner.saisies == []
+
+
+def test_tour_ne_lance_pas_si_la_session_attend_et_la_laisse_ouverte(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    ouverte = sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")
+    sessions.enregistrer_etat(ouverte["id"], ATTEND)
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+    assert sessions.ouverte(SLUG)["id"] == ouverte["id"]
+    assert sessions.lire(ouverte["id"])["activite"] == ATTEND
+
+
+def test_tour_ne_lance_pas_apres_une_session_echouee(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    sessions.clore(sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")["id"], 1)
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+
+
+def test_tour_ne_lance_pas_apres_une_session_interrompue(registry, github, jobs, runner):
+    Sessions(jobs).creer(SLUG, None, "claude", "claude", branche="v0.5.0")
+    Sessions(jobs).interrompre()
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+
+
+def test_tour_ne_lance_pas_sans_enfant_eligible(registry, github, jobs, runner):
+    for enfant in github.repo(SLUG).sous_issues[17]:
+        enfant["labels"] = [l for l in enfant["labels"] if l["name"] != "ready-for-agent"]
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+
+
+def test_tour_reprend_apres_fermeture_si_un_enfant_est_eligible(registry, github, jobs, runner):
+    session = tourner(**monde(registry, github, jobs, runner))
+    Sessions(jobs).clore(session["id"], 0)
+
+    suivante = tourner(**monde(registry, github, jobs, runner))
+
+    assert suivante is not None
+    assert suivante["id"] != session["id"]
+    assert runner.saisies[-1] == (suivante["id"], "/implement #30\r")
+
+
+def test_couper_le_pilote_laisse_la_session_courante_et_ne_relance_pas(registry, github, jobs, runner):
+    session = tourner(**monde(registry, github, jobs, runner))
+    enregistrer(registry, SLUG, pilote=False, agent="claude")
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert Sessions(jobs).ouverte(SLUG)["id"] == session["id"]
+    assert len(runner.demandes) == 1
+
+
+def test_l_api_expose_le_stop_humain_requis_sur_liste_et_detail(registry, github, jobs, runner):
+    github.repo(SLUG).sous_issues[17][0]["labels"].append({"name": "needs-info"})
+
+    client = api(registry, github, jobs, runner)
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "humain_requis"
+    assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] == "humain_requis"
+
+
+def test_l_api_expose_le_stop_attend_sans_fermer_la_session(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    ouverte = sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")
+    sessions.enregistrer_etat(ouverte["id"], ATTEND)
+
+    client = api(registry, github, jobs, runner)
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "attend"
+    assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] == "attend"
+    assert sessions.ouverte(SLUG)["id"] == ouverte["id"]
+
+
+def test_l_api_expose_le_stop_si_l_agent_prefere_n_est_pas_connecte(registry, github, jobs, runner):
+    enregistrer(registry, SLUG, pilote=True, agent="cursor")
+
+    client = api(registry, github, jobs, runner)
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "echec_lancement"
+    assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] == "echec_lancement"
+
+
+def test_l_api_expose_le_stop_apres_echec_de_lancement(registry, github, jobs, runner):
+    runner.sale = {
+        "fichiers": [{"statut": "M", "chemin": "a.py"}],
+        "diff": "-avant\n+après\n",
+        "branche": "travail",
+    }
+    app = creer_app(
+        registry=registry,
+        jeton=JETON,
+        transport=github.transport(),
+        env=CONNECTES,
+        jobs=jobs,
+        runner=runner.client(),
+        boucle_pilote=True,
+        intervalle_pilote=0.05,
+    )
+
+    with TestClient(app) as client:
+        limite = time.monotonic() + 2
+        while client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] != "echec_lancement":
+            if time.monotonic() >= limite:
+                break
+            time.sleep(0.02)
+        assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "echec_lancement"
+        assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] == "echec_lancement"
+
+
+def test_l_api_expose_le_stop_apres_une_session_echouee(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    sessions.clore(sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")["id"], 1)
+
+    assert api(registry, github, jobs, runner).get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "echouee"
+
+
+def test_l_api_expose_le_stop_sans_enfant_eligible(registry, github, jobs, runner):
+    for enfant in github.repo(SLUG).sous_issues[17]:
+        enfant["labels"] = [l for l in enfant["labels"] if l["name"] != "ready-for-agent"]
+
+    assert (
+        api(registry, github, jobs, runner).get(f"/api/repos/{SLUG}").json()["pilote_stop"]
+        == "aucun_eligible"
+    )
+
+
+def test_l_api_n_expose_pas_de_stop_si_le_pilote_est_off(registry, github, jobs, runner):
+    enregistrer(registry, SLUG, pilote=False, agent="claude")
+
+    client = api(registry, github, jobs, runner)
+    assert client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] is None
+    assert client.get("/api/repos").json()["repos"][0]["pilote_stop"] is None
 
 
 def test_le_runtime_lance_sans_requete_cockpit(registry, github, jobs, runner):

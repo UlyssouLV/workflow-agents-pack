@@ -100,6 +100,15 @@ export interface Repo<V = VersionResume> {
   pilote: boolean;
   /** Agent préféré du pilote (`claude` | `cursor`). */
   agent: Agent["id"];
+  /** Pause/stop du pilote (`null` si OFF, en surveillance, ou prêt à lancer). */
+  pilote_stop:
+    | "attend"
+    | "humain_requis"
+    | "echouee"
+    | "interrompue"
+    | "aucun_eligible"
+    | "echec_lancement"
+    | null;
 }
 
 export interface Liste {

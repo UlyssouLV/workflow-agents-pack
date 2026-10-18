@@ -25,7 +25,7 @@ from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
-from wap_runtime.pilote import tourner
+from wap_runtime.pilote import stop_du_pilote, tourner
 from wap_runtime.registry import AGENTS, RegistryErreur, chemin_registry, enregistrer, lire_registry
 from wap_runtime.runner import (
     PORT_RUNNER,
@@ -134,6 +134,17 @@ def creer_app(
     # `repos.toml` et `jobs/` vivent tous deux à la racine de l’instance.
     sessions = Sessions(jobs or registry.parent / "jobs")
     client_runner = ClientRunner(runner or _runner_par_defaut())
+    echecs_pilote: dict[str, bool] = {}
+
+    def _stop(slug: str, detail: dict | None) -> str | None:
+        lie = next((r for r in lire_registry(registry) if r.designe(slug)), None)
+        if lie is None:
+            return None
+        ouverte = sessions.ouverte(lie.slug)
+        derniere = next(iter(sessions.du_repo(lie.slug)), None)
+        return stop_du_pilote(
+            lie, detail, ouverte, derniere, agents, echecs_pilote.get(lie.slug.lower(), False)
+        )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -142,7 +153,9 @@ def creer_app(
         def boucle() -> None:
             while not stop.is_set():
                 try:
-                    tourner(registry, cockpit, sessions, client_runner, agents, client)
+                    tourner(
+                        registry, cockpit, sessions, client_runner, agents, client, echecs_pilote
+                    )
                 except Exception:
                     # Un tour raté ne tue pas la surveillance.
                     pass
@@ -179,6 +192,7 @@ def creer_app(
                 **r,
                 "session": ouvertes.get(r["slug"].lower()),
                 **prefs.get(r["slug"].lower(), {}),
+                "pilote_stop": _stop(r["slug"], r),
             }
             for r in liste["repos"]
         ]
@@ -189,7 +203,12 @@ def creer_app(
         slug = f"{owner}/{name}"
         ouverte = sessions.ouverte(slug)
         detail = lancements(_detail(slug), ouverte, agents)
-        return {**detail, "agents": agents, "session": ouverte and _lien(ouverte)}
+        return {
+            **detail,
+            "agents": agents,
+            "session": ouverte and _lien(ouverte),
+            "pilote_stop": _stop(slug, detail),
+        }
 
     @app.patch("/api/repos/{owner}/{name}")
     def pilote(owner: str, name: str, demande: PreferencePilote, requete: Request) -> dict:
