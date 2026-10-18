@@ -5,6 +5,8 @@ runner (`wap_runtime.terminal`).
 """
 
 import os
+import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
@@ -23,6 +25,7 @@ from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
+from wap_runtime.pilote import tourner
 from wap_runtime.registry import AGENTS, RegistryErreur, chemin_registry, enregistrer, lire_registry
 from wap_runtime.runner import (
     PORT_RUNNER,
@@ -111,6 +114,8 @@ def creer_app(
     env: Mapping[str, str] = os.environ,
     jobs: Path | None = None,
     runner: httpx.Client | None = None,
+    boucle_pilote: bool = False,
+    intervalle_pilote: float = 15,
 ) -> FastAPI:
     """Sans `jeton`, celui de `GH_TOKEN` (lu au démarrage : `env_file` de Compose).
 
@@ -119,6 +124,7 @@ def creer_app(
     `env` : d’où lire les tokens des agents (`secrets.env`, reçu par `env_file`).
     `jobs` : sessions écrites par le runner (défaut : à côté du registry) ; `runner` : son API
     interne (`WAP_RUNNER`).
+    `boucle_pilote` : démarre la surveillance (session libre + `/implement #n`) ; `servir()` l’active.
     """
     jeton = jeton if jeton is not None else os.environ.get("GH_TOKEN") or None
     client = ClientGitHub(jeton, api_github, transport) if jeton else None
@@ -128,7 +134,27 @@ def creer_app(
     # `repos.toml` et `jobs/` vivent tous deux à la racine de l’instance.
     sessions = Sessions(jobs or registry.parent / "jobs")
     client_runner = ClientRunner(runner or _runner_par_defaut())
-    app = FastAPI(title="wap-runtime", version=__version__, docs_url=None, redoc_url=None)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        stop = threading.Event()
+
+        def boucle() -> None:
+            while not stop.is_set():
+                try:
+                    tourner(registry, cockpit, sessions, client_runner, agents, client)
+                except Exception:
+                    # Un tour raté ne tue pas la surveillance.
+                    pass
+                stop.wait(intervalle_pilote)
+
+        if boucle_pilote:
+            fil = threading.Thread(target=boucle, daemon=True)
+            fil.start()
+        yield
+        stop.set()
+
+    app = FastAPI(title="wap-runtime", version=__version__, docs_url=None, redoc_url=None, lifespan=lifespan)
 
     @app.get("/health")
     def health() -> dict:
@@ -328,4 +354,4 @@ def _servir_front(app: FastAPI, front: Path) -> None:
 
 
 def servir(hote: str, port: int) -> None:
-    uvicorn.run(creer_app(), host=hote, port=port, log_level="warning")
+    uvicorn.run(creer_app(boucle_pilote=True), host=hote, port=port, log_level="warning")
