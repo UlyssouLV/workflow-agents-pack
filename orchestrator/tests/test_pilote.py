@@ -8,6 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from faux_github import JETON, FauxGitHub
 from wap_runtime.agents import etat_agents
 from wap_runtime.cockpit import Cockpit
@@ -118,7 +119,7 @@ def monde(registry, github, jobs, runner, env=CONNECTES):
 
 
 def api(registry, github, jobs, runner, env=CONNECTES):
-    return TestClient(
+    return avec_session(
         creer_app(
             registry=registry,
             jeton=JETON,
@@ -126,7 +127,8 @@ def api(registry, github, jobs, runner, env=CONNECTES):
             env=env,
             jobs=jobs,
             runner=runner.client(),
-        )
+        ),
+        registry.parent,
     )
 
 
@@ -367,7 +369,7 @@ def test_l_api_expose_le_stop_apres_echec_de_lancement(registry, github, jobs, r
         intervalle_pilote=0.05,
     )
 
-    with TestClient(app) as client:
+    with avec_session(app, registry.parent) as client:
         limite = time.monotonic() + 2
         while client.get(f"/api/repos/{SLUG}").json()["pilote_stop"] != "echec_lancement":
             if time.monotonic() >= limite:

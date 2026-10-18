@@ -5,14 +5,14 @@ qui recréent les services) : l’API lit donc l’environnement du service.
 """
 
 import pytest
-from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from wap_runtime.server import creer_app
 
 
 def agents(tmp_path, env: dict) -> list[dict]:
     app = creer_app(registry=tmp_path / "repos.toml", jeton="", env=env)
-    return TestClient(app).get("/api/agents").json()["agents"]
+    return avec_session(app, tmp_path).get("/api/agents").json()["agents"]
 
 
 def test_sans_token_les_deux_agents_sont_non_connectes_avec_leur_commande(tmp_path):
@@ -50,6 +50,6 @@ def test_connecte_veut_dire_token_present(tmp_path, env, claude, cursor):
 def test_la_liste_des_repos_porte_aussi_l_etat_des_agents(tmp_path):
     app = creer_app(registry=tmp_path / "repos.toml", jeton="", env={"CURSOR_API_KEY": "key_x"})
 
-    liste = TestClient(app).get("/api/repos").json()
+    liste = avec_session(app, tmp_path).get("/api/repos").json()
 
     assert [(a["id"], a["connecte"]) for a in liste["agents"]] == [("claude", False), ("cursor", True)]

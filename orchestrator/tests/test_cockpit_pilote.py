@@ -2,8 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi.testclient import TestClient
-
+from client_cockpit import avec_session
 from faux_github import JETON, FauxGitHub
 from wap_runtime.registry import ajouter, lire_registry
 from wap_runtime.server import creer_app
@@ -31,7 +30,7 @@ def app(registry, gh=None):
 def test_patch_persiste_pilote_et_agent_sur_le_disque_et_les_lectures(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
-    api = TestClient(app(registry))
+    api = avec_session(app(registry), tmp_path)
 
     reponse = api.patch(
         f"/api/repos/{SLUG}",
@@ -52,13 +51,13 @@ def test_patch_persiste_pilote_et_agent_sur_le_disque_et_les_lectures(tmp_path):
 def test_l_etat_pilote_survit_au_redemarrage_du_service(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
-    TestClient(app(registry)).patch(
+    avec_session(app(registry), tmp_path).patch(
         f"/api/repos/{SLUG}",
         json={"pilote": True, "agent": "cursor"},
         headers={"Origin": COCKPIT},
     )
 
-    relance = TestClient(app(registry))
+    relance = avec_session(app(registry), tmp_path)
 
     assert relance.get(f"/api/repos/{SLUG}").json()["pilote"] is True
     assert relance.get("/api/repos").json()["repos"][0]["agent"] == "cursor"
@@ -67,7 +66,7 @@ def test_l_etat_pilote_survit_au_redemarrage_du_service(tmp_path):
 def test_la_liste_relit_le_toggle_meme_si_le_cache_github_est_chaud(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
-    api = TestClient(app(registry))
+    api = avec_session(app(registry), tmp_path)
     assert api.get("/api/repos").json()["repos"][0]["pilote"] is False
 
     api.patch(
@@ -82,7 +81,7 @@ def test_la_liste_relit_le_toggle_meme_si_le_cache_github_est_chaud(tmp_path):
 def test_patch_lit_et_ecrit_la_preference_modele_sur_le_detail(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
-    api = TestClient(app(registry))
+    api = avec_session(app(registry), tmp_path)
 
     reponse = api.patch(
         f"/api/repos/{SLUG}",
@@ -103,7 +102,7 @@ def test_patch_claude_n_exige_pas_le_modele_et_conserve_la_preference(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
     enregistrer(registry, SLUG, pilote=True, agent="cursor", modele="composer-2")
-    api = TestClient(app(registry))
+    api = avec_session(app(registry), tmp_path)
 
     reponse = api.patch(
         f"/api/repos/{SLUG}",
@@ -120,7 +119,7 @@ def test_patch_claude_n_exige_pas_le_modele_et_conserve_la_preference(tmp_path):
 def test_patch_sans_origine_cockpit_est_refuse(tmp_path):
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG)
-    api = TestClient(app(registry))
+    api = avec_session(app(registry), tmp_path)
 
     reponse = api.patch(f"/api/repos/{SLUG}", json={"pilote": True, "agent": "claude"})
 
