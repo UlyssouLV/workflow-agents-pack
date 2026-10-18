@@ -4,7 +4,7 @@ Runtime self-hosted (monorepo) : pack syncé vers les repos métier ; orchestrat
 
 Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integration-channel.yml` (cycle version et releases `orchestrator-v*` vers cette base, pas `main`). Mis en place **hors semver** (bootstrap), pas une version numérotée.
 
-Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.7.0) restent une affaire de provisionnement.
+Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples restent une affaire de provisionnement quand elles arriveront.
 
 ## Déjà livré
 
@@ -23,11 +23,17 @@ Objectif. Joindre son cockpit depuis Internet de façon sûre : personne n’att
 
 Hors périmètre : instances multiples sur le même serveur ; SaaS multi-tenant ; comptes partagés entre instances.
 
-## Ensuite : 0.7.0 — Instances multiples isolées
+## Ensuite : 0.7.0 — CI
 
-Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
+Objectif. Chaque changement proposé sur l’orchestrateur est vérifié automatiquement (tests, contrôles de qualité) avant d’être accepté : on sait vite si la branche est saine, sans relancer à la main toute la suite.
 
-Hors périmètre : parcours d’enregistrement self-service depuis le web (0.8.0).
+Hors périmètre : publication ou déploiement automatiques (0.7.1).
+
+## Ensuite : 0.7.1 — CD
+
+Objectif. Une version validée se publie et se déploie sans enchaînement manuel : artefacts et mise à disposition suivent la validation CI, sur le modèle du repo ArgOS.
+
+Hors périmètre : parcours d’enregistrement self-service (0.8.0).
 
 ## Ensuite : 0.8.0 — Enregistrement d’orchestrateur par compte GitHub
 

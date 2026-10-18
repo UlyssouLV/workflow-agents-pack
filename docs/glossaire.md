@@ -6,7 +6,11 @@
 
 **Orchestrateur** — le produit développé sur `feat/runtime-orchestrator` : runtime + cockpit.
 
-**Cockpit** — l’interface locale de l’orchestrateur qui montre l’état des repos métier et lance des sessions agents.
+**Cockpit** — l’interface web de l’orchestrateur qui montre l’état des repos métier et lance des sessions agents ; joignable en local, via tunnel SSH, ou (opt-in) derrière l’exposition web.
+
+**Identifiants cockpit** — le login et le mot de passe propres à une instance pour ouvrir le cockpit ; distincts de l’authentification GitHub et des agents (`wap-runtime auth`).
+
+**Exposition web** — mise à disposition du cockpit derrière le reverse proxy Caddy de l’instance (ports 80/443 sur la machine hôte), activable ou désactivable ; sans exposition, l’accès reste local ou par tunnel SSH.
 
 **Machine hôte** — la machine de l’utilisateur (Linux) qui fait tourner le runtime. Pas un VPS imposé.
 
