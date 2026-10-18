@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VueListe } from "../src/VueListe";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
@@ -79,6 +79,81 @@ describe("vue liste", () => {
 
     const [ligne] = await lignes();
     expect(within(ligne).getByText("Pilote")).toBeInTheDocument();
+    expect(within(ligne).queryByText("En pause")).toBeNull();
+  });
+
+  it("affiche le badge En pause quand le pilote est stoppé", async () => {
+    simulerApi({
+      "/api/repos": liste({ repos: [repo({ pilote: true, pilote_stop: "attend" })] }),
+    });
+
+    render(<VueListe />);
+
+    const [ligne] = await lignes();
+    expect(within(ligne).getByText("Pilote")).toBeInTheDocument();
+    expect(within(ligne).getByText("En pause")).toBeInTheDocument();
+  });
+
+  describe("notifications pilote", () => {
+    function simulerNotifications(permission: NotificationPermission = "default") {
+      const recues: { titre: string; corps?: string }[] = [];
+      const requestPermission = vi.fn(async () => {
+        Faux.permission = "granted";
+        return "granted" as NotificationPermission;
+      });
+      class Faux {
+        static permission = permission;
+        static requestPermission = requestPermission;
+        constructor(titre: string, options?: NotificationOptions) {
+          recues.push({ titre, corps: options?.body });
+        }
+      }
+      vi.stubGlobal("Notification", Faux);
+      return { recues, requestPermission };
+    }
+
+    it("demande la permission et notifie chaque stop", async () => {
+      const { recues, requestPermission } = simulerNotifications();
+      simulerApi({
+        "/api/repos": liste({
+          repos: [
+            repo({ slug: "o/a", pilote: true, pilote_stop: "attend" }),
+            repo({ slug: "o/b", pilote: true, pilote_stop: "echec_lancement" }),
+            repo({ slug: "o/c", pilote: true, pilote_stop: null }),
+          ],
+        }),
+      });
+
+      render(<VueListe />);
+      await lignes();
+
+      expect(requestPermission).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(recues).toEqual([
+          { titre: "Pilote : o/a", corps: "Réponse attendue" },
+          { titre: "Pilote : o/b", corps: "Échec de lancement" },
+        ]);
+      });
+    });
+
+    it("ne renvoie pas la même notification au rafraîchissement", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const { recues } = simulerNotifications("granted");
+      simulerApi({
+        "/api/repos": liste({ repos: [repo({ pilote: true, pilote_stop: "humain_requis" })] }),
+      });
+
+      render(<VueListe />);
+      await waitFor(() => {
+        expect(recues).toEqual([
+          { titre: "Pilote : o/r", corps: "Intervention humaine requise" },
+        ]);
+      });
+
+      await act(() => vi.advanceTimersByTimeAsync(RAFRAICHISSEMENT_MS));
+
+      expect(recues).toHaveLength(1);
+    });
   });
 
   it("affiche le nom d’affichage du registry à la place du slug", async () => {
@@ -198,17 +273,21 @@ describe("vue liste", () => {
 
   it("se relit toutes les 60 s", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    let appel = 0;
+    const etat = { nouveau: false };
     const fetch = simulerApi({
       "/api/repos": () =>
-        ++appel === 1 ? liste() : liste({ repos: [repo({ slug: "o/nouveau" })] }),
+        liste({ repos: [repo({ slug: etat.nouveau ? "o/nouveau" : "o/r" })] }),
     });
     render(<VueListe />);
     await lignes();
+    const avant = fetch.mock.calls.filter(([chemin]) => chemin === "/api/repos").length;
 
+    etat.nouveau = true;
     await act(() => vi.advanceTimersByTimeAsync(RAFRAICHISSEMENT_MS));
 
-    expect(fetch.mock.calls.filter(([chemin]) => chemin === "/api/repos")).toHaveLength(2);
+    expect(fetch.mock.calls.filter(([chemin]) => chemin === "/api/repos").length).toBeGreaterThan(
+      avant,
+    );
     expect(await screen.findByRole("link", { name: "o/nouveau" })).toBeInTheDocument();
   });
 

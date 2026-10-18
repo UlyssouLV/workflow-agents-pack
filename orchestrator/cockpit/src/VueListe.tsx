@@ -1,5 +1,6 @@
 import type { Liste, Repo } from "./api";
 import {
+  BadgePause,
   BadgePilote,
   BadgeSession,
   BandeauAuth,
@@ -72,6 +73,12 @@ function Ligne({ repo }: { repo: Repo }) {
           <>
             {" "}
             <BadgePilote />
+            {repo.pilote_stop && (
+              <>
+                {" "}
+                <BadgePause />
+              </>
+            )}
           </>
         )}
         {repo.session && (

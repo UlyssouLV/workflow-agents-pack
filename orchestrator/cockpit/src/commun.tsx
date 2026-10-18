@@ -1,6 +1,18 @@
-import { useEffect } from "react";
-import type { ActiviteSession, Agent, Auth, Etape, EtatSession, LienSession, Repo, Session, SessionsDuRepo } from "./api";
+import { useEffect, useRef, useState } from "react";
+import type {
+  ActiviteSession,
+  Agent,
+  Auth,
+  Etape,
+  EtatSession,
+  LienSession,
+  Liste,
+  Repo,
+  Session,
+  SessionsDuRepo,
+} from "./api";
 import { ID_SESSION } from "./api";
+import { demanderPermissionNotifications, notifierStops } from "./notifications";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 const TITRE_ONGLET = "Cockpit wap-runtime";
@@ -14,10 +26,22 @@ const MESSAGES_AUTH: Partial<Record<Auth["etat"], string>> = {
 /** En-tête du cockpit : liste des repos, page Sessions, compteur de réponses attendues. */
 export function Entete() {
   const { donnees } = useRafraichi<SessionsDuRepo>("/api/sessions", RAFRAICHISSEMENT_SESSION_MS);
+  const liste = useRafraichi<Liste>("/api/repos");
   const n = (donnees?.sessions ?? []).filter((s) => s.etat === "ouverte" && s.activite === "attend").length;
+  const [permission, setPermission] = useState<NotificationPermission | null>(
+    typeof Notification === "undefined" ? null : Notification.permission,
+  );
+  const vus = useRef(new Map<string, string>());
   useEffect(() => {
     document.title = n > 0 ? `(${n}) ${TITRE_ONGLET}` : TITRE_ONGLET;
   }, [n]);
+  useEffect(() => {
+    void demanderPermissionNotifications().then((p) => p && setPermission(p));
+  }, []);
+  useEffect(() => {
+    if (permission !== "granted" || !liste.donnees) return;
+    notifierStops(liste.donnees.repos, vus.current);
+  }, [permission, liste.donnees]);
   return (
     <header>
       <nav>
@@ -73,6 +97,10 @@ export function BadgeHumain() {
 
 export function BadgePilote() {
   return <span className="badge pilote">Pilote</span>;
+}
+
+export function BadgePause() {
+  return <span className="badge pause">En pause</span>;
 }
 
 export function LibelleEtape({ etape }: { etape: Etape | null }) {
