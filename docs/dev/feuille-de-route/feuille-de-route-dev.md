@@ -40,6 +40,12 @@ Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : h
 
 Hors périmètre : nouvelles fonctionnalités métier ; redesign de la doc ou du README.
 
+## Ensuite : 0.9.0 — Main d’aiguillage et feuilles de route multi-branches
+
+Objectif. Ce dépôt a plusieurs chantiers (pack, orchestrateur, …) mais une seule branche porte aujourd’hui la feuille de route : on obtient une feuille de route par branche, lisible depuis le dépôt. La branche pack quitte le nom `main` pour un nom dédié au pack ; une nouvelle `main` par défaut devient la porte d’entrée du repo (README global d’explication des branches et du produit). Corrige [#81](https://github.com/UlyssouLV/workflow-agents-pack/issues/81).
+
+Hors périmètre : nouvelles capacités du cockpit ou du runtime ; chantier labels d’état du pack (#24) ; correctif du skill `/afr` (#80).
+
 ## Plus tard (pas encore numéroté)
 
 ### Labels déclencheurs configurables
