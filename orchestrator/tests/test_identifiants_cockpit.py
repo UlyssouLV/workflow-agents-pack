@@ -12,9 +12,9 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 from wap_runtime.identifiants_cockpit import (
-    creer_session,
+    creer_session_serveur,
     est_configure,
-    session_valide,
+    session_serveur_valide,
     verifier,
 )
 
@@ -75,8 +75,8 @@ def test_cli_change_le_mot_de_passe_et_invalide_les_sessions(
         )
         == 0
     )
-    id_session = creer_session(instance)
-    assert session_valide(instance, id_session) is True
+    id_session = creer_session_serveur(instance)
+    assert session_serveur_valide(instance, id_session) is True
     capsys.readouterr()
 
     assert (
@@ -88,19 +88,19 @@ def test_cli_change_le_mot_de_passe_et_invalide_les_sessions(
 
     sortie = capsys.readouterr().out
     assert "mot de passe cockpit changé" in sortie
-    assert "sessions invalidées" in sortie
+    assert "sessions serveur invalidées" in sortie
     assert verifier(instance, "ops", "nouveau") is True
     assert verifier(instance, "ops", "ancien") is False
-    assert session_valide(instance, id_session) is False
+    assert session_serveur_valide(instance, id_session) is False
     assert "nouveau" not in (instance / "cockpit-credentials.toml").read_text()
     assert (instance / "cockpit-sessions.sqlite").is_file()
 
 
-def test_sessions_vivent_dans_sqlite_sous_l_instance(instance):
-    id_a = creer_session(instance)
-    id_b = creer_session(instance)
+def test_sessions_serveur_vivent_dans_sqlite_sous_l_instance(instance):
+    id_a = creer_session_serveur(instance)
+    id_b = creer_session_serveur(instance)
     assert id_a != id_b
-    assert session_valide(instance, id_a) is True
-    assert session_valide(instance, id_b) is True
-    assert session_valide(instance, "inconnu") is False
+    assert session_serveur_valide(instance, id_a) is True
+    assert session_serveur_valide(instance, id_b) is True
+    assert session_serveur_valide(instance, "inconnu") is False
     assert mode(instance / "cockpit-sessions.sqlite") == 0o600

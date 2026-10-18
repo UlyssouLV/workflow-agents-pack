@@ -97,6 +97,12 @@ def test_avec_domaine_caddy_prend_le_chemin_https_lets_encrypt(home, depot_pack)
     assert not re.search(r"^:80\b", caddyfile, re.MULTILINE)
     compose = (instance / "compose.yaml").read_text()
     assert "./caddy-data:/data" in compose
+    caddy = re.search(r"caddy:.*?(?=\n  \S|\Z)", compose, re.S)
+    assert caddy is not None
+    ports = caddy.group(0)
+    assert '"80:80"' in ports
+    assert '"443:443"' in ports
+    assert "127.0.0.1" not in ports.split("ports:", 1)[1].split("volumes:", 1)[0]
 
 
 def test_cli_domaine_regenerer_caddyfile_https(home, depot_pack, faux_docker, capsys):

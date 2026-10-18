@@ -1,8 +1,8 @@
-"""Garde HTTP du cockpit : session cookie, login / logout, rate-limit (ADR 0010)."""
+"""Garde HTTP du cockpit : session serveur, login / logout, rate-limit (ADR 0010)."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import HTTPException, Request, Response
@@ -13,9 +13,10 @@ from starlette.types import ASGIApp
 
 from wap_runtime.identifiants_cockpit import (
     DUREE_SESSION,
-    creer_session,
-    session_valide,
-    supprimer_session,
+    creer_session_serveur,
+    instant_utc,
+    session_serveur_valide,
+    supprimer_session_serveur,
     verifier,
 )
 
@@ -37,7 +38,7 @@ class LimiteurLogin:
         self._verrou_jusqu_a: dict[str, datetime] = {}
 
     def est_verrouille(self, cle: str, *, maintenant: datetime | None = None) -> bool:
-        maintenant = _utc(maintenant)
+        maintenant = instant_utc(maintenant)
         jusqu_a = self._verrou_jusqu_a.get(cle)
         if jusqu_a is None:
             return False
@@ -48,7 +49,7 @@ class LimiteurLogin:
         return False
 
     def noter_echec(self, cle: str, *, maintenant: datetime | None = None) -> None:
-        maintenant = _utc(maintenant)
+        maintenant = instant_utc(maintenant)
         n = self._echecs.get(cle, 0) + 1
         self._echecs[cle] = n
         if n >= MAX_ECHEC:
@@ -60,7 +61,7 @@ class LimiteurLogin:
 
 
 def est_public(chemin: str, methode: str) -> bool:
-    """Routes sans session : health, surface login + assets, login / logout API."""
+    """Routes sans session serveur : health, surface login + assets, login API."""
     if chemin == "/health" and methode == "GET":
         return True
     if chemin == "/login" and methode == "GET":
@@ -68,8 +69,6 @@ def est_public(chemin: str, methode: str) -> bool:
     if chemin.startswith("/assets/"):
         return True
     if chemin == "/api/cockpit/login" and methode == "POST":
-        return True
-    if chemin == "/api/cockpit/logout" and methode == "POST":
         return True
     return False
 
@@ -82,6 +81,14 @@ def cle_client(requete: Request) -> str:
 
 def session_du_cookie(requete: Request) -> str:
     return requete.cookies.get(NOM_COOKIE) or ""
+
+
+def requete_https(requete: Request) -> bool:
+    """HTTPS direct ou derrière reverse proxy (`X-Forwarded-Proto`)."""
+    if requete.url.scheme == "https":
+        return True
+    forwarded = requete.headers.get("x-forwarded-proto", "")
+    return forwarded.split(",")[0].strip().lower() == "https"
 
 
 def poser_cookie_session(reponse: Response, id_session: str, *, secure: bool) -> None:
@@ -114,18 +121,18 @@ def connecter(
         limiteur.noter_echec(cle)
         raise HTTPException(401, "identifiants invalides")
     limiteur.reussite(cle)
-    id_ = creer_session(instance)
-    poser_cookie_session(reponse, id_, secure=requete.url.scheme == "https")
+    id_ = creer_session_serveur(instance)
+    poser_cookie_session(reponse, id_, secure=requete_https(requete))
 
 
 def deconnecter(instance: Path, requete: Request, reponse: Response) -> None:
     id_ = session_du_cookie(requete)
     if id_:
-        supprimer_session(instance, id_)
+        supprimer_session_serveur(instance, id_)
     effacer_cookie_session(reponse)
 
 
-class GardeSession(BaseHTTPMiddleware):
+class GardeSessionServeur(BaseHTTPMiddleware):
     """Refuse toute requête non publique sans session serveur valide."""
 
     def __init__(self, app: ASGIApp, instance: Path) -> None:
@@ -136,17 +143,9 @@ class GardeSession(BaseHTTPMiddleware):
         if est_public(request.url.path, request.method):
             return await call_next(request)
         id_ = session_du_cookie(request)
-        if not session_valide(self._instance, id_):
+        if not session_serveur_valide(self._instance, id_):
             # API : 401 JSON ; pages HTML du cockpit : redirection vers la surface de login.
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "authentification requise"}, status_code=401)
             return RedirectResponse(url="/login", status_code=302)
         return await call_next(request)
-
-
-def _utc(quand: datetime | None) -> datetime:
-    if quand is None:
-        return datetime.now(timezone.utc)
-    if quand.tzinfo is None:
-        return quand.replace(tzinfo=timezone.utc)
-    return quand.astimezone(timezone.utc)

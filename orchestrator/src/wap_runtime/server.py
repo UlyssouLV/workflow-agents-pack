@@ -26,14 +26,14 @@ from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
 from wap_runtime.garde_http import (
     NOM_COOKIE,
-    GardeSession,
+    GardeSessionServeur,
     IdentifiantsLogin,
     LimiteurLogin,
     connecter,
     deconnecter,
 )
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
-from wap_runtime.identifiants_cockpit import session_valide
+from wap_runtime.identifiants_cockpit import session_serveur_valide
 from wap_runtime.instance import chemin_instance
 from wap_runtime.pilote import stop_du_pilote, tourner
 from wap_runtime.registry import AGENTS, RegistryErreur, chemin_registry, enregistrer, lire_registry
@@ -214,7 +214,7 @@ def creer_app(
         stop.set()
 
     app = FastAPI(title="wap-runtime", version=__version__, docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.add_middleware(GardeSession, instance=instance)
+    app.add_middleware(GardeSessionServeur, instance=instance)
 
     @app.get("/health")
     def health() -> dict:
@@ -399,7 +399,7 @@ def creer_app(
         cookie = websocket.cookies.get(NOM_COOKIE) or ""
         if (
             not _du_cockpit(websocket.headers, websocket.url.scheme)
-            or not session_valide(instance, cookie)
+            or not session_serveur_valide(instance, cookie)
             or lue is None
             or lue["etat"] != OUVERTE
         ):

@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from wap_runtime.identifiants_cockpit import definir, creer_session, session_valide
+from wap_runtime.identifiants_cockpit import (
+    creer_session_serveur,
+    definir,
+    session_serveur_valide,
+)
 from wap_runtime.server import creer_app
 
 LOGIN = "ops"
@@ -59,7 +63,7 @@ def test_login_etablit_une_session_httponly_puis_autorise_l_api(app, instance):
     assert reponse.status_code == 204
     morsure = reponse.cookies.get(COOKIE)
     assert morsure
-    assert session_valide(instance, morsure) is True
+    assert session_serveur_valide(instance, morsure) is True
     # httpOnly : le Set-Cookie le déclare (TestClient expose le cookie, pas le flag JS).
     set_cookie = reponse.headers.get("set-cookie", "")
     assert "HttpOnly" in set_cookie or "httponly" in set_cookie.lower()
@@ -67,16 +71,34 @@ def test_login_etablit_une_session_httponly_puis_autorise_l_api(app, instance):
     assert c.get("/api/repos").status_code == 200
 
 
-def test_logout_invalide_la_session_et_refuse_ensuite(app, instance):
+def test_login_derriere_proxy_pose_cookie_secure(app, instance):
+    """Caddy termine le TLS : `X-Forwarded-Proto: https` → cookie Secure."""
     preparer(instance)
     c = client(app)
+
+    reponse = c.post(
+        "/api/cockpit/login",
+        json={"login": LOGIN, "password": MOT_DE_PASSE},
+        headers={"X-Forwarded-Proto": "https"},
+    )
+
+    assert reponse.status_code == 204
+    set_cookie = reponse.headers.get("set-cookie", "")
+    assert "Secure" in set_cookie or "secure" in set_cookie.lower()
+
+
+def test_logout_exige_une_session_et_l_invalide(app, instance):
+    preparer(instance)
+    c = client(app)
+    assert c.post("/api/cockpit/logout").status_code == 401
+
     c.post("/api/cockpit/login", json={"login": LOGIN, "password": MOT_DE_PASSE})
     id_session = c.cookies.get(COOKIE)
 
     reponse = c.post("/api/cockpit/logout")
 
     assert reponse.status_code == 204
-    assert session_valide(instance, id_session) is False
+    assert session_serveur_valide(instance, id_session) is False
     assert c.get("/api/repos").status_code == 401
 
 
@@ -125,7 +147,7 @@ def test_surface_login_et_assets_restent_publics(app, instance, tmp_path):
 def test_session_injectee_autorise_sur_loopback(app, instance):
     """Auth aussi sur 127.0.0.1 : pas d’exception localhost."""
     preparer(instance)
-    id_ = creer_session(instance)
+    id_ = creer_session_serveur(instance)
     c = client(app)
     c.cookies.set(COOKIE, id_)
 

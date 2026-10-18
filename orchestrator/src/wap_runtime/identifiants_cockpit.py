@@ -1,7 +1,7 @@
 """Identifiants cockpit et sessions serveur de l’instance (ADR 0010).
 
 Distinct de `wap-runtime auth` (GitHub / agents) : un seul login + hash par instance,
-sessions dans SQLite sous `~/.wap-runtime/`.
+sessions serveur dans SQLite sous `~/.wap-runtime/`.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def definir(instance: Path, login: str, mot_de_passe: str) -> str:
     )
     remplacer(chemin_identifiants(instance), contenu, _MODE_SECRETS)
     if deja:
-        invalider_toutes_les_sessions(instance)
+        invalider_toutes_les_sessions_serveur(instance)
         return "change"
     return "cree"
 
@@ -97,34 +97,34 @@ def verifier(instance: Path, login: str, mot_de_passe: str) -> bool:
     return _verifier_hash(mot_de_passe, stocke)
 
 
-def creer_session(
+def creer_session_serveur(
     instance: Path, *, maintenant: datetime | None = None
 ) -> str:
     """Enregistre une session serveur (~7 jours) ; rend son identifiant opaque."""
-    maintenant = _utc(maintenant)
+    maintenant = instant_utc(maintenant)
     id_ = secrets.token_urlsafe(32)
     expire = maintenant + DUREE_SESSION
     with _connexion(instance) as db:
         _schema(db)
         db.execute(
-            "INSERT INTO sessions (id, created_at, expires_at) VALUES (?, ?, ?)",
+            "INSERT INTO sessions_serveur (id, created_at, expires_at) VALUES (?, ?, ?)",
             (id_, maintenant.isoformat(), expire.isoformat()),
         )
         db.commit()
     return id_
 
 
-def session_valide(
+def session_serveur_valide(
     instance: Path, id_session: str, *, maintenant: datetime | None = None
 ) -> bool:
-    """Vrai si la session existe et n’a pas expiré."""
+    """Vrai si la session serveur existe et n’a pas expiré."""
     if not id_session:
         return False
-    maintenant = _utc(maintenant)
+    maintenant = instant_utc(maintenant)
     with _connexion(instance) as db:
         _schema(db)
         ligne = db.execute(
-            "SELECT expires_at FROM sessions WHERE id = ?", (id_session,)
+            "SELECT expires_at FROM sessions_serveur WHERE id = ?", (id_session,)
         ).fetchone()
     if ligne is None:
         return False
@@ -137,18 +137,27 @@ def session_valide(
     return maintenant < expire
 
 
-def supprimer_session(instance: Path, id_session: str) -> None:
+def supprimer_session_serveur(instance: Path, id_session: str) -> None:
     with _connexion(instance) as db:
         _schema(db)
-        db.execute("DELETE FROM sessions WHERE id = ?", (id_session,))
+        db.execute("DELETE FROM sessions_serveur WHERE id = ?", (id_session,))
         db.commit()
 
 
-def invalider_toutes_les_sessions(instance: Path) -> None:
+def invalider_toutes_les_sessions_serveur(instance: Path) -> None:
     with _connexion(instance) as db:
         _schema(db)
-        db.execute("DELETE FROM sessions")
+        db.execute("DELETE FROM sessions_serveur")
         db.commit()
+
+
+def instant_utc(quand: datetime | None = None) -> datetime:
+    """Instant conscient du fuseau UTC (maintenant si `quand` est omis)."""
+    if quand is None:
+        return datetime.now(timezone.utc)
+    if quand.tzinfo is None:
+        return quand.replace(tzinfo=timezone.utc)
+    return quand.astimezone(timezone.utc)
 
 
 def _hasher(mot_de_passe: str) -> str:
@@ -205,18 +214,10 @@ def _connexion(instance: Path) -> sqlite3.Connection:
 def _schema(db: sqlite3.Connection) -> None:
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS sessions (
+        CREATE TABLE IF NOT EXISTS sessions_serveur (
             id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )
         """
     )
-
-
-def _utc(quand: datetime | None) -> datetime:
-    if quand is None:
-        return datetime.now(timezone.utc)
-    if quand.tzinfo is None:
-        return quand.replace(tzinfo=timezone.utc)
-    return quand.astimezone(timezone.utc)

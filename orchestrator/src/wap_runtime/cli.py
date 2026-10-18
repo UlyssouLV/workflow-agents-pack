@@ -108,7 +108,17 @@ def _exposition(action: str) -> int:
     echec = _appliquer_compose(instance)
     if echec is not None:
         return echec
-    print(f"OK — exposition web {'activée' if actif else 'désactivée'}")
+    if actif:
+        domaine = str(lire_config(instance).get("domaine") or "").strip()
+        if domaine:
+            print(f"OK — exposition web activée (HTTPS via « {domaine} » dès que DNS/NAT le permettent)")
+        else:
+            print(
+                "OK — exposition web activée (ports Caddy sur 127.0.0.1 seulement ; "
+                "pas de HTTP public — `wap-runtime domaine <hote>` pour HTTPS)"
+            )
+    else:
+        print("OK — exposition web désactivée")
     return 0
 
 
@@ -361,7 +371,7 @@ def _cockpit_auth(login: str, avec_password: bool) -> int:
     else:
         print(
             f"OK — mot de passe cockpit changé (login « {login} ») ; "
-            "sessions invalidées"
+            "sessions serveur invalidées"
         )
     return 0
 

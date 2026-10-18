@@ -108,7 +108,7 @@ sudo wap-runtime exposition off    # revient à l’écoute 127.0.0.1:<port>
 sudo wap-runtime domaine cockpit.exemple.test   # HTTPS Let’s Encrypt dès que DNS/NAT le permettent
 ```
 
-Il n’y a **pas** de mode officiel « HTTP public » : sans domaine configuré, ne comptez pas sur une entrée Internet en clair ; gardez local / SSH, ou configurez un domaine avant d’ouvrir la box.
+Il n’y a **pas** de mode officiel « HTTP public » : sans domaine, Caddy n’ouvre pas 80/443 sur Internet (loopback seulement) ; gardez local / SSH, ou configurez un domaine puis rouvrez l’exposition / la box.
 
 ## Accéder au cockpit
 
@@ -139,7 +139,7 @@ Adaptez le port à celui de `config.toml`. Ce chemin reste le moyen recommandé 
 
 ### Exposition on, sans domaine
 
-`sudo wap-runtime exposition on` sans `domaine` : Caddy est démarré et publie 80/443, mais **HTTPS Let’s Encrypt n’est pas disponible** et le HTTP public n’est pas un mode supporté. Usage prévu : lab / diagnostic sur la machine ; pour un accès distant sûr sans domaine, gardez l’exposition **off** et le tunnel SSH.
+`sudo wap-runtime exposition on` sans `domaine` : Caddy est démarré, mais les ports **80/443 restent sur `127.0.0.1`** (pas de HTTP public). HTTPS Let’s Encrypt n’est pas disponible tant qu’un domaine n’est pas configuré. Usage prévu : lab local ; pour un accès distant sûr sans domaine, gardez l’exposition **off** et le tunnel SSH.
 
 ### Exposition on, avec domaine + DNS + NAT
 

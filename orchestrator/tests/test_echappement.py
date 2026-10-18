@@ -119,7 +119,7 @@ def test_caddy_ne_permet_pas_d_echapper_vers_hors_cockpit(home, depot_pack):
 
 
 def test_compose_expo_ne_publie_pas_de_chemin_vers_runner_ou_lan(home, depot_pack):
-    """Seuls 80/443 du proxy sont sur l’hôte ; runner/runtime hors Internet."""
+    """Sans domaine : 80/443 sur loopback seulement ; runner/runtime hors Internet."""
     instance = passe(home, depot_pack)
     activer_exposition(instance)
     passe(home, depot_pack)
@@ -129,7 +129,7 @@ def test_compose_expo_ne_publie_pas_de_chemin_vers_runner_ou_lan(home, depot_pac
     runtime = service(compose, "runtime")
     runner = service(compose, "runner")
 
-    assert '"80:80"' in caddy and '"443:443"' in caddy
+    assert '"127.0.0.1:80:80"' in caddy and '"127.0.0.1:443:443"' in caddy
     assert "ports:" not in runtime
     assert "ports:" not in runner
     assert "network_mode: host" not in caddy

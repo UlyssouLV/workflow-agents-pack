@@ -72,7 +72,14 @@ def regenerer_compose(
     domaine = str(config.get("domaine") or "").strip()
     contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
     (instance / "compose.yaml").write_text(
-        _compose(contexte, config["port"], os.getuid(), os.getgid(), exposition)
+        _compose(
+            contexte,
+            config["port"],
+            os.getuid(),
+            os.getgid(),
+            exposition,
+            domaine=domaine,
+        )
     )
     _ecrire_caddyfile(instance, exposition, domaine)
 
@@ -185,7 +192,7 @@ def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> No
         return
     # Relais borné au cockpit de cette instance (`runtime`) — ADR 0011.
     # Avec domaine : site nommé → HTTPS automatique Let’s Encrypt (pas de HTTP public).
-    # Sans domaine : écoute :80 locale / lab seulement (mode prod public non supporté).
+    # Sans domaine : écoute :80 en lab local seulement (ports Compose bornés à 127.0.0.1).
     site = domaine if domaine else ":80"
     chemin.write_text(
         f"""{site} {{
@@ -195,8 +202,17 @@ def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> No
     )
 
 
-def _compose(contexte: str, port: int, uid: int, gid: int, exposition: bool = False) -> str:
-    # Expo on : seuls 80/443 du proxy sont publiés ; runtime reste sur le réseau Compose.
+def _compose(
+    contexte: str,
+    port: int,
+    uid: int,
+    gid: int,
+    exposition: bool = False,
+    *,
+    domaine: str = "",
+) -> str:
+    # Expo on : seuls 80/443 du proxy ; runtime reste sur le réseau Compose.
+    # Sans domaine : bind loopback seulement — pas de HTTP public (ADR 0011).
     ports_runtime = (
         ""
         if exposition
@@ -207,13 +223,24 @@ def _compose(contexte: str, port: int, uid: int, gid: int, exposition: bool = Fa
     )
     caddy = ""
     if exposition:
-        caddy = """
-  # Entrée publique opt-in : seuls 80/443 ; relaie uniquement vers `runtime` (cockpit).
+        if domaine.strip():
+            ports_caddy = '      - "80:80"\n      - "443:443"'
+            commentaire = (
+                "  # Entrée publique opt-in (domaine) : seuls 80/443 ; "
+                "relaie uniquement vers `runtime` (cockpit)."
+            )
+        else:
+            ports_caddy = '      - "127.0.0.1:80:80"\n      - "127.0.0.1:443:443"'
+            commentaire = (
+                "  # Expo sans domaine : Caddy sur loopback seulement "
+                "(pas de HTTP public) ; `wap-runtime domaine` pour HTTPS."
+            )
+        caddy = f"""
+{commentaire}
   caddy:
     image: caddy:2-alpine
     ports:
-      - "80:80"
-      - "443:443"
+{ports_caddy}
     volumes:
       - "./Caddyfile:/etc/caddy/Caddyfile:ro"
       - "./caddy-data:/data"

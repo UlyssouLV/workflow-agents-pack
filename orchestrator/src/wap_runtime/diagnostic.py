@@ -70,7 +70,12 @@ def formater(etat: EtatDiagnostic) -> tuple[list[str], int]:
     lignes.append("OK — exposition web activée")
 
     if etat.ports_ok:
-        lignes.append("OK — ports 80/443 publiés comme attendu")
+        if etat.domaine:
+            lignes.append("OK — ports 80/443 publiés comme attendu")
+        else:
+            lignes.append(
+                "OK — ports 80/443 sur 127.0.0.1 (pas de HTTP public sans domaine)"
+            )
     else:
         ko = True
         lignes.append("KO — ports 80/443 absents ou incomplets dans Compose")
@@ -124,7 +129,12 @@ def _bloc_operateur(etat: EtatDiagnostic, *, expo_off: bool) -> list[str]:
 
 
 def _ports_proxy_publies(compose: str) -> bool:
-    return '"80:80"' in compose and '"443:443"' in compose and "caddy:" in compose
+    """Vrai si Caddy publie 80/443 (public ou loopback lab sans domaine)."""
+    if "caddy:" not in compose:
+        return False
+    a80 = '"80:80"' in compose or '"127.0.0.1:80:80"' in compose
+    a443 = '"443:443"' in compose or '"127.0.0.1:443:443"' in compose
+    return a80 and a443
 
 
 def _caddy_tourne(instance: Path) -> bool | None:
