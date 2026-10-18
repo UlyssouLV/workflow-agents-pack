@@ -14,8 +14,10 @@ Cette branche développe l’**orchestrateur** self-hosted : un runtime install�
 | 0.4.2 | Session libre et réponse attendue |
 | 0.5.0 | Pilote : démarrer et surveiller la chaîne Implement (stops + notifs), sans remplacer l’enchaînement du pack |
 | 0.5.1 | Modèle Cursor par session : choix au lancement, visible dans le cockpit, repris sur la chaîne |
-| 0.6.0 | Instances multiples isolées sur un même serveur |
-| 0.7.0 | Accès web authentifié |
+| 0.6.0 | Accès web authentifié |
+| 0.7.0 | Instances multiples isolées sur un même serveur |
+| 0.8.0 | Enregistrement d’orchestrateur par compte GitHub |
+| 0.8.1 | Refonte graphique du cockpit |
 
 Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-route/feuille-de-route-dev.md).
 

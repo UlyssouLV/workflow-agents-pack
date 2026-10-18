@@ -21,4 +21,4 @@ La 0.4.0 lance depuis le cockpit `/implement #n` avec Claude Code ou Cursor, sur
 - Un repo métier qui exige d’autres outils que Python ou Node échoue dans le runner ; il faut enrichir l’image.
 - Mettre à jour Cursor = relancer `setup` (reconstruction de l’image) ; sa version n’est pas reproductible d’un build à l’autre.
 - L’orchestrateur ne lit pas la conversation de façon structurée : l’enregistrement est le flux du terminal (`.cast`) plus la transcription native de l’agent. Les états « en train de travailler » / « réponse attendue » viennent des hooks des agents (ADR 0007).
-- Avec plusieurs instances (0.6.0), chacune aura son `runner`, ses clones et son `HOME`.
+- Avec plusieurs instances (0.7.0), chacune aura son `runner`, ses clones et son `HOME`.
