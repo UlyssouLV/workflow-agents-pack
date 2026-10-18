@@ -39,3 +39,5 @@
 **Main** — le droit de taper dans le terminal d’une session ouverte : un seul onglet du cockpit l’a à la fois ; les autres sont en lecture seule et peuvent la **prendre**. Quitter la page de session la libère.
 
 **Session enchaînée** — une session qui a demandé au runner d’ouvrir la suivante (`/implement #m` sur un enfant éligible du même repo, même agent, contexte vierge) et s’est fermée ; ses liens `precedente` / `suivante` forment la chaîne (ADR 0006).
+
+**Pilote** — mode opt-in par repo lié : une boucle dans le service `runtime` démarre le premier enfant Implement éligible, surveille la chaîne (activité, intervention humaine, erreur) et notifie l’humain aux stops, puis reprend tant que le mode reste activé (ADR 0008). L’enchaînement ticket à ticket reste le pack (`encadrer-implement`), pas le runtime.

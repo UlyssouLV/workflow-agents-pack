@@ -21,6 +21,8 @@ NOM_REGISTRY = "repos.toml"
 _OWNER = r"(?=[A-Za-z0-9-]{1,39}/)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"
 _NAME = r"(?!\.\.?$)[A-Za-z0-9._-]{1,100}"
 _SLUG = re.compile(rf"{_OWNER}/{_NAME}")
+# Identifiants cockpit (`Agent.id`) : Claude Code ou Cursor. Absents du fichier → opt-out.
+AGENTS = ("claude", "cursor")
 
 
 class RegistryErreur(Exception):
@@ -31,6 +33,8 @@ class RegistryErreur(Exception):
 class RepoLie:
     slug: str
     nom: str | None = None
+    pilote: bool = False
+    agent: str = "claude"
 
     def designe(self, slug: str) -> bool:
         """GitHub ignore la casse d’`owner/name`."""
@@ -54,7 +58,21 @@ def lire_registry(chemin: Path) -> list[RepoLie]:
         isinstance(e, dict) and isinstance(e.get("slug"), str) for e in entrees
     ):
         raise RegistryErreur(f"{chemin} : chaque [[repos]] doit avoir un `slug`")
-    return [RepoLie(e["slug"], e.get("nom")) for e in entrees]
+    return [_repo(e) for e in entrees]
+
+
+def enregistrer(chemin: Path, slug: str, pilote: bool, agent: str) -> RepoLie:
+    """Persiste le toggle Pilote et l’agent préféré du repo lié `slug`."""
+    if agent not in AGENTS:
+        raise RegistryErreur(f"agent inconnu : {agent!r} (attendu {' ou '.join(AGENTS)})")
+    repos = lire_registry(chemin)
+    if not any(r.designe(slug) for r in repos):
+        raise RegistryErreur(f"{slug} absent du registry")
+    maj = [
+        RepoLie(r.slug, r.nom, pilote, agent) if r.designe(slug) else r for r in repos
+    ]
+    _ecrire(chemin, maj)
+    return next(r for r in maj if r.designe(slug))
 
 
 def ajouter(chemin: Path, slug: str, nom: str | None = None) -> RepoLie:
@@ -89,6 +107,21 @@ def _ecrire(chemin: Path, repos: list[RepoLie]) -> None:
         bloc = f"\n[[repos]]\nslug = {json.dumps(repo.slug)}\n"
         if repo.nom is not None:
             bloc += f"nom = {_chaine_toml(repo.nom)}\n"
+        bloc += f"pilote = {'true' if repo.pilote else 'false'}\n"
+        bloc += f"agent = {_chaine_toml(repo.agent)}\n"
         blocs.append(bloc)
     # Lisible par l’utilisateur du conteneur.
     remplacer(chemin, "".join(blocs), 0o644)
+
+
+def _repo(entree: dict) -> RepoLie:
+    pilote = entree.get("pilote", False)
+    agent = entree.get("agent", "claude")
+    if not isinstance(pilote, bool):
+        raise RegistryErreur("chaque [[repos]] : `pilote` doit être un booléen")
+    if agent not in AGENTS:
+        raise RegistryErreur(f"chaque [[repos]] : `agent` attendu {' ou '.join(AGENTS)}")
+    nom = entree.get("nom")
+    if nom is not None and not isinstance(nom, str):
+        raise RegistryErreur("chaque [[repos]] : `nom` doit être une chaîne")
+    return RepoLie(entree["slug"], nom, pilote, agent)

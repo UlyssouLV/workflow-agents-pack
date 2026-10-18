@@ -44,6 +44,9 @@ export function repo(r: Partial<Repo> = {}): Repo {
     humain_requis: false,
     versions: [version()],
     session: null,
+    pilote: false,
+    agent: "claude",
+    pilote_stop: null,
     ...r,
   };
 }

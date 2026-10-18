@@ -1,5 +1,15 @@
 import type { Liste, Repo } from "./api";
-import { BadgeSession, BandeauAuth, EncartAgents, Entete, LibelleEtape, heure, nomAffiche } from "./commun";
+import {
+  BadgePause,
+  BadgePilote,
+  BadgeSession,
+  BandeauAuth,
+  EncartAgents,
+  Entete,
+  LibelleEtape,
+  heure,
+  nomAffiche,
+} from "./commun";
 import { useRafraichi } from "./rafraichi";
 
 /** `/` : une ligne par repo lié, ceux qui attendent quelqu’un en tête. */
@@ -59,6 +69,18 @@ function Ligne({ repo }: { repo: Repo }) {
     <tr className={repo.erreur ? "en-erreur" : undefined}>
       <td>
         <a href={`/repos/${repo.slug}`}>{nomAffiche(repo)}</a>
+        {repo.pilote && (
+          <>
+            {" "}
+            <BadgePilote />
+            {repo.pilote_stop && (
+              <>
+                {" "}
+                <BadgePause stop={repo.pilote_stop} />
+              </>
+            )}
+          </>
+        )}
         {repo.session && (
           <>
             {" "}

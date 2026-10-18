@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   Agent,
   Auth,
@@ -12,7 +12,7 @@ import type {
   SessionsDuRepo,
   Version,
 } from "./api";
-import { ErreurApi, ID_SESSION, lancerSession } from "./api";
+import { ErreurApi, ID_SESSION, enregistrerPilote, lancerSession } from "./api";
 import {
   BadgeHumain,
   BadgeSession,
@@ -99,13 +99,28 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
 }
 
 function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) {
-  const [agent, setAgent] = useState<Agent["id"]>(
-    () => (detail.agents.find((a) => a.connecte) ?? detail.agents[0])?.id ?? "claude",
-  );
+  const [pilote, setPilote] = useState(detail.pilote);
+  const [agent, setAgent] = useState<Agent["id"]>(detail.agent);
   const [branche, setBranche] = useState(() => detail.branches.defaut);
   const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
   // Clone sale au lancement : rien n’est lancé tant que l’utilisateur n’a pas choisi.
   const [sale, setSale] = useState<CloneSale | null>(null);
+
+  useEffect(() => {
+    setPilote(detail.pilote);
+    setAgent(detail.agent);
+  }, [detail.pilote, detail.agent]);
+
+  const persister = (suivant: { pilote: boolean; agent: Agent["id"] }) => {
+    setPilote(suivant.pilote);
+    setAgent(suivant.agent);
+    enregistrerPilote(detail.slug, suivant.pilote, suivant.agent).catch((erreur: Error) => {
+      setRefus({
+        message: erreur.message,
+        session: erreur instanceof ErreurApi ? erreur.session : null,
+      });
+    });
+  };
 
   const choisi = detail.agents.find((a) => a.id === agent);
   const travaille = sessions.find(
@@ -160,8 +175,19 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
           )}
           <p>
             <label>
+              <input
+                type="checkbox"
+                checked={pilote}
+                onChange={(e) => persister({ pilote: e.target.checked, agent })}
+              />{" "}
+              Pilote
+            </label>{" "}
+            <label>
               Agent{" "}
-              <select value={agent} onChange={(e) => setAgent(e.target.value as Agent["id"])}>
+              <select
+                value={agent}
+                onChange={(e) => persister({ pilote, agent: e.target.value as Agent["id"] })}
+              >
                 {detail.agents.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.nom}

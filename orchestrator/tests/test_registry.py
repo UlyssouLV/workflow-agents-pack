@@ -56,7 +56,12 @@ def test_repos_toml_est_du_toml_lisible_par_le_conteneur(instance):
 
     chemin = instance / "repos.toml"
     assert tomllib.loads(chemin.read_text())["repos"] == [
-        {"slug": "mon-org/mon-repo", "nom": 'a "guillemet" \\ et\nsaut'}
+        {
+            "slug": "mon-org/mon-repo",
+            "nom": 'a "guillemet" \\ et\nsaut',
+            "pilote": False,
+            "agent": "claude",
+        }
     ]
     assert stat.S_IMODE(chemin.stat().st_mode) & 0o044 == 0o044
 
@@ -135,6 +140,32 @@ def test_edition_a_la_main_est_relue(instance):
     assert lire_registry(instance / "repos.toml") == [
         RepoLie("mon-org/a", "A"),
         RepoLie("mon-org/b"),
+    ]
+
+
+def test_pilote_et_agent_preferes_sont_lus_ecrits_et_relus_sur_disque(instance):
+    from wap_runtime.registry import enregistrer
+
+    repo("add", "mon-org/a")
+    chemin = instance / "repos.toml"
+    assert lire_registry(chemin) == [RepoLie("mon-org/a")]
+
+    enregistre = enregistrer(chemin, "mon-org/a", pilote=True, agent="cursor")
+
+    assert enregistre == RepoLie("mon-org/a", pilote=True, agent="cursor")
+    assert tomllib.loads(chemin.read_text())["repos"] == [
+        {"slug": "mon-org/a", "pilote": True, "agent": "cursor"}
+    ]
+    assert lire_registry(chemin) == [RepoLie("mon-org/a", pilote=True, agent="cursor")]
+
+
+def test_edition_a_la_main_de_pilote_et_agent_est_relue(instance):
+    (instance / "repos.toml").write_text(
+        '[[repos]]\nslug = "mon-org/a"\npilote = true\nagent = "cursor"\n'
+    )
+
+    assert lire_registry(instance / "repos.toml") == [
+        RepoLie("mon-org/a", pilote=True, agent="cursor")
     ]
 
 

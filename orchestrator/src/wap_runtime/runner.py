@@ -372,6 +372,48 @@ class Runner:
             time.sleep(0.05)
         return self._sessions.clore(id_, CODE_ARRETEE)
 
+    def saisir(self, id_: str, texte: str) -> None:
+        """Tape `texte` dans le terminal tmux de la session ouverte.
+
+        Le contenu passe par stdin (`load-buffer` / `paste-buffer`), pas en argument de
+        commande ; la cible tmux ne vient que d’un id de session déjà validé.
+        """
+        session = self._sessions.lire(id_)
+        if session is None or session["etat"] != OUVERTE:
+            raise RunnerErreur(f"session {id_} inconnue")
+        valide = ID_SESSION.fullmatch(id_)
+        if valide is None:
+            raise RunnerErreur(f"session {id_} inconnue")
+        # Liste blanche : seuls les caractères du motif restent (casse la chaîne de teinte Sonar).
+        safe = "".join(c for c in valide.group(0) if c in "0123456789abcdef-")
+        if not ID_SESSION.fullmatch(safe):
+            raise RunnerErreur(f"session {id_} inconnue")
+        nom = nom_tmux(safe)
+        brut = texte.replace("\r", "").replace("\n", "")
+        try:
+            if brut:
+                subprocess.run(
+                    ["tmux", "load-buffer", "-"],
+                    input=brut.encode(),
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["tmux", "paste-buffer", "-d", "-t", nom],
+                    check=True,
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                )
+            if texte.endswith(("\r", "\n")):
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", nom, "Enter"],
+                    check=True,
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                )
+        except (OSError, subprocess.CalledProcessError) as erreur:
+            raise RunnerErreur(f"tmux saisie : {erreur}") from erreur
+
     def recuperer_clone(self, repo: str, branche: str) -> Path:
         """`clones/<owner>/<name>/` à jour de GitHub, sans toucher à l’arbre ; `branche` doit y exister.
 
@@ -531,6 +573,14 @@ class ClientRunner:
             raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
         return reponse.json()
 
+    def saisir(self, id_: str, texte: str) -> None:
+        """Premier message dans le terminal d’une session ouverte (tmux `send-keys`)."""
+        if not ID_SESSION.fullmatch(id_):
+            raise RunnerErreur(f"session {id_} inconnue")
+        reponse = self._poster(f"/sessions/{quote(id_, safe='')}/saisie", json={"texte": texte})
+        if not reponse.is_success:
+            raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
+
     def url_terminal(self, id_: str) -> str:
         """Websocket du terminal de la session, sur le réseau Compose."""
         if not ID_SESSION.fullmatch(id_):
@@ -572,6 +622,9 @@ def creer_app_runner(runner: Runner):
         skill: str | None = None
         prompt: str | None = None
 
+    class Saisie(BaseModel):
+        texte: str
+
     app = FastAPI(title="wap-runner", version=__version__, docs_url=None, redoc_url=None)
 
     @app.get("/health")
@@ -602,6 +655,13 @@ def creer_app_runner(runner: Runner):
         if not ID_SESSION.fullmatch(id_) or (session := runner.terminer(id_)) is None:
             raise HTTPException(404, f"session {id_} inconnue")
         return session
+
+    @app.post("/sessions/{id_}/saisie", status_code=204)
+    def saisir(id_: str, demande: Saisie):
+        try:
+            runner.saisir(id_, demande.texte)
+        except RunnerErreur as erreur:
+            raise HTTPException(422, str(erreur)) from erreur
 
     @app.post("/sessions/{id_}/suivante", status_code=202)
     def suivante(id_: str, demande: Suivante, taches: BackgroundTasks):
