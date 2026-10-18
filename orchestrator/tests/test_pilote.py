@@ -64,7 +64,12 @@ class FauxRunner:
         ticket = demande.get("ticket")
         commande = f'claude "/implement #{ticket}"' if ticket is not None else "claude"
         session = self.sessions.creer(
-            demande["repo"], ticket, demande["agent"], commande, branche=demande.get("branche")
+            demande["repo"],
+            ticket,
+            demande["agent"],
+            commande,
+            branche=demande.get("branche"),
+            modele=demande.get("modele"),
         )
         return httpx.Response(201, json=session)
 
@@ -144,6 +149,17 @@ def test_tour_ouvre_une_session_libre_puis_implement_du_plus_petit_eligible(regi
     assert runner.enchainements == []
     lue = api(registry, github, jobs, runner).get("/api/sessions").json()["sessions"][0]
     assert (lue["id"], lue["ticket"], lue["url"]) == (session["id"], None, f"/sessions/{session['id']}")
+
+
+def test_tour_cursor_sans_predecesseur_utilise_la_preference_modele(registry, github, jobs, runner):
+    enregistrer(registry, SLUG, pilote=True, agent="cursor", modele="composer-2")
+
+    session = tourner(**monde(registry, github, jobs, runner, env={"CURSOR_API_KEY": "key_x"}))
+
+    assert session["modele"] == "composer-2"
+    assert runner.demandes[-1]["agent"] == "cursor"
+    assert runner.demandes[-1]["modele"] == "composer-2"
+    assert runner.saisies == [(session["id"], "/implement #30\r")]
 
 
 def test_tour_ne_lance_pas_si_le_pilote_est_off(registry, github, jobs, runner):

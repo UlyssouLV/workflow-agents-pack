@@ -48,6 +48,45 @@ describe("page Sessions", () => {
     expect(lignes[1]).toHaveTextContent("Terminée");
   });
 
+  it("affiche Auto ou l’ID du modèle pour Cursor, rien pour Claude", async () => {
+    simulerApi({
+      "/api/agents": { agents: [CLAUDE, CURSOR] },
+      "/api/sessions": {
+        sessions: [
+          session({ agent: "cursor", modele: "composer-2", titre: "Cursor" }),
+          session({
+            agent: "cursor",
+            id: "20261017-100000-cccccc",
+            url: "/sessions/c",
+            modele: null,
+            titre: "Libre",
+          }),
+          session({ etat: "terminée", fin: "2026-10-17T09:10:00+00:00", titre: "Claude Code" }),
+        ],
+      },
+    });
+
+    render(<App chemin="/sessions" />);
+
+    const lignes = within(await screen.findByRole("table")).getAllByRole("row").slice(1);
+    expect(lignes[0]).toHaveTextContent("composer-2");
+    expect(lignes[1]).toHaveTextContent("Auto");
+    expect(lignes[2]).not.toHaveTextContent("Auto");
+    expect(lignes[2]).not.toHaveTextContent("composer-2");
+  });
+
+  it("sans session Cursor, pas de colonne Modèle", async () => {
+    simulerApi({
+      "/api/agents": { agents: [CLAUDE] },
+      "/api/sessions": { sessions: [session({ titre: "Claude Code" })] },
+    });
+
+    render(<App chemin="/sessions" />);
+
+    expect(await screen.findByRole("columnheader", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Modèle" })).toBeNull();
+  });
+
   it("aucune session", async () => {
     simulerApi({ "/api/agents": { agents: [CLAUDE] }, "/api/sessions": { sessions: [] } });
 

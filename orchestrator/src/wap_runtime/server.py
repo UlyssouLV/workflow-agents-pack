@@ -19,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from wap_runtime import __version__
-from wap_runtime.agents import etat_agents
+from wap_runtime.agents import etat_agents, id_modele
+from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
@@ -48,11 +49,15 @@ class Lancement(BaseModel):
     branche: str
     # Réponse au clone sale (`409` avec `clone`) ; absente, un clone sale ne lance rien.
     choix: Choix | None = None
+    # Override Nouvelle session (Cursor). Absent : préférence repo. `null` / Auto : pas de `--model`.
+    modele: str | None = None
 
 
 class PreferencePilote(BaseModel):
     pilote: bool
     agent: str
+    # Absent : on conserve la préférence actuelle. `null` / Auto : aucun modèle.
+    modele: str | None = None
 
 
 def _instance_par_defaut() -> Path:
@@ -69,7 +74,10 @@ def _runner_par_defaut() -> httpx.Client:
 
 def _prefs_registry(chemin: Path) -> dict[str, dict]:
     """Toggle et agent préféré, relu hors cache GitHub de la liste."""
-    return {r.slug.lower(): {"pilote": r.pilote, "agent": r.agent} for r in lire_registry(chemin)}
+    return {
+        r.slug.lower(): {"pilote": r.pilote, "agent": r.agent, "modele": r.modele}
+        for r in lire_registry(chemin)
+    }
 
 
 def _lien(session: dict) -> dict:
@@ -96,6 +104,17 @@ def _du_cockpit(entetes: Mapping[str, str], schema: str) -> bool:
 def _verifier_origine(requete: Request) -> None:
     if not _du_cockpit(requete.headers, requete.url.scheme):
         raise HTTPException(403, "origine refusée : agis depuis le cockpit")
+
+
+def _modele_du_lancement(demande: Lancement, registry: Path) -> str | None:
+    """Override Nouvelle session, sinon préférence repo. Claude : toujours Auto."""
+    if demande.agent != "cursor":
+        return None
+    if "modele" in demande.model_fields_set:
+        return id_modele(demande.modele)
+    lie = next((r for r in lire_registry(registry) if r.designe(demande.repo)), None)
+    return lie.modele if lie else None
+
 
 
 def _front_par_defaut() -> Path | None:
@@ -197,6 +216,19 @@ def creer_app(
     def agents_() -> dict:
         return {"agents": agents}
 
+    @app.get("/api/modeles")
+    def modeles() -> dict:
+        # En Compose (`WAP_RUNNER`), `agent` n’est que dans le runner (ADR 0004).
+        try:
+            liste = (
+                client_runner.lister_modeles()
+                if os.environ.get("WAP_RUNNER")
+                else lister_modeles_cursor(env)
+            )
+            return {"modeles": liste}
+        except ModelesErreur as erreur:
+            raise HTTPException(erreur.code, erreur.detail) from erreur
+
     @app.get("/api/repos")
     def repos() -> dict:
         liste = cockpit.liste()
@@ -233,8 +265,10 @@ def creer_app(
         _detail(slug)
         if demande.agent not in AGENTS:
             raise HTTPException(422, f"agent inconnu : {demande.agent}")
+        actuel = next(r for r in lire_registry(registry) if r.designe(slug))
+        modele = demande.modele if "modele" in demande.model_fields_set else actuel.modele
         try:
-            repo = enregistrer(registry, slug, demande.pilote, demande.agent)
+            repo = enregistrer(registry, slug, demande.pilote, demande.agent, modele)
         except RegistryErreur as erreur:
             raise HTTPException(500, str(erreur)) from erreur
         except OSError as erreur:
@@ -246,7 +280,7 @@ def creer_app(
             acquittements_pilote[cle] = derniere["id"]
         else:
             acquittements_pilote.pop(cle, None)
-        return {"pilote": repo.pilote, "agent": repo.agent}
+        return {"pilote": repo.pilote, "agent": repo.agent, "modele": repo.modele}
 
     @app.get("/api/repos/{owner}/{name}/sessions")
     def sessions_du_repo(owner: str, name: str) -> dict:
@@ -302,7 +336,13 @@ def creer_app(
             compte = client.utilisateur()
             identite = Identite(compte["login"], email_noreply(compte["login"], compte["id"]))
             lancee = client_runner.lancer(
-                detail["slug"], None, demande.agent, demande.branche, identite, demande.choix
+                detail["slug"],
+                None,
+                demande.agent,
+                demande.branche,
+                identite,
+                demande.choix,
+                _modele_du_lancement(demande, registry),
             )
         except GitHubErreur as erreur:
             raise HTTPException(502, str(erreur)) from erreur

@@ -60,9 +60,31 @@ def agent_par_id(id_: str) -> Agent | None:
     return next((a for a in AGENTS if a.id == id_), None)
 
 
-def commande_agent(agent: Agent, ticket: int | None) -> list[str]:
-    """Session libre : le programme seul. Session enchaînée : `/implement #n`."""
-    return [agent.programme] if ticket is None else [agent.programme, f"/implement #{ticket}"]
+def commande_agent(agent: Agent, ticket: int | None, modele: str | None = None) -> list[str]:
+    """Session libre : le programme seul. Session enchaînée : `/implement #n`.
+
+    Cursor : `--model <id>` si le modèle n’est pas Auto / vide. Claude ignore `modele`.
+    """
+    argv = [agent.programme]
+    if agent is CURSOR and (id_ := id_modele(modele)) is not None:
+        argv.extend(["--model", id_])
+    if ticket is not None:
+        argv.append(f"/implement #{ticket}")
+    return argv
+
+
+def ligne_commande(argv: list[str]) -> str:
+    """La commande enregistrée dans `session.json` : le prompt `/implement` entre guillemets."""
+    tete, *reste = argv
+    if not reste:
+        return tete
+    return tete + " " + " ".join(f'"{a}"' if a.startswith("/") else a for a in reste)
+
+
+def id_modele(modele: str | None) -> str | None:
+    if modele is None or not (id_ := modele.strip()) or id_.lower() == "auto":
+        return None
+    return id_
 
 
 def connecte(agent: Agent, valeurs: Mapping[str, str]) -> bool:

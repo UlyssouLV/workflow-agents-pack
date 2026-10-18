@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
-import { Entete, LIBELLES_ETAT_SESSION, LiensChaine, libelleActivite, lienSession } from "./commun";
+import {
+  Entete,
+  LIBELLES_ETAT_SESSION,
+  LiensChaine,
+  libelleActivite,
+  libelleModele,
+  lienSession,
+} from "./commun";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
@@ -71,6 +78,7 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
   const [refus, setRefus] = useState<string | null>(null);
   const session = close ?? lue;
   const etat = LIBELLES_ETAT_SESSION[session.etat];
+  const modele = libelleModele(session);
   const suivante = lienSession(session.suivante);
   // Vue ouverte sur cette page (pas une relecture), et dernier rôle annoncé à l’onglet.
   const vueOuverte = useRef(false);
@@ -108,6 +116,12 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
       <dl>
         <dt>Titre</dt>
         <dd>{session.titre}</dd>
+        {modele && (
+          <>
+            <dt>Modèle</dt>
+            <dd>{modele}</dd>
+          </>
+        )}
         <dt>Activité</dt>
         <dd>{libelleActivite(session)}</dd>
         <dt>État</dt>

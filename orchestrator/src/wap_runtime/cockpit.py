@@ -203,6 +203,7 @@ def _identite(repo: RepoLie, lu_a: datetime) -> dict:
         "lu_a": lu_a.isoformat(),
         "pilote": repo.pilote,
         "agent": repo.agent,
+        "modele": repo.modele,
     }
 
 

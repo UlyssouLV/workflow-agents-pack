@@ -4,7 +4,7 @@ Runtime self-hosted (monorepo) : pack syncé vers les repos métier ; orchestrat
 
 Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integration-channel.yml` (cycle version et releases `orchestrator-v*` vers cette base, pas `main`). Mis en place **hors semver** (bootstrap), pas une version numérotée.
 
-Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.6.0) restent une affaire de provisionnement.
+Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.7.0) restent une affaire de provisionnement.
 
 ## Déjà livré
 
@@ -15,30 +15,37 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.4.1** — Correctifs du runner distant (tests humains 0.4.0) : le runner lance le `dispatch.py` du clone géré avant l’agent, qui dispose des skills du pack à la version de la branche ; `sudo wap-runtime …` se lance tel quel (lien `/usr/local/bin/wap-runtime` créé par `setup`) et `auth claude` trouve la CLI quel que soit le PATH ; `WAP_REF` installe le paquet depuis un ref choisi et `setup` construit les images au commit du paquet installé ; quitter la page de session libère la main, **Prendre la main** la donne à un onglet en lecture seule ; une session peut ouvrir la suivante (`wap-runtime enchainer`, état `enchaînée`, chaîne `precedente` / `suivante` suivie par le cockpit), la partie pack restant un bug sur `main` ([#54](https://github.com/UlyssouLV/workflow-agents-pack/issues/54)). Bugs corrigés : [#40](https://github.com/UlyssouLV/workflow-agents-pack/issues/40) à [#44](https://github.com/UlyssouLV/workflow-agents-pack/issues/44) ([#45](https://github.com/UlyssouLV/workflow-agents-pack/issues/45), [spec](../../specs/v0.4.1-correctifs-runner-distant.md), [ADR 0005](../../adr/0005-ref-d-installation-images-au-commit-du-paquet.md), [ADR 0006](../../adr/0006-une-session-peut-ouvrir-la-suivante.md)).
 - **0.4.2** — Session libre et réponse attendue : depuis le détail d’un repo, **Nouvelle session** (agent + branche) lance l’agent vide dans le clone géré ; une session ouverte par repo, activité *travaille* / *réponse attendue* / *inconnue* par les hooks, page **Sessions** et compteur de réponses attendues ([#62](https://github.com/UlyssouLV/workflow-agents-pack/issues/62), [spec](../../specs/v0.4.2-session-libre-et-reponse-attendue.md), [ADR 0007](../../adr/0007-sessions-par-repo-activite-par-hooks.md)).
 - **0.5.0** — Pilote (autopilot borné) : toggle opt-in par repo, boucle dans `runtime` qui lance le premier `/implement #n` éligible, notifie aux stops et reprend ; l’enchaînement reste le pack ([#73](https://github.com/UlyssouLV/workflow-agents-pack/issues/73), [spec](../../specs/v0.5.0-pilote.md), [ADR 0008](../../adr/0008-boucle-pilote-dans-le-runtime.md)).
+- **0.5.1** — Modèle Cursor par session : préférence repo, override à Nouvelle session, `--model` (sauf Auto), héritage via `precedente`, affichage cockpit ([#82](https://github.com/UlyssouLV/workflow-agents-pack/issues/82), [spec](../../specs/v0.5.1-modele-cursor-par-session.md), [ADR 0009](../../adr/0009-modele-cursor-preference-et-heritage.md)).
 
-## Prochaine : 0.5.1 — Modèle Cursor par session
+## Prochaine : 0.6.0 — Accès web authentifié
 
-Objectif. Choisir le modèle Cursor au lancement d’une session (libre ou enchaînée) et pour le Pilote d’un repo, au lieu du défaut opaque de la CLI ; le choix est visible dans le cockpit et repris à chaque lancement Cursor de ce chemin.
+Objectif. Joindre son cockpit depuis Internet de façon sûre : personne n’atteint le cockpit sans s’être authentifié auprès de cette instance (identifiants propres à l’instance), aucun service runtime exposé en clair. Quand on y arrive via un reverse proxy depuis Internet vers une machine du réseau privé, ce chemin doit être **absolument sûr** : il n’ouvre aucune faille qui exposerait le reste du réseau privé.
 
-Hors périmètre : choix de modèle pour Claude Code ; changer de modèle au milieu d’une session déjà ouverte ; catalogue / quotas Cursor côté produit.
+Hors périmètre : instances multiples sur le même serveur ; SaaS multi-tenant ; comptes partagés entre instances.
 
-## Ensuite : 0.6.0 — Instances multiples isolées
+## Ensuite : 0.7.0 — Instances multiples isolées
 
 Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
 
-Hors périmètre : accès au cockpit depuis Internet.
+Hors périmètre : parcours d’enregistrement self-service depuis le web (0.8.0).
 
-## Ensuite : 0.7.0 — Accès web authentifié
+## Ensuite : 0.8.0 — Enregistrement d’orchestrateur par compte GitHub
 
-Objectif. Chaque personne joint son cockpit depuis Internet de façon sûre : identifiants propres à l’instance, aucune instance accessible par une autre, aucun service runtime exposé en clair. Quand on y arrive via un reverse proxy depuis Internet vers une machine du réseau privé, ce chemin doit être **absolument sûr** : il n’ouvre aucune faille qui exposerait le reste du réseau privé.
+Objectif. Une personne crée son orchestrateur sur le serveur depuis le web avec son compte GitHub : elle s’enregistre, obtient une instance isolée, et peut y démarrer / lier un workflow — sans que l’admin provisionne à la main.
 
-Hors périmètre : SaaS multi-tenant, comptes partagés entre instances.
+Hors périmètre : refonte graphique du cockpit (0.8.1) ; SaaS multi-tenant hors de ce serveur ; facturation.
 
-## Ensuite : 0.8.0 — Refonte graphique du cockpit
+## Ensuite : 0.8.1 — Refonte graphique du cockpit
 
-Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : hiérarchie visuelle claire, pages liste / détail / sessions / terminal cohérentes, sans changer les capacités déjà livrées.
+Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : hiérarchie visuelle claire, pages liste / détail / sessions / terminal / enregistrement cohérentes, sans changer les capacités déjà livrées.
 
 Hors périmètre : nouvelles fonctionnalités métier ; redesign de la doc ou du README.
+
+## Ensuite : 0.9.0 — Main d’aiguillage et feuilles de route multi-branches
+
+Objectif. Ce dépôt a plusieurs chantiers (pack, orchestrateur, …) mais une seule branche porte aujourd’hui la feuille de route : on obtient une feuille de route par branche, lisible depuis le dépôt. La branche pack quitte le nom `main` pour un nom dédié au pack ; une nouvelle `main` par défaut devient la porte d’entrée du repo (README global d’explication des branches et du produit). Corrige [#81](https://github.com/UlyssouLV/workflow-agents-pack/issues/81).
+
+Hors périmètre : nouvelles capacités du cockpit ou du runtime ; chantier labels d’état du pack (#24) ; correctif du skill `/afr` (#80).
 
 ## Plus tard (pas encore numéroté)
 
@@ -60,7 +67,7 @@ Un hook du pack, versionné dans les repos métier et compatible macOS / Windows
 
 ### Bug — skill afr ajoute des notions techniques dans la feuille de route (#80)
 
-**Constat :** Le skill `/afr` a enrichi l’Objectif d’une version (0.7.0) avec des notions techniques alors que la demande ne portait que sur un objectif produit (accès via reverse proxy sans exposer le réseau privé). La feuille sert à l’aiguillage (objectifs, attendus, hors scopes) ; les choix techniques se décident à l’ouverture de version via grill.
+**Constat :** Le skill `/afr` a enrichi l’Objectif d’une version (accès web, aujourd’hui 0.6.0) avec des notions techniques alors que la demande ne portait que sur un objectif produit (accès via reverse proxy sans exposer le réseau privé). La feuille sert à l’aiguillage (objectifs, attendus, hors scopes) ; les choix techniques se décident à l’ouverture de version via grill.
 
 **Reproductibilité :** Demander à `/afr` de détailler un Objectif qui touche à l’infra ou à la sécurité → le texte écrit contient des méthodes / mécanismes techniques.
 

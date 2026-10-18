@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { VueDetail } from "../src/VueDetail";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { CONNECTE, QUESTION, detail, session, simulerApi } from "./donnees";
+import { CLAUDE, CONNECTE, CURSOR_CONNECTE, MODELES, QUESTION, detail, session, simulerApi } from "./donnees";
 
 function rendre(routes: Record<string, unknown>) {
   const fetch = simulerApi({ "/api/auth": CONNECTE, ...routes });
@@ -405,6 +405,37 @@ describe("vue détail", () => {
       expect(await within(section).findByText('claude "/implement #23"')).toBeInTheDocument();
     });
 
+    it("affiche Auto ou l’ID du modèle sur une session Cursor, rien sur Claude", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        [SESSIONS]: {
+          sessions: [
+            session({ id: "c", url: "/sessions/c", agent: "cursor", modele: "composer-2" }),
+            session({ id: "b", url: "/sessions/b", agent: "cursor", modele: null }),
+            session({ id: "a", url: "/sessions/a" }),
+          ],
+        },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      const [cursorId, cursorAuto, claude] = (await within(section).findAllByRole("row")).slice(1);
+      expect(cursorId).toHaveTextContent("composer-2");
+      expect(cursorAuto).toHaveTextContent("Auto");
+      expect(claude).not.toHaveTextContent("Auto");
+      expect(claude).not.toHaveTextContent("composer-2");
+    });
+
+    it("sans session Cursor, pas de colonne Modèle", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        [SESSIONS]: { sessions: [session({ titre: "Claude Code" })] },
+      });
+
+      const section = await screen.findByRole("region", { name: "Sessions" });
+      expect(await within(section).findByRole("columnheader", { name: "Agent" })).toBeInTheDocument();
+      expect(within(section).queryByRole("columnheader", { name: "Modèle" })).toBeNull();
+    });
+
     it("chaîne : état enchaînée, liens précédente et suivante", async () => {
       const [a, b] = ["20261017-090000-aaaaaa", "20261017-093000-bbbbbb"];
       rendre({
@@ -424,6 +455,111 @@ describe("vue détail", () => {
       expect(enchainee).toHaveTextContent("Enchaînée");
       expect(within(enchainee).getByRole("link", { name: "suivante" })).toHaveAttribute("href", `/sessions/${b}`);
       expect(within(enchainee).queryByRole("link", { name: "précédente" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("modèle Cursor", () => {
+    const agents = [CLAUDE, CURSOR_CONNECTE];
+    const cursor = (extra: Parameters<typeof detail>[0] = {}) =>
+      detail({ agents, agent: "cursor", modele: "composer-2", ...extra });
+
+    it("n’affiche pas le select si l’agent est Claude", async () => {
+      rendre({
+        "/api/repos/o/r": detail({ agents, agent: "claude" }),
+        "/api/modeles": MODELES,
+      });
+
+      await screen.findByRole("combobox", { name: "Agent" });
+      expect(screen.queryByRole("combobox", { name: /^Modèle/ })).toBeNull();
+    });
+
+    it("n’affiche pas le select si Cursor n’est pas connecté", async () => {
+      rendre({ "/api/repos/o/r": detail({ agent: "cursor" }) });
+
+      await screen.findByRole("combobox", { name: "Agent" });
+      expect(screen.queryByRole("combobox", { name: /^Modèle/ })).toBeNull();
+    });
+
+    it("affiche le select prérempli si agent Cursor et Cursor connecté", async () => {
+      rendre({ "/api/repos/o/r": cursor(), "/api/modeles": MODELES });
+
+      expect(await screen.findByRole("combobox", { name: "Modèle" })).toHaveValue("composer-2");
+      expect(screen.getByRole("combobox", { name: "Modèle de la session" })).toHaveValue("composer-2");
+    });
+
+    it("enregistre la préférence modèle sans lancer", async () => {
+      const fetch = rendre({
+        "/api/repos/o/r": cursor(),
+        "/api/modeles": MODELES,
+        "PATCH /api/repos/o/r": { pilote: false, agent: "cursor", modele: "grok-4.6" },
+      });
+
+      fireEvent.change(await screen.findByRole("combobox", { name: "Modèle" }), {
+        target: { value: "grok-4.6" },
+      });
+
+      await waitFor(() => {
+        const corps = fetch.mock.calls.find(([, init]) => init?.method === "PATCH")?.[1]?.body;
+        expect(corps).toEqual(JSON.stringify({ pilote: false, agent: "cursor", modele: "grok-4.6" }));
+      });
+      expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    });
+
+    it("Nouvelle session envoie l’override et ne PATCH pas le repo", async () => {
+      const assign = vi.fn();
+      vi.stubGlobal("location", { ...window.location, assign });
+      const corps: unknown[] = [];
+      const fetch = rendre({
+        "/api/repos/o/r": cursor(),
+        "/api/modeles": MODELES,
+        "POST /api/sessions": (init?: RequestInit) => {
+          corps.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify(session({ ticket: null, agent: "cursor" })), { status: 201 });
+        },
+      });
+      fireEvent.change(await screen.findByRole("combobox", { name: "Modèle de la session" }), {
+        target: { value: "grok-4.6" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Nouvelle session" }));
+
+      await waitFor(() => expect(assign).toHaveBeenCalled());
+      expect(corps).toEqual([
+        { repo: "o/r", agent: "cursor", branche: "v0.3.0-registry", modele: "grok-4.6" },
+      ]);
+      expect(fetch.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+    });
+
+    it("Auto est prérempli et envoyé comme null", async () => {
+      const assign = vi.fn();
+      vi.stubGlobal("location", { ...window.location, assign });
+      const corps: unknown[] = [];
+      rendre({
+        "/api/repos/o/r": cursor({ modele: null }),
+        "/api/modeles": MODELES,
+        "POST /api/sessions": (init?: RequestInit) => {
+          corps.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify(session({ ticket: null, agent: "cursor" })), { status: 201 });
+        },
+      });
+      expect(await screen.findByRole("combobox", { name: "Modèle de la session" })).toHaveValue("");
+      fireEvent.click(screen.getByRole("button", { name: "Nouvelle session" }));
+
+      await waitFor(() => expect(assign).toHaveBeenCalled());
+      expect(corps).toEqual([{ repo: "o/r", agent: "cursor", branche: "v0.3.0-registry", modele: null }]);
+    });
+
+    it("liste en échec : pas de lancement Cursor, message du runtime", async () => {
+      rendre({
+        "/api/repos/o/r": cursor(),
+        "/api/modeles": new Response(
+          JSON.stringify({ detail: "liste des modèles Cursor indisponible : quota exceeded" }),
+          { status: 503 },
+        ),
+      });
+
+      const bouton = await screen.findByRole("button", { name: "Nouvelle session" });
+      await waitFor(() => expect(bouton).toBeDisabled());
+      expect(await screen.findByText("liste des modèles Cursor indisponible : quota exceeded")).toBeInTheDocument();
     });
   });
 });

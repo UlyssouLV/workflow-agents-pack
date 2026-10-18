@@ -16,6 +16,16 @@ export const CURSOR: Agent = {
   connecte: false,
   commande: "… | sudo wap-runtime auth agent --with-token",
 };
+export const CURSOR_CONNECTE: Agent = { ...CURSOR, connecte: true };
+
+/** `GET /api/modeles` : Auto + IDs de `agent models`. */
+export const MODELES = {
+  modeles: [
+    { id: null, libelle: "Auto" },
+    { id: "composer-2", libelle: "composer-2" },
+    { id: "grok-4.6", libelle: "grok-4.6" },
+  ],
+};
 
 export const IMPLEMENT: Etape = { numero: 7, libelle: "Implement", humain: false };
 export const QUESTION: Etape = { numero: 1, libelle: "Question en attente", humain: true };
@@ -46,6 +56,7 @@ export function repo(r: Partial<Repo> = {}): Repo {
     session: null,
     pilote: false,
     agent: "claude",
+    modele: null,
     pilote_stop: null,
     ...r,
   };
@@ -127,6 +138,7 @@ export function session(s: Partial<Session> = {}): Session {
     activite: "inconnue",
     skill: null,
     titre: "Claude Code",
+    modele: null,
     ...s,
   };
 }

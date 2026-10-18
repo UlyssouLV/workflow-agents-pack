@@ -1,6 +1,7 @@
 """API liste du cockpit : `GET /api/repos` contre un faux GitHub."""
 
 from datetime import datetime, timedelta, timezone
+from importlib.metadata import version
 
 import pytest
 from fastapi.testclient import TestClient
@@ -60,7 +61,8 @@ def test_health_rend_le_statut_et_la_version(registry, github, horloge):
     reponse = client(registry, github, horloge).get("/health")
 
     assert reponse.status_code == 200
-    assert reponse.json() == {"status": "ok", "version": "0.5.0"}
+    assert reponse.json() == {"status": "ok", "version": version("wap-runtime")}
+    assert version("wap-runtime") == "0.5.1"
 
 
 def test_une_entree_par_repo_lie_dans_l_ordre_du_registry(registry, github, horloge):

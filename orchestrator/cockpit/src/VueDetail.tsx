@@ -8,11 +8,12 @@ import type {
   Detail,
   EtatCi,
   LienSession,
+  ModeleCursor,
   Session,
   SessionsDuRepo,
   Version,
 } from "./api";
-import { ErreurApi, ID_SESSION, enregistrerPilote, lancerSession } from "./api";
+import { ErreurApi, ID_SESSION, enregistrerPilote, lancerSession, lire } from "./api";
 import {
   BadgeHumain,
   BadgeSession,
@@ -23,6 +24,7 @@ import {
   LiensChaine,
   dateHeure,
   heure,
+  libelleModele,
   nomAffiche,
 } from "./commun";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
@@ -56,6 +58,7 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
 function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
   const { donnees, erreur } = useRafraichi<SessionsDuRepo>(chemin, RAFRAICHISSEMENT_SESSION_MS);
   const nom = (id: Agent["id"]) => agents.find((a) => a.id === id)?.nom ?? id;
+  const avecModele = (donnees?.sessions ?? []).some((s) => s.agent === "cursor");
 
   return (
     <section aria-label="Sessions">
@@ -70,6 +73,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
               <tr>
                 <th>Date</th>
                 <th>Agent</th>
+                {avecModele && <th>Modèle</th>}
                 <th>Commande</th>
                 <th>État</th>
                 <th>Chaîne</th>
@@ -82,6 +86,7 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
                     <a href={s.url}>{dateHeure(s.debut)}</a>
                   </td>
                   <td>{nom(s.agent)}</td>
+                  {avecModele && <td>{libelleModele(s)}</td>}
                   <td>
                     <code>{s.commande}</code>
                   </td>
@@ -101,20 +106,48 @@ function Sessions({ chemin, agents }: { chemin: string; agents: Agent[] }) {
 function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) {
   const [pilote, setPilote] = useState(detail.pilote);
   const [agent, setAgent] = useState<Agent["id"]>(detail.agent);
+  const [modelePref, setModelePref] = useState<string | null>(detail.modele);
+  const [modeleLancement, setModeleLancement] = useState<string | null>(detail.modele);
   const [branche, setBranche] = useState(() => detail.branches.defaut);
   const [refus, setRefus] = useState<{ message: string; session: LienSession | null } | null>(null);
   // Clone sale au lancement : rien n’est lancé tant que l’utilisateur n’a pas choisi.
   const [sale, setSale] = useState<CloneSale | null>(null);
+  const [modeles, setModeles] = useState<ModeleCursor[] | null>(null);
+  const [erreurModeles, setErreurModeles] = useState<string | null>(null);
+  const cursorConnecte = Boolean(detail.agents.find((a) => a.id === "cursor")?.connecte);
 
   useEffect(() => {
     setPilote(detail.pilote);
     setAgent(detail.agent);
-  }, [detail.pilote, detail.agent]);
+    setModelePref(detail.modele);
+  }, [detail.pilote, detail.agent, detail.modele]);
 
-  const persister = (suivant: { pilote: boolean; agent: Agent["id"] }) => {
+  useEffect(() => {
+    if (!cursorConnecte) {
+      setModeles(null);
+      setErreurModeles(null);
+      return;
+    }
+    lire<{ modeles: ModeleCursor[] }>("/api/modeles").then(
+      (donnees) => {
+        setModeles(donnees.modeles);
+        setErreurModeles(null);
+      },
+      (erreur: Error) => {
+        setModeles(null);
+        setErreurModeles(erreur.message);
+      },
+    );
+  }, [cursorConnecte]);
+
+  const persister = (suivant: { pilote: boolean; agent: Agent["id"]; modele?: string | null }) => {
     setPilote(suivant.pilote);
     setAgent(suivant.agent);
-    enregistrerPilote(detail.slug, suivant.pilote, suivant.agent).catch((erreur: Error) => {
+    if (suivant.modele !== undefined) {
+      setModelePref(suivant.modele);
+      setModeleLancement(suivant.modele);
+    }
+    enregistrerPilote(detail.slug, suivant.pilote, suivant.agent, suivant.modele).catch((erreur: Error) => {
       setRefus({
         message: erreur.message,
         session: erreur instanceof ErreurApi ? erreur.session : null,
@@ -123,6 +156,7 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
   };
 
   const choisi = detail.agents.find((a) => a.id === agent);
+  const montreModele = agent === "cursor" && cursorConnecte;
   const travaille = sessions.find(
     (s) =>
       s.etat === "ouverte" &&
@@ -131,16 +165,26 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
   );
   const raison = !choisi?.connecte
     ? "agent non connecté"
-    : detail.session
-      ? "session déjà ouverte sur ce repo"
-      : travaille
-        ? `une session travaille sur ${travaille.repo}`
-        : null;
+    : montreModele && erreurModeles
+      ? erreurModeles
+      : montreModele && !modeles
+        ? "liste des modèles Cursor indisponible"
+        : detail.session
+          ? "session déjà ouverte sur ce repo"
+          : travaille
+            ? `une session travaille sur ${travaille.repo}`
+            : null;
 
   const lancer = (choix?: ChoixClone) => {
     setRefus(null);
     setSale(null);
-    lancerSession(detail.slug, agent, branche, choix).then(
+    lancerSession(
+      detail.slug,
+      agent,
+      branche,
+      choix,
+      agent === "cursor" ? modeleLancement : undefined,
+    ).then(
       (session) => {
         // Page bâtie ici, pas l’URL de la réponse : on ne quitte pas le cockpit.
         if (ID_SESSION.test(session.id)) window.location.assign(`/sessions/${session.id}`);
@@ -196,6 +240,14 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
                 ))}
               </select>
             </label>{" "}
+            {montreModele && modeles && (
+              <SelectModele
+                libelle="Modèle"
+                value={modelePref}
+                modeles={modeles}
+                onChange={(modele) => persister({ pilote, agent, modele })}
+              />
+            )}{" "}
             <label>
               Branche{" "}
               <select value={branche} onChange={(e) => setBranche(e.target.value)}>
@@ -206,6 +258,14 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
                 ))}
               </select>
             </label>{" "}
+            {montreModele && modeles && (
+              <SelectModele
+                libelle="Modèle de la session"
+                value={modeleLancement}
+                modeles={modeles}
+                onChange={setModeleLancement}
+              />
+            )}{" "}
             <button type="button" disabled={raison !== null} title={raison ?? undefined} onClick={() => lancer()}>
               Nouvelle session
             </button>
@@ -248,6 +308,34 @@ function Contenu({ detail, sessions }: { detail: Detail; sessions: Session[] }) 
         </>
       )}
     </>
+  );
+}
+
+function SelectModele({
+  libelle,
+  value,
+  modeles,
+  onChange,
+}: {
+  libelle: string;
+  value: string | null;
+  modeles: ModeleCursor[];
+  onChange: (modele: string | null) => void;
+}) {
+  return (
+    <label>
+      {libelle}{" "}
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      >
+        {modeles.map((m) => (
+          <option key={m.id ?? "auto"} value={m.id ?? ""}>
+            {m.libelle}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

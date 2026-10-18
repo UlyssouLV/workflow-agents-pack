@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal, get_args
 from urllib.parse import quote
 
-from wap_runtime.agents import Agent, agent_par_id, commande_agent
+from wap_runtime.agents import Agent, agent_par_id, commande_agent, id_modele, ligne_commande
 from wap_runtime.eligibilite import enfant_de_version, raison_grisee
 from wap_runtime.enregistrement import CODE_NON_LANCE
 from wap_runtime.sessions import ATTEND, CODE_ARRETEE, ID_SESSION, OUVERTE, TRAVAILLE, Sessions
@@ -168,6 +168,7 @@ class Runner:
         branche: str,
         identite: Identite,
         choix: Choix | None = None,
+        modele: str | None = None,
     ) -> dict:
         """Lève `SessionOuverte` s’il y en a déjà une sur `repo`, `SessionQuiTravaille` si une
         session d’un autre repo a l’activité *travaille*, `CloneSale` si le clone a des changements
@@ -200,7 +201,7 @@ class Runner:
             if fichiers and choix is None:
                 raise CloneSale(fichiers, diff_complet(dossier), _branche_courante(dossier))
             branche_reelle = _branche_courante(dossier) if fichiers and choix == REPRENDRE else branche
-            session = self._creer(repo, ticket, connu, branche=branche_reelle)
+            session = self._creer(repo, ticket, connu, branche=branche_reelle, modele=modele)
             if fichiers and choix == JETER:
                 # Enregistré avant de toucher à l’arbre : rien n’est perdu si la suite échoue.
                 patch = self._sessions.jobs / session["id"] / "abandon.patch"
@@ -298,7 +299,12 @@ class Runner:
             if self._sessions.lire(courante["id"])["etat"] != OUVERTE:
                 raise RunnerErreur(f"session {courante['id']} close avant l’enchaînement")
             suivante = self._creer(
-                courante["repo"], ticket, agent_par_id(courante["agent"]), courante["id"], lancement.branche
+                courante["repo"],
+                ticket,
+                agent_par_id(courante["agent"]),
+                courante["id"],
+                lancement.branche,
+                courante.get("modele"),
             )
             self._sessions.enchainer(courante["id"], suivante["id"])
             self._arreteur(nom_tmux(courante["id"]))
@@ -320,11 +326,34 @@ class Runner:
             raise RunnerErreur(f"branche {branche} non proposée")
 
     def _creer(
-        self, repo: str, ticket: int | None, agent: Agent, precedente: str | None = None, branche: str | None = None
+        self,
+        repo: str,
+        ticket: int | None,
+        agent: Agent,
+        precedente: str | None = None,
+        branche: str | None = None,
+        modele: str | None = None,
     ) -> dict:
-        argv = commande_agent(agent, ticket)
-        commande = f'{argv[0]} "{argv[1]}"' if len(argv) > 1 else argv[0]
-        return self._sessions.creer(repo, ticket, agent.id, commande, precedente, branche)
+        modele = self._modele_cursor(agent, modele)
+        argv = commande_agent(agent, ticket, modele)
+        return self._sessions.creer(
+            repo, ticket, agent.id, ligne_commande(argv), precedente, branche, modele
+        )
+
+    def _modele_cursor(self, agent: Agent, modele: str | None) -> str | None:
+        """Valide la liste Cursor ; rend l’ID effectif (`None` = Auto). Claude : toujours Auto."""
+        if agent.id != "cursor":
+            return None
+        from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
+
+        modele = id_modele(modele)
+        try:
+            ids = {m["id"] for m in lister_modeles_cursor(os.environ)}
+        except ModelesErreur as erreur:
+            raise RunnerErreur(erreur.detail) from erreur
+        if modele not in ids:
+            raise RunnerErreur(f"modèle {modele} absent de la liste Cursor")
+        return modele
 
     def _demarrer(self, session: dict, dossier: Path, lancement: _Lancement, sur_place: bool = False) -> dict:
         """Positionne le clone, y expose les skills et lance l’exécuteur dans tmux, avec un nouveau
@@ -538,6 +567,7 @@ class ClientRunner:
         branche: str,
         identite: Identite,
         choix: Choix | None = None,
+        modele: str | None = None,
     ) -> dict:
         """Mêmes erreurs que `Runner.lancer` ; `RunnerErreur` aussi si le runner est injoignable."""
         demande = {"repo": repo, "agent": agent, "branche": branche,
@@ -546,6 +576,8 @@ class ClientRunner:
             demande["ticket"] = ticket
         if choix is not None:
             demande["choix"] = choix
+        if modele is not None:
+            demande["modele"] = modele
         # Le premier clone d’un gros repo peut être long.
         reponse = self._poster("/sessions", json=demande, timeout=300)
         if reponse.status_code == 409:
@@ -588,6 +620,35 @@ class ClientRunner:
         base = str(self._http.base_url).rstrip("/")
         return f"ws{base.removeprefix('http')}/sessions/{quote(id_, safe='')}/terminal"
 
+    def lister_modeles(self) -> list[dict]:
+        """`GET /modeles` du runner ; même contrat que `lister_modeles_cursor`."""
+        import httpx
+
+        from wap_runtime.modeles import ModelesErreur
+
+        try:
+            reponse = self._http.get("/modeles", timeout=60)
+        except httpx.HTTPError as erreur:
+            raise ModelesErreur(
+                f"liste des modèles Cursor indisponible : runner injoignable ({erreur})"
+            ) from erreur
+        if reponse.status_code in (422, 503):
+            try:
+                detail = reponse.json()["detail"]
+            except (ValueError, KeyError, TypeError):
+                detail = f"le runner a répondu {reponse.status_code}"
+            raise ModelesErreur(str(detail), reponse.status_code)
+        if not reponse.is_success:
+            raise ModelesErreur(
+                f"liste des modèles Cursor indisponible : le runner a répondu {reponse.status_code}"
+            )
+        try:
+            return list(reponse.json()["modeles"])
+        except (ValueError, KeyError, TypeError) as erreur:
+            raise ModelesErreur(
+                "liste des modèles Cursor indisponible : réponse runner invalide"
+            ) from erreur
+
 
 def creer_app_runner(runner: Runner):
     """`POST /sessions` : 201 et la session, 409 et la session ouverte ou le clone sale (fichiers et
@@ -611,6 +672,7 @@ def creer_app_runner(runner: Runner):
         login: str
         email: str
         choix: Choix | None = None
+        modele: str | None = None
 
     class Suivante(BaseModel):
         ticket: int
@@ -631,13 +693,29 @@ def creer_app_runner(runner: Runner):
     def health() -> dict:
         return {"status": "ok", "version": __version__}
 
+    @app.get("/modeles")
+    def modeles() -> dict:
+        """Liste `agent models` pour le runtime (l’image `runtime` n’embarque pas `agent`)."""
+        from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
+
+        try:
+            return {"modeles": lister_modeles_cursor(os.environ)}
+        except ModelesErreur as erreur:
+            raise HTTPException(erreur.code, erreur.detail) from erreur
+
     # `def` : FastAPI l’exécute hors de la boucle, le clone peut prendre du temps.
     @app.post("/sessions", status_code=201)
     def lancer(demande: Lancement):
         identite = Identite(demande.login, demande.email)
         try:
             return runner.lancer(
-                demande.repo, demande.ticket, demande.agent, demande.branche, identite, demande.choix
+                demande.repo,
+                demande.ticket,
+                demande.agent,
+                demande.branche,
+                identite,
+                demande.choix,
+                demande.modele,
             )
         except SessionOuverte as refus:
             return JSONResponse({"detail": str(refus), "session": refus.session}, status_code=409)

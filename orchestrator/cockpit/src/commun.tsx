@@ -133,6 +133,12 @@ export function libelleBadgeSession(activite?: ActiviteSession | null): string {
   return "Session en cours";
 }
 
+/** Libellé cockpit : Auto si pas de `--model` ; `null` si l’agent n’est pas Cursor. */
+export function libelleModele(session: Pick<Session, "agent" | "modele">): string | null {
+  if (session.agent !== "cursor") return null;
+  return session.modele ?? "Auto";
+}
+
 export function libelleActivite(session: Pick<Session, "activite" | "skill">): string {
   const base = LIBELLES_ACTIVITE[session.activite] ?? LIBELLES_ACTIVITE.inconnue;
   return session.activite === "attend" && session.skill ? `${base} — ${session.skill}` : base;

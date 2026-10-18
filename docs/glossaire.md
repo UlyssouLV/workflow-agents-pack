@@ -32,7 +32,7 @@
 
 **Clone géré** — le clone d’un repo lié tenu par l’instance (`~/.wap-runtime/clones/<owner>/<name>/`), sur lequel travaillent les sessions du runner.
 
-**Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur, sur une branche du clone géré ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable. Au plus une session ouverte par repo (ADR 0007). Une **session libre** démarre sans commande (`claude`, `agent`) : l’humain tape ce qu’il veut ; une session enchaînée lance `/implement #n`.
+**Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur, sur une branche du clone géré ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable. Au plus une session ouverte par repo (ADR 0007). Une **session libre** démarre sans commande (`claude`, `agent`) : l’humain tape ce qu’il veut ; une session enchaînée lance `/implement #n`. Pour Cursor, chaque session a un **modèle** (ID CLI ou Auto) : défaut par repo lié, override possible à Nouvelle session, héritage via `precedente` pour l’enchaînement (ADR 0009).
 
 **Activité** — ce que fait une session ouverte, remonté par les hooks des agents : *travaille*, *attend* (réponse attendue, avec le dernier skill s’il est connu) ou *inconnue* (valeur de départ, ou agent sans hooks) (ADR 0007). Le titre de la session est le premier message tapé, sinon le nom de l’agent.
 
