@@ -13,7 +13,7 @@ from typing import Callable, Mapping
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -24,7 +24,16 @@ from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
+from wap_runtime.garde_http import (
+    NOM_COOKIE,
+    GardeSessionServeur,
+    IdentifiantsLogin,
+    LimiteurLogin,
+    connecter,
+    deconnecter,
+)
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
+from wap_runtime.identifiants_cockpit import session_serveur_valide
 from wap_runtime.instance import chemin_instance
 from wap_runtime.pilote import stop_du_pilote, tourner
 from wap_runtime.registry import AGENTS, RegistryErreur, chemin_registry, enregistrer, lire_registry
@@ -149,13 +158,15 @@ def creer_app(
     client = ClientGitHub(jeton, api_github, transport) if jeton else None
     agents = etat_agents(env)
     registry = registry or chemin_registry(_instance_par_defaut())
+    instance = registry.parent
     cockpit = Cockpit(registry, client, horloge)
     # `repos.toml` et `jobs/` vivent tous deux à la racine de l’instance.
-    sessions = Sessions(jobs or registry.parent / "jobs")
+    sessions = Sessions(jobs or instance / "jobs")
     client_runner = ClientRunner(runner or _runner_par_defaut())
     echecs_pilote: dict[str, bool] = {}
     # Sessions échouée/interrompue acquittées (PATCH pilote) : la reprise peut reprendre (US12).
     acquittements_pilote: dict[str, str] = {}
+    limiteur_login = LimiteurLogin()
 
     def _stop(slug: str, detail: dict | None) -> str | None:
         lie = next((r for r in lire_registry(registry) if r.designe(slug)), None)
@@ -203,10 +214,19 @@ def creer_app(
         stop.set()
 
     app = FastAPI(title="wap-runtime", version=__version__, docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.add_middleware(GardeSessionServeur, instance=instance)
 
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "version": __version__}
+
+    @app.post("/api/cockpit/login", status_code=204)
+    def login_cockpit(demande: IdentifiantsLogin, requete: Request, reponse: Response) -> None:
+        connecter(instance, limiteur_login, requete, demande, reponse)
+
+    @app.post("/api/cockpit/logout", status_code=204)
+    def logout_cockpit(requete: Request, reponse: Response) -> None:
+        deconnecter(instance, requete, reponse)
 
     @app.get("/api/auth")
     def auth() -> dict:
@@ -374,8 +394,15 @@ def creer_app(
         from websockets.exceptions import WebSocketException
 
         lue = sessions.lire(id_)
-        # Fermer avant `accept` refuse la poignée de main (403).
-        if not _du_cockpit(websocket.headers, websocket.url.scheme) or lue is None or lue["etat"] != OUVERTE:
+        # Fermer avant `accept` refuse la poignée de main (403). Cookie : le middleware HTTP
+        # ne couvre pas les websockets.
+        cookie = websocket.cookies.get(NOM_COOKIE) or ""
+        if (
+            not _du_cockpit(websocket.headers, websocket.url.scheme)
+            or not session_serveur_valide(instance, cookie)
+            or lue is None
+            or lue["etat"] != OUVERTE
+        ):
             await websocket.close()
             return
         try:
@@ -412,8 +439,15 @@ def _session_qui_travaille(session: dict) -> JSONResponse:
 
 
 def _servir_front(app: FastAPI, front: Path) -> None:
-    """Les routes du front rendent `index.html` ; le routage se fait dans le navigateur."""
+    """Les routes du front rendent `index.html` ; le routage se fait dans le navigateur.
+
+    `/login` est public (garde HTTP) ; le reste du front exige une session.
+    """
     index = front / "index.html"
+
+    @app.get("/login", include_in_schema=False)
+    def page_login() -> FileResponse:
+        return FileResponse(index)
 
     @app.get("/", include_in_schema=False)
     def liste() -> FileResponse:

@@ -5,13 +5,14 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from wap_runtime.server import creer_app
 
 CONNECTE = {"CURSOR_API_KEY": "key_x"}
 
 
 def api(tmp_path: Path, env: dict) -> TestClient:
-    return TestClient(creer_app(registry=tmp_path / "repos.toml", jeton="", env=env))
+    return avec_session(creer_app(registry=tmp_path / "repos.toml", jeton="", env=env), tmp_path)
 
 
 def faux_agent(tmp_path: Path, monkeypatch, script: str) -> dict:
@@ -150,8 +151,9 @@ def test_avec_wap_runner_la_liste_vient_du_runner(tmp_path, monkeypatch):
         transport=httpx.MockTransport(handler), base_url="http://runner-test"
     )
 
-    reponse = TestClient(
-        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http)
+    reponse = avec_session(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http),
+        tmp_path,
     ).get("/api/modeles")
 
     assert reponse.status_code == 200
@@ -171,8 +173,9 @@ def test_avec_wap_runner_une_liste_ko_est_propagee(tmp_path, monkeypatch):
         transport=httpx.MockTransport(handler), base_url="http://runner-test"
     )
 
-    reponse = TestClient(
-        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http)
+    reponse = avec_session(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", env=CONNECTE, runner=client_http),
+        tmp_path,
     ).get("/api/modeles")
 
     assert reponse.status_code == 503

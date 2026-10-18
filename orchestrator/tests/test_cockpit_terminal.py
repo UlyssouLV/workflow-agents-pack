@@ -11,9 +11,9 @@ import time
 import httpx
 import pytest
 import uvicorn
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from client_cockpit import avec_session
 from test_terminal import attendre, etat_tmux, jobs, jusqu_a_la_fermeture, prendre, role, runner, taper  # noqa: F401 (fixtures)
 from wap_runtime.registry import ajouter
 from wap_runtime.runner import Identite, creer_app_runner
@@ -41,7 +41,7 @@ def api(tmp_path, jobs, adresse_runner):
     registry = tmp_path / "repos.toml"
     ajouter(registry, "o/r", None)
     app = creer_app(registry=registry, jeton="x", env={}, jobs=jobs, runner=httpx.Client(base_url=adresse_runner))
-    with TestClient(app) as client:
+    with avec_session(app, tmp_path) as client:
         yield client
 
 

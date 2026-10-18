@@ -1,6 +1,10 @@
 # workflow-agents-pack — orchestrateur (`feat/runtime-orchestrator`)
 
-Cette branche développe l’**orchestrateur** self-hosted : un runtime installé sur la machine de l’utilisateur (Linux, pas un VPS imposé) et un cockpit local qui suit puis pilote les repos métier ayant adopté le pack de skills. Produit public et générique : aucune instance perso dans ce dépôt. Vocabulaire : [`docs/glossaire.md`](docs/glossaire.md).
+Cette branche développe l’**orchestrateur** self-hosted : un runtime installé sur la machine de l’utilisateur (Linux, pas un VPS imposé) et un cockpit web qui suit puis pilote les repos métier ayant adopté le pack de skills. Produit public et générique : aucune instance perso dans ce dépôt.
+
+**Ce n’est pas le pack.** Le pack de skills (skills, hooks, scripts, templates) se maintient sur **`main`**. Cette branche n’y est jamais fusionnée. Ici, le pack est un **outil installé** depuis `main` : `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `agents/templates/`, `.claude/skills/` et `.cursor/skills/` sont ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici (voir [Installer les skills](#installer-les-skills) et l’[ADR 0001](docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md)).
+
+Les versions de cette branche partent de `feat/runtime-orchestrator` et y reviennent (tags `orchestrator-v*`) : [`agents/integration-channel.yml`](agents/integration-channel.yml). Vocabulaire : [`docs/glossaire.md`](docs/glossaire.md).
 
 ## Trajectoire
 
@@ -15,9 +19,11 @@ Cette branche développe l’**orchestrateur** self-hosted : un runtime install�
 | 0.5.0 | Pilote : démarrer et surveiller la chaîne Implement (stops + notifs), sans remplacer l’enchaînement du pack |
 | 0.5.1 | Modèle Cursor par session : choix au lancement, visible dans le cockpit, repris sur la chaîne |
 | 0.6.0 | Accès web authentifié |
-| 0.7.0 | Instances multiples isolées sur un même serveur |
+| 0.7.0 | CI |
+| 0.7.1 | CD |
 | 0.8.0 | Enregistrement d’orchestrateur par compte GitHub |
 | 0.8.1 | Refonte graphique du cockpit |
+| 0.9.0 | Main d’aiguillage et feuilles de route multi-branches |
 
 Détail, hors périmètre et suite : [feuille de route](docs/dev/feuille-de-route/feuille-de-route-dev.md).
 
@@ -29,16 +35,22 @@ Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interac
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
 ```
 
-Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`) et n’écoute que sur `127.0.0.1`.
+Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`).
 
-L’instance a deux services Compose : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Relancer `setup` reconstruit l’image (épinglages changés).
+Par défaut l’exposition web est **désactivée** : le service `runtime` n’écoute que sur `127.0.0.1`. Après l’install, créez les **identifiants cockpit** (obligatoires pour ouvrir le cockpit, y compris en local — ADR 0010) :
+
+```bash
+sudo wap-runtime cockpit-auth --login <votre-login>
+```
+
+L’instance a deux services Compose de base : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). Quand l’exposition web est activée, un troisième service **Caddy** publie uniquement les ports 80/443 et relaie vers le cockpit (ADR 0011). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Relancer `setup` reconstruit l’image (épinglages changés).
 
 Options, par variables d’environnement passées à `sudo` :
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
 | `WAP_REF` | `feat/runtime-orchestrator` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` ; les images `runtime` et `runner` se construisent au même commit |
-| `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) |
+| `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) ; ignoré côté hôte quand l’exposition web est on |
 | `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
 | `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
 | `GH_TOKEN` | — | Token GitHub utilisé pour connecter l’instance, sans interaction |
@@ -60,15 +72,126 @@ Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé s
 
 **Commande `wap-runtime`** : `setup` crée le lien `/usr/local/bin/wap-runtime → ~orchestrator/.local/bin/wap-runtime`, dans le `secure_path` de sudo : `sudo wap-runtime …` se lance tel quel. Relancer `setup` le recrée s’il manque (instance 0.4.0) et n’y touche pas s’il est déjà là ; un autre fichier à cet emplacement fait échouer `setup` (`KO`) sans être écrasé.
 
-**Santé** : `sudo wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre).
+**Santé** : `sudo wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre). Avec l’exposition activée, sondez plutôt le proxy (port 80 / 443) ou utilisez `sudo wap-runtime diagnostic`.
 
-**Connexion GitHub** (ADR 0003) : `sudo wap-runtime auth` lance `gh auth login` (device flow : un code et une URL à valider dans le navigateur) en utilisateur `orchestrator`, copie son token dans `secrets.env` (`0600`) sous `GH_TOKEN`, puis recrée le service `runtime` pour qu’il le lise. `… | sudo wap-runtime auth --with-token` lit un token (fine-grained par exemple) sur stdin. Relancer `auth` reconnecte l’instance ou change de compte. `auth status` affiche une ligne par connexion — GitHub (compte connecté, ou « non connecté »), Claude Code, Cursor — et sort en code `0` si GitHub est connecté, `≠ 0` sinon (les agents sont au choix). En fin de `setup`, si l’instance n’est pas connectée : `GH_TOKEN` présent → utilisé ; sinon terminal disponible et pas `WAP_SKIP_AUTH=1` → `auth` ; sinon le setup réussit en affichant la prochaine étape.
+**Désinstallation** : `sudo wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose, et retire le lien `/usr/local/bin/wap-runtime` s’il pointe vers le binaire d’`orchestrator` ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
-**Connexion des agents** (ADR 0004) : `sudo wap-runtime auth claude` lance `claude setup-token` en utilisateur `orchestrator` sur l’hôte (une URL à ouvrir dans le navigateur, un code à recoller dans le terminal), relève le token affiché et l’écrit dans `secrets.env` (`0600`) sous `CLAUDE_CODE_OAUTH_TOKEN`. `… | sudo wap-runtime auth claude --with-token` lit le token sur stdin à la place ; une clé API Anthropic (`sk-ant-api…`) y est acceptée et s’écrit sous `ANTHROPIC_API_KEY` (une seule identité Claude à la fois : l’autre clé est retirée). Cursor se connecte par clé API (`agent login` exige un navigateur sur la machine) : `… | sudo wap-runtime auth agent --with-token` l’écrit sous `CURSOR_API_KEY`. Chaque écriture remplace l’ancien token sans toucher aux autres lignes, puis recrée tous les services de l’instance pour qu’ils relisent `secrets.env` ; relancer la commande reconnecte l’agent après une révocation. Le runner étant recréé lui aussi, une session ouverte passe `interrompue` : connecter un agent pendant une session l’arrête. « Connecté » veut dire token présent, sans appel de vérification : un token refusé se voit dans le terminal de l’agent. `setup` ne lance pas ces connexions ; il affiche celles qui manquent comme prochaine étape.
+## Configuration
 
-**Repos liés** : `sudo wap-runtime repo add owner/name [--nom <affichage>]`, `repo remove owner/name` et `repo list` gèrent le registry `~orchestrator/.wap-runtime/repos.toml` (en root, l’instance visée est celle d’`orchestrator`). `owner/name` invalide ou en double est refusé. Le fichier s’édite aussi à la main (`pilote`, `agent` = `claude` ou `cursor`, et pour Cursor un modèle préféré) ; `setup` n’y touche pas, et le service `runtime` le relit et l’écrit (toggle **Pilote** / préférences du cockpit).
+L’instance vit sous `/home/orchestrator/.wap-runtime/` (ou `~/.wap-runtime/` de l’utilisateur d’instance). Fichiers utiles :
 
-**Cockpit** : le service `runtime` sert le cockpit sur `http://127.0.0.1:<port>/` (port de `config.toml`, `8787` par défaut). La vue liste montre une ligne par repo lié — version ouverte, progression X/Y, étape, badge **Intervention humaine requise**, badge **Pilote** si le toggle est ON (et la raison du stop — réponse attendue, intervention humaine, etc. — s’il est en pause), heure de lecture — les repos qui attendent quelqu’un en tête, et se relit toutes les 60 s (la lecture GitHub de la liste est gardée 60 s). Un repo inaccessible n’affiche que sa ligne en erreur ; un bandeau demande `sudo wap-runtime auth` si l’instance n’est pas connectée ou si son token est refusé ; l’encart **Agents** dit si Claude Code et Cursor sont connectés, avec la commande à lancer sur l’hôte pour ceux qui ne le sont pas. L’en-tête mène à la page **Sessions** (`/sessions`) : toutes les sessions de l’instance (repo, agent, modèle Cursor s’il s’applique, branche, titre, état, activité et skill des sessions ouvertes), de la plus récente à la plus ancienne, et affiche « N réponse(s) attendue(s) » (lien vers Sessions) ; le titre de l’onglet devient `(N) Cockpit wap-runtime` quand N > 0. La vue `/repos/<owner>/<name>` relit le repo en direct : parent, enfants (état, labels, bloqué), PR de version et ses checks, bugs ouverts, toggle **Pilote** et agent préféré (persistés dans `repos.toml`), et les sessions du repo. Les liens ouvrent GitHub. L’API JSON est sous `/api/` (`/api/repos`, `/api/repos/<owner>/<name>` aussi en `PATCH` pour le pilote, `/api/repos/<owner>/<name>/sessions`, `/api/sessions`, `/api/sessions/<id>`, `/api/sessions/<id>/terminal.cast`, `/api/auth`, `/api/agents`, `/api/modeles` — liste Cursor via le runner en Compose) ; les requêtes d’action (`POST`, `PATCH`, websocket) ne sont acceptées que depuis une page servie par le cockpit (en-tête `Origin`).
+| Fichier | Rôle |
+| --- | --- |
+| `config.toml` | Port local, ref du pack, `exposition` (bool), `domaine` (hôte TLS) — `setup` / les CLI d’expo et de domaine réécrivent les clés qu’ils gèrent ; le reste des valeurs éditées est conservé |
+| `secrets.env` (`0600`) | Tokens GitHub / agents — jamais les identifiants cockpit |
+| `repos.toml` | Registry des repos liés (+ préférences Pilote / agent / modèle) |
+| `compose.yaml`, `Caddyfile` | Générés depuis `config.toml` — ne pas éditer à la main ; relancer `setup` ou les CLI d’expo / domaine |
+
+### Identifiants cockpit (accès web)
+
+Distincts de `wap-runtime auth` (GitHub / agents). Un seul login + mot de passe par instance ; le hash est stocké dans l’instance. **Toute** page et API du cockpit exige une session (sauf surface de login et `GET /health` sans secrets), y compris sur `127.0.0.1` (ADR 0010).
+
+```bash
+sudo wap-runtime cockpit-auth --login operateur          # crée ou change (prompt)
+echo 'mon-mot-de-passe' | sudo wap-runtime cockpit-auth --login operateur --with-password
+```
+
+Changer le mot de passe **invalide** les sessions ouvertes (~7 jours sinon, sauf déconnexion). Les tentatives de login échouées sont limitées.
+
+### Exposition web et domaine
+
+Opt-in (ADR 0011) : sans exposition, accès local ou tunnel SSH uniquement. Avec exposition **on**, seuls **80/443** du reverse proxy Caddy sont publiés sur l’hôte ; `runtime` et `runner` ne sont pas joignables depuis Internet. Le proxy ne relaie que vers le cockpit de cette instance.
+
+```bash
+sudo wap-runtime exposition on     # publie 80/443 via Caddy
+sudo wap-runtime exposition off    # revient à l’écoute 127.0.0.1:<port>
+sudo wap-runtime domaine cockpit.exemple.test   # HTTPS Let’s Encrypt dès que DNS/NAT le permettent
+```
+
+Il n’y a **pas** de mode officiel « HTTP public » : sans domaine, Caddy n’ouvre pas 80/443 sur Internet (loopback seulement) ; gardez local / SSH, ou configurez un domaine puis rouvrez l’exposition / la box.
+
+## Accéder au cockpit
+
+Dans tous les cas : page de login avec les **identifiants cockpit**, puis session navigateur (cookie httpOnly). Déconnexion explicite depuis le cockpit.
+
+### Local (exposition off)
+
+Sur la machine hôte, après `cockpit-auth` :
+
+```text
+http://127.0.0.1:8787/     # port de config.toml (8787 par défaut)
+```
+
+### Tunnel SSH (exposition off)
+
+Depuis votre poste, sans ouvrir la box :
+
+```bash
+ssh -L 8787:127.0.0.1:8787 mon-serveur
+# puis http://127.0.0.1:8787/
+```
+
+Adaptez le port à celui de `config.toml`. Ce chemin reste le moyen recommandé tant que vous n’avez pas de domaine + NAT fiables.
+
+### Exposition off (rappel)
+
+`sudo wap-runtime exposition off` (défaut après install) : pas de ports 80/443 publics ; `runtime` écoute seulement `127.0.0.1:<port>`. Accès = local ou SSH ci-dessus.
+
+### Exposition on, sans domaine
+
+`sudo wap-runtime exposition on` sans `domaine` : Caddy est démarré, mais les ports **80/443 restent sur `127.0.0.1`** (pas de HTTP public). HTTPS Let’s Encrypt n’est pas disponible tant qu’un domaine n’est pas configuré. Usage prévu : lab local ; pour un accès distant sûr sans domaine, gardez l’exposition **off** et le tunnel SSH.
+
+### Exposition on, avec domaine + DNS + NAT
+
+1. Choisissez un nom d’hôte (ex. `cockpit.exemple.test`) et faites-le pointer (DNS A/AAAA) vers l’**adresse publique de la machine hôte** (pas vers la box elle-même si celle-ci n’est que le routeur).
+2. Sur la box / le routeur : redirigez (NAT) les ports **80** et **443** vers cette machine. Caddy tourne sur l’**hôte**, pas sur la box.
+3. Sur l’hôte :
+
+```bash
+sudo wap-runtime cockpit-auth --login <login>   # si pas déjà fait
+sudo wap-runtime domaine cockpit.exemple.test
+sudo wap-runtime exposition on
+sudo wap-runtime diagnostic
+```
+
+4. Ouvrez `https://cockpit.exemple.test/` — Caddy obtient et renouvelle le certificat Let’s Encrypt lorsque DNS et NAT sont corrects.
+
+Checklist opérateur (ce que le produit ne fait pas) :
+
+- [ ] L’enregistrement DNS pointe vers la bonne IP publique
+- [ ] NAT 80 → hôte:80 et 443 → hôte:443
+- [ ] Aucun autre service ne monopolise 80/443 sur l’hôte
+- [ ] Le pare-feu de l’hôte laisse passer 80/443 si besoin
+
+### CGNAT (ex. box 4G)
+
+Certaines box (notamment 4G) sont derrière du **CGNAT** : pas d’IP publique dédiée, le NAT entrant ne marche pas. Le produit **ne configure pas** la box. Dans ce cas : garder l’exposition **off** et le **tunnel SSH**, ou un autre accès hors produit (VPN perso, etc.). `wap-runtime diagnostic` le rappelle côté opérateur.
+
+### Diagnostic
+
+Sépare ce que l’instance a fait (identifiants cockpit, expo, ports 80/443, Caddy up, domaine) du reste à faire (DNS, NAT, limites CGNAT) :
+
+```bash
+sudo wap-runtime diagnostic
+```
+
+Code de sortie `≠ 0` s’il manque quelque chose **côté instance** (auth cockpit, ports, Caddy, domaine si expo on). Les lignes « Côté opérateur » sont informatives : à traiter sur votre DNS / box.
+
+## Connexion GitHub
+
+`sudo wap-runtime auth` lance `gh auth login` (device flow : un code et une URL à valider dans le navigateur) en utilisateur `orchestrator`, copie son token dans `secrets.env` (`0600`) sous `GH_TOKEN`, puis recrée le service `runtime` pour qu’il le lise (ADR 0003). `… | sudo wap-runtime auth --with-token` lit un token (fine-grained par exemple) sur stdin. Relancer `auth` reconnecte l’instance ou change de compte. `auth status` affiche une ligne par connexion — GitHub (compte connecté, ou « non connecté »), Claude Code, Cursor — et sort en code `0` si GitHub est connecté, `≠ 0` sinon (les agents sont au choix). En fin de `setup`, si l’instance n’est pas connectée : `GH_TOKEN` présent → utilisé ; sinon terminal disponible et pas `WAP_SKIP_AUTH=1` → `auth` ; sinon le setup réussit en affichant la prochaine étape.
+
+## Connexion des agents
+
+`sudo wap-runtime auth claude` lance `claude setup-token` en utilisateur `orchestrator` sur l’hôte (une URL à ouvrir dans le navigateur, un code à recoller dans le terminal), relève le token affiché et l’écrit dans `secrets.env` (`0600`) sous `CLAUDE_CODE_OAUTH_TOKEN` (ADR 0004). `… | sudo wap-runtime auth claude --with-token` lit le token sur stdin à la place ; une clé API Anthropic (`sk-ant-api…`) y est acceptée et s’écrit sous `ANTHROPIC_API_KEY` (une seule identité Claude à la fois : l’autre clé est retirée). Cursor se connecte par clé API (`agent login` exige un navigateur sur la machine) : `… | sudo wap-runtime auth agent --with-token` l’écrit sous `CURSOR_API_KEY`. Chaque écriture remplace l’ancien token sans toucher aux autres lignes, puis recrée tous les services de l’instance pour qu’ils relisent `secrets.env` ; relancer la commande reconnecte l’agent après une révocation. Le runner étant recréé lui aussi, une session ouverte passe `interrompue` : connecter un agent pendant une session l’arrête. « Connecté » veut dire token présent, sans appel de vérification : un token refusé se voit dans le terminal de l’agent. `setup` ne lance pas ces connexions ; il affiche celles qui manquent comme prochaine étape.
+
+## Repos liés
+
+`sudo wap-runtime repo add owner/name [--nom <affichage>]`, `repo remove owner/name` et `repo list` gèrent le registry `~orchestrator/.wap-runtime/repos.toml` (en root, l’instance visée est celle d’`orchestrator`). `owner/name` invalide ou en double est refusé. Le fichier s’édite aussi à la main (`pilote`, `agent` = `claude` ou `cursor`, et pour Cursor un modèle préféré) ; `setup` n’y touche pas, et le service `runtime` le relit et l’écrit (toggle **Pilote** / préférences du cockpit).
+
+## Cockpit
+
+Le service `runtime` sert le cockpit (port de `config.toml` en local, ou via Caddy si exposition on). La vue liste montre une ligne par repo lié — version ouverte, progression X/Y, étape, badge **Intervention humaine requise**, badge **Pilote** si le toggle est ON (et la raison du stop — réponse attendue, intervention humaine, etc. — s’il est en pause), heure de lecture — les repos qui attendent quelqu’un en tête, et se relit toutes les 60 s (la lecture GitHub de la liste est gardée 60 s). Un repo inaccessible n’affiche que sa ligne en erreur ; un bandeau demande `sudo wap-runtime auth` si l’instance n’est pas connectée ou si son token est refusé ; l’encart **Agents** dit si Claude Code et Cursor sont connectés, avec la commande à lancer sur l’hôte pour ceux qui ne le sont pas. L’en-tête mène à la page **Sessions** (`/sessions`) : toutes les sessions de l’instance (repo, agent, modèle Cursor s’il s’applique, branche, titre, état, activité et skill des sessions ouvertes), de la plus récente à la plus ancienne, et affiche « N réponse(s) attendue(s) » (lien vers Sessions) ; le titre de l’onglet devient `(N) Cockpit wap-runtime` quand N > 0. La vue `/repos/<owner>/<name>` relit le repo en direct : parent, enfants (état, labels, bloqué), PR de version et ses checks, bugs ouverts, toggle **Pilote** et agent préféré (persistés dans `repos.toml`), et les sessions du repo. Les liens ouvrent GitHub. L’API JSON est sous `/api/` (`/api/repos`, `/api/repos/<owner>/<name>` aussi en `PATCH` pour le pilote, `/api/repos/<owner>/<name>/sessions`, `/api/sessions`, `/api/sessions/<id>`, `/api/sessions/<id>/terminal.cast`, `/api/auth`, `/api/agents`, `/api/modeles` — liste Cursor via le runner en Compose) ; les requêtes d’action (`POST`, `PATCH`, websocket) ne sont acceptées que depuis une page servie par le cockpit (en-tête `Origin`), et toute route (sauf login / health) exige une session cockpit.
 
 **Pilote** : sur la vue détail d’un repo lié, activez le toggle **Pilote** et choisissez l’agent (Claude Code ou Cursor). Si l’agent est Cursor, choisissez aussi le **modèle** (liste fournie par la CLI, avec Auto) : le Pilote l’utilise quand il démarre sans session précédente dans la chaîne. Tant qu’il est ON, le service `runtime` lance le premier enfant Implement éligible (`/implement #n`) et reprend après un stop dès qu’un enfant redevient éligible — sans onglet cockpit ouvert. La liste marque ces repos **Pilote**, et affiche la raison du stop (réponse attendue, intervention humaine, session échouée ou interrompue, aucun ticket éligible, échec de lancement). Après une session échouée ou interrompue, un nouvel enregistrement des préférences Pilote (détail) acquitte le stop et permet la reprise. Avec le cockpit ouvert, le navigateur demande une fois la permission de notification ; chaque stop envoie ensuite une notification, y compris si un autre onglet est au premier plan. Le pilote ne lance que l’Implement sous surveillance : pas « Ouvre la version », `/th`, `/code-review`, « Finalise la version » ni `/cqg`.
 
@@ -80,32 +203,13 @@ Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé s
 
 **Enchaînement** (ADR 0006) : le runner lance chaque agent avec `WAP_ENCHAINER=wap-runtime enchainer`, `WAP_SESSION=<id>` et `WAP_SESSION_JETON` (aléatoire, propre à la session, gardé en mémoire par le runner et absent de `session.json`). L’entrypoint du runner fusionne dans `runner-home/` des règles de permission étroites (Claude `permissions.allow`, Cursor `terminalAllowlist`) pour `bash agents/scripts/enchainer-implement.sh` et `wap-runtime enchainer`, afin que le mode auto n’exige pas un humain pour ce seul chemin. Quand `encadrer-implement` enchaîne sur le ticket suivant, le pack lance `$WAP_ENCHAINER <n>` : la commande demande au runner (`POST /sessions/<id>/suivante`, API interne, même conteneur) d’ouvrir `/implement #n`. Cela marche aussi depuis une session libre lancée sur la branche d’une PR de version, et n’est pas soumis à la règle « une autre session travaille ». Le runner refuse — la commande sort en `≠ 0` avec la raison, rien n’est lancé ni fermé — si le jeton n’est pas celui de la session ouverte ou a déjà servi, si `#n` n’est pas un enfant éligible (mêmes règles qu’en 0.4.1, lues sur GitHub) de la version de la même branche du même repo, ou si le clone a des changements non commités. Acceptée, la commande répond `OK`, puis la session courante passe `enchaînée` (tmux arrêté) et la suivante démarre sur `/implement #n` : même repo, même branche, même agent, nouveau processus sans reprise de conversation. Les deux `session.json` se lient par `precedente` / `suivante`, exposés par `/api/sessions/<id>` et `/api/repos/<owner>/<name>/sessions`. Aucune autre commande, aucun autre repo ni agent n’est possible par ce chemin. Côté cockpit, la page d’une session ouverte qui passe `enchaînée` bascule vers la suivante avec le bandeau « Session enchaînée : /implement #n » ; l’onglet qui avait la main la reprend dans la nouvelle session (le terminal se reconnecte tant que son tmux démarre). Ouverte plus tard, la page d’une session enchaînée rejoue son terminal et donne le lien vers la suivante. Sans pack à jour sur `main`, le skill retombe sur son fallback.
 
-Le port n’écoute que sur `127.0.0.1` de l’hôte (ADR 0002) : depuis votre poste, ouvrez un tunnel SSH puis le navigateur.
-
-```bash
-ssh -L 8787:127.0.0.1:8787 mon-serveur      # puis http://127.0.0.1:8787/
-```
-
-**Désinstallation** : `sudo wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose, et retire le lien `/usr/local/bin/wap-runtime` s’il pointe vers le binaire d’`orchestrator` ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
-
-## Le pack vit sur `main`
-
-Le pack de skills se maintient sur `main` ; cette branche n’y est jamais fusionnée. Ici, le pack est un outil installé : `agents/skills/`, `agents/hooks/`, `agents/scripts/`, `agents/templates/`, `.claude/skills/` et `.cursor/skills/` sont ignorés par git. Un skill à corriger se corrige sur `main`, puis se réinstalle ici. Voir l’[ADR 0001](docs/adr/0001-pack-outil-installe-sur-la-branche-orchestrateur.md).
-
-Les versions de cette branche partent de `feat/runtime-orchestrator` et y reviennent (tags `orchestrator-v*`) : [`agents/integration-channel.yml`](agents/integration-channel.yml).
-
 ## Installer les skills
 
-Cloner la branche :
+Sur cette branche, pour développer l’orchestrateur avec les skills du pack :
 
 ```bash
 git clone -b feat/runtime-orchestrator https://github.com/UlyssouLV/workflow-agents-pack.git
 cd workflow-agents-pack
-```
-
-Puis, à la racine du dépôt :
-
-```bash
 mkdir -p agents/skills
 TMP=$(mktemp -d)
 git clone --depth 1 -b main https://github.com/UlyssouLV/workflow-agents-pack.git "$TMP"
@@ -126,7 +230,7 @@ python3.12 -m venv orchestrator/.venv
 orchestrator/.venv/bin/pip install -e 'orchestrator[dev]'
 ```
 
-L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `auth [status|claude|agent] [--with-token]`, `repo add|remove|list`, `setup`, `uninstall [--purge]`).
+L’installation éditable fournit la commande `orchestrator/.venv/bin/wap-runtime` (`serve`, `health [--port N]`, `auth [status|claude|agent] [--with-token]`, `cockpit-auth`, `exposition`, `domaine`, `diagnostic`, `repo add|remove|list`, `setup`, `uninstall [--purge]`).
 
 Le front du cockpit vit sous `orchestrator/cockpit/` (React + TypeScript + Vite, Node 24) ; l’image le construit dans une étape Node, l’hôte n’a pas besoin de Node :
 
@@ -146,5 +250,5 @@ cd orchestrator/cockpit && npm test
 ## Repères
 
 - Règles pour les agents : [`AGENTS.md`](AGENTS.md).
-- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/).
+- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md)).
 - Cycle Ouvre / Implement / Finalise, tracker, labels : [`agents/issue-tracker.md`](agents/issue-tracker.md), [`agents/docs/integration-channel.md`](agents/docs/integration-channel.md).

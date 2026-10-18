@@ -4,7 +4,7 @@ Runtime self-hosted (monorepo) : pack syncé vers les repos métier ; orchestrat
 
 Canal d’intégration : branche `feat/runtime-orchestrator` + `agents/integration-channel.yml` (cycle version et releases `orchestrator-v*` vers cette base, pas `main`). Mis en place **hors semver** (bootstrap), pas une version numérotée.
 
-Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples (0.7.0) restent une affaire de provisionnement.
+Contrainte transverse : rien n’est global à la machine hôte. Registry, token, cache, clones et jobs sont propres à l’instance (`~/.wap-runtime/` de l’utilisateur d’instance) ; aucun chemin système ni port codé en dur — pour que les instances multiples restent une affaire de provisionnement quand elles arriveront.
 
 ## Déjà livré
 
@@ -16,18 +16,19 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.4.2** — Session libre et réponse attendue : depuis le détail d’un repo, **Nouvelle session** (agent + branche) lance l’agent vide dans le clone géré ; une session ouverte par repo, activité *travaille* / *réponse attendue* / *inconnue* par les hooks, page **Sessions** et compteur de réponses attendues ([#62](https://github.com/UlyssouLV/workflow-agents-pack/issues/62), [spec](../../specs/v0.4.2-session-libre-et-reponse-attendue.md), [ADR 0007](../../adr/0007-sessions-par-repo-activite-par-hooks.md)).
 - **0.5.0** — Pilote (autopilot borné) : toggle opt-in par repo, boucle dans `runtime` qui lance le premier `/implement #n` éligible, notifie aux stops et reprend ; l’enchaînement reste le pack ([#73](https://github.com/UlyssouLV/workflow-agents-pack/issues/73), [spec](../../specs/v0.5.0-pilote.md), [ADR 0008](../../adr/0008-boucle-pilote-dans-le-runtime.md)).
 - **0.5.1** — Modèle Cursor par session : préférence repo, override à Nouvelle session, `--model` (sauf Auto), héritage via `precedente`, affichage cockpit ([#82](https://github.com/UlyssouLV/workflow-agents-pack/issues/82), [spec](../../specs/v0.5.1-modele-cursor-par-session.md), [ADR 0009](../../adr/0009-modele-cursor-preference-et-heritage.md)).
+- **0.6.0** — Accès web authentifié : identifiants cockpit + sessions serveur, auth obligatoire (y compris local), reverse proxy Caddy opt-in (80/443), TLS Let’s Encrypt dès qu’un domaine pointe, pas de HTTP public ; diagnostic CLI ; README refondu ([#89](https://github.com/UlyssouLV/workflow-agents-pack/issues/89), [spec](../../specs/v0.6.0-acces-web-authentifie.md), [ADR 0010](../../adr/0010-identifiants-cockpit-auth-obligatoire.md), [ADR 0011](../../adr/0011-caddy-exposition-web-opt-in.md)).
 
-## Prochaine : 0.6.0 — Accès web authentifié
+## Prochaine : 0.7.0 — CI
 
-Objectif. Joindre son cockpit depuis Internet de façon sûre : personne n’atteint le cockpit sans s’être authentifié auprès de cette instance (identifiants propres à l’instance), aucun service runtime exposé en clair. Quand on y arrive via un reverse proxy depuis Internet vers une machine du réseau privé, ce chemin doit être **absolument sûr** : il n’ouvre aucune faille qui exposerait le reste du réseau privé.
+Objectif. Chaque changement proposé sur l’orchestrateur est vérifié automatiquement (tests, contrôles de qualité) avant d’être accepté : on sait vite si la branche est saine, sans relancer à la main toute la suite.
 
-Hors périmètre : instances multiples sur le même serveur ; SaaS multi-tenant ; comptes partagés entre instances.
+Hors périmètre : publication ou déploiement automatiques (0.7.1).
 
-## Ensuite : 0.7.0 — Instances multiples isolées
+## Ensuite : 0.7.1 — CD
 
-Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
+Objectif. Une version validée se publie et se déploie sans enchaînement manuel : artefacts et mise à disposition suivent la validation CI, sur le modèle du repo ArgOS.
 
-Hors périmètre : parcours d’enregistrement self-service depuis le web (0.8.0).
+Hors périmètre : parcours d’enregistrement self-service (0.8.0).
 
 ## Ensuite : 0.8.0 — Enregistrement d’orchestrateur par compte GitHub
 

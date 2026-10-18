@@ -3,8 +3,8 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from faux_github import JETON, FauxGitHub
 from wap_runtime.registry import ajouter
 from wap_runtime.server import creer_app
@@ -43,7 +43,7 @@ def registry(tmp_path):
 
 def client(registry, github, horloge, jeton=JETON):
     app = creer_app(registry=registry, jeton=jeton, transport=github.transport(), horloge=horloge)
-    return TestClient(app)
+    return avec_session(app, registry.parent)
 
 
 def detail(registry, github, horloge, slug=SLUG, jeton=JETON):

@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
 
 import pytest
-from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from faux_github import JETON, FauxGitHub
 from wap_runtime.registry import ajouter
 from wap_runtime.server import creer_app
@@ -44,7 +44,7 @@ def registry(tmp_path):
 
 def client(registry, github, horloge, jeton=JETON):
     app = creer_app(registry=registry, jeton=jeton, transport=github.transport(), horloge=horloge)
-    return TestClient(app)
+    return avec_session(app, registry.parent)
 
 
 def liste(registry, github, horloge, jeton=JETON):
@@ -62,7 +62,7 @@ def test_health_rend_le_statut_et_la_version(registry, github, horloge):
 
     assert reponse.status_code == 200
     assert reponse.json() == {"status": "ok", "version": version("wap-runtime")}
-    assert version("wap-runtime") == "0.5.1"
+    assert version("wap-runtime") == "0.6.0"
 
 
 def test_une_entree_par_repo_lie_dans_l_ordre_du_registry(registry, github, horloge):

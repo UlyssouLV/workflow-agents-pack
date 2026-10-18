@@ -1,5 +1,6 @@
 import { VueDetail } from "./VueDetail";
 import { VueListe } from "./VueListe";
+import { VueLogin } from "./VueLogin";
 import { VueSession } from "./VueSession";
 import { VueSessions } from "./VueSessions";
 
@@ -8,6 +9,9 @@ const SESSION = /^\/sessions\/([^/]+)\/?$/;
 
 /** Routes servies toutes par `index.html` (le runtime) ; les liens rechargent la page. */
 export function App({ chemin }: { chemin: string }) {
+  if (chemin === "/login" || chemin === "/login/") {
+    return <VueLogin />;
+  }
   if (chemin === "/sessions" || chemin === "/sessions/") {
     return <VueSessions />;
   }

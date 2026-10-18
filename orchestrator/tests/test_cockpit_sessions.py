@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from faux_github import JETON, FauxGitHub
 from wap_runtime.registry import ajouter, enregistrer, lire_registry
 from wap_runtime.server import creer_app
@@ -86,7 +86,7 @@ def api(tmp_path, github, jobs, runner):
         registry=registry, jeton=JETON, transport=github.transport(), env=CONNECTES,
         jobs=jobs, runner=runner.client(),
     )
-    return TestClient(app)
+    return avec_session(app, tmp_path)
 
 
 def lancer(api, agent="claude", origine=COCKPIT, repo=SLUG, branche="v0.4.0", **choix):
@@ -101,7 +101,7 @@ def test_lancement_de_session_n_ecrit_pas_le_modele_du_registry(
     registry = tmp_path / "repos.toml"
     ajouter(registry, SLUG, None)
     enregistrer(registry, SLUG, pilote=False, agent="cursor", modele="composer-2")
-    api = TestClient(
+    api = avec_session(
         creer_app(
             registry=registry,
             jeton=JETON,
@@ -109,7 +109,8 @@ def test_lancement_de_session_n_ecrit_pas_le_modele_du_registry(
             env=CONNECTES,
             jobs=jobs,
             runner=runner.client(),
-        )
+        ),
+        tmp_path,
     )
 
     avant = registry.read_text()
@@ -125,7 +126,7 @@ def _api_cursor(tmp_path, github, jobs, runner, modele_repo=None):
     ajouter(registry, SLUG, None)
     if modele_repo is not None:
         enregistrer(registry, SLUG, pilote=False, agent="cursor", modele=modele_repo)
-    return TestClient(
+    return avec_session(
         creer_app(
             registry=registry,
             jeton=JETON,
@@ -133,7 +134,8 @@ def _api_cursor(tmp_path, github, jobs, runner, modele_repo=None):
             env={"CURSOR_API_KEY": "key_x"},
             jobs=jobs,
             runner=runner.client(),
-        )
+        ),
+        tmp_path,
     ), registry
 
 

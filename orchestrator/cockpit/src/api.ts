@@ -195,14 +195,45 @@ export class ErreurApi extends Error {
   clone: CloneSale | null = null;
 }
 
+/** Session serveur expirée / absente : vers la surface de login. */
+async function fetchAuthentifie(chemin: string, init?: RequestInit): Promise<Response> {
+  const reponse = await fetch(chemin, init);
+  if (reponse.status === 401) {
+    window.location.assign("/login");
+  }
+  return reponse;
+}
+
 export async function lire<T>(chemin: string): Promise<T> {
-  const reponse = await fetch(chemin, { headers: { Accept: "application/json" } });
+  const reponse = await fetchAuthentifie(chemin, { headers: { Accept: "application/json" } });
   if (!reponse.ok) {
     // FastAPI rend `{"detail": "<message>"}` (404 : repo absent du registry).
     const corps = await reponse.json().catch(() => null);
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return (await reponse.json()) as T;
+}
+
+/** `POST /api/cockpit/login` : pose le cookie de session serveur (httpOnly). */
+export async function connecterCockpit(login: string, password: string): Promise<void> {
+  const reponse = await fetch("/api/cockpit/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ login, password }),
+  });
+  if (!reponse.ok) {
+    const corps = await reponse.json().catch(() => null);
+    throw new ErreurApi(corps?.detail ?? `login : HTTP ${reponse.status}`);
+  }
+}
+
+/** `POST /api/cockpit/logout` puis retour à `/login`. */
+export async function deconnecterCockpit(): Promise<void> {
+  await fetchAuthentifie("/api/cockpit/logout", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  window.location.assign("/login");
 }
 
 /** `GET /api/sessions` et `GET /api/repos/{owner}/{name}/sessions` : plus récentes d’abord. */
@@ -214,7 +245,7 @@ export interface SessionsDuRepo {
 export async function lireEnregistrement(id: string): Promise<string> {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const chemin = `/api/sessions/${encodeURIComponent(id)}/terminal.cast`;
-  const reponse = await fetch(chemin);
+  const reponse = await fetchAuthentifie(chemin);
   if (!reponse.ok) {
     const corps = await reponse.json().catch(() => null);
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
@@ -235,7 +266,7 @@ export async function enregistrerPilote(
   agent: Agent["id"],
   modele?: string | null,
 ): Promise<{ pilote: boolean; agent: Agent["id"]; modele: string | null }> {
-  const reponse = await fetch(`/api/repos/${repo}`, {
+  const reponse = await fetchAuthentifie(`/api/repos/${repo}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(modele === undefined ? { pilote, agent } : { pilote, agent, modele }),
@@ -255,7 +286,7 @@ export async function lancerSession(
   choix?: ChoixClone,
   modele?: string | null,
 ): Promise<Session> {
-  const reponse = await fetch("/api/sessions", {
+  const reponse = await fetchAuthentifie("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -279,7 +310,7 @@ export async function lancerSession(
 /** **Terminer** : `POST /api/sessions/{id}/terminer`, la session rendue avec son état final. */
 export async function terminerSession(id: string): Promise<Session> {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
-  const reponse = await fetch(`/api/sessions/${encodeURIComponent(id)}/terminer`, {
+  const reponse = await fetchAuthentifie(`/api/sessions/${encodeURIComponent(id)}/terminer`, {
     method: "POST",
     headers: { Accept: "application/json" },
   });

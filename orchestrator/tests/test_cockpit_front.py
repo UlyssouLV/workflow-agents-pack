@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from client_cockpit import avec_session
 from wap_runtime.server import creer_app
 
 INDEX = "<!doctype html><div id=\"racine\"></div>"
@@ -19,7 +20,9 @@ def front(tmp_path):
 
 
 def client(tmp_path, front):
-    return TestClient(creer_app(registry=tmp_path / "repos.toml", jeton="", front=front))
+    return avec_session(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", front=front), tmp_path
+    )
 
 
 @pytest.mark.parametrize(
@@ -34,7 +37,10 @@ def test_les_routes_du_front_rendent_index_html(tmp_path, front, chemin):
 
 
 def test_les_assets_construits_sont_servis(tmp_path, front):
-    reponse = client(tmp_path, front).get("/assets/index-abc.js")
+    # Assets publics (surface login) : pas de session requise.
+    reponse = TestClient(creer_app(registry=tmp_path / "repos.toml", jeton="", front=front)).get(
+        "/assets/index-abc.js"
+    )
 
     assert reponse.status_code == 200
     assert reponse.text == "console.log('cockpit')"
@@ -65,7 +71,10 @@ def test_un_asset_hors_du_build_n_est_pas_servi(tmp_path, front):
 
 
 def test_sans_build_du_front_seules_l_api_et_health_sont_servies(tmp_path):
-    c = TestClient(creer_app(registry=tmp_path / "repos.toml", jeton="", front=tmp_path / "absent"))
+    c = avec_session(
+        creer_app(registry=tmp_path / "repos.toml", jeton="", front=tmp_path / "absent"),
+        tmp_path,
+    )
 
     assert c.get("/health").status_code == 200
     assert c.get("/").status_code == 404
@@ -74,6 +83,6 @@ def test_sans_build_du_front_seules_l_api_et_health_sont_servies(tmp_path):
 def test_le_front_par_defaut_vient_de_wap_cockpit(tmp_path, front, monkeypatch):
     monkeypatch.setenv("WAP_COCKPIT", str(front))
 
-    c = TestClient(creer_app(registry=tmp_path / "repos.toml", jeton=""))
+    c = avec_session(creer_app(registry=tmp_path / "repos.toml", jeton=""), tmp_path)
 
     assert c.get("/repos/o/r").text == INDEX

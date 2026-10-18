@@ -11,7 +11,7 @@ import type {
   Session,
   SessionsDuRepo,
 } from "./api";
-import { ID_SESSION } from "./api";
+import { deconnecterCockpit, ID_SESSION } from "./api";
 import { LIBELLES_STOP, demanderPermissionNotifications, notifierStops } from "./notifications";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
@@ -52,6 +52,10 @@ export function Entete() {
         <a href="/sessions">
           {n} réponse(s) attendue(s)
         </a>
+        {" · "}
+        <button type="button" onClick={() => void deconnecterCockpit()}>
+          Déconnexion
+        </button>
       </nav>
     </header>
   );

@@ -131,7 +131,9 @@ def demarrer_instance(
     print(f"→ {ETAPE_INSTANCE}", flush=True)
     try:
         instance = preparer_instance(home, env)
-        port = lire_config(instance)["port"]
+        config = lire_config(instance)
+        # Expo on : seuls 80/443 du proxy sont publiés ; sonder Caddy, pas le port local.
+        port = 80 if config.get("exposition") else config["port"]
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as erreur:
         return _echec(ETAPE_INSTANCE, erreur)
 

@@ -13,7 +13,18 @@ from pathlib import Path
 
 from wap_runtime.agents import AGENTS, CURSOR, connecte, lancer_auth_agent
 from wap_runtime.auth import lancer_auth, lire_secrets, statut
-from wap_runtime.instance import chemin_instance, desinstaller, lire_config
+from wap_runtime.diagnostic import formater as formater_diagnostic
+from wap_runtime.diagnostic import observer as observer_diagnostic
+from wap_runtime.identifiants_cockpit import definir as definir_identifiants_cockpit
+from wap_runtime.instance import (
+    chemin_instance,
+    definir_domaine,
+    definir_exposition,
+    desinstaller,
+    lire_config,
+    normaliser_domaine,
+    regenerer_compose,
+)
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
     RegistryErreur,
@@ -51,9 +62,102 @@ def _instance_existante() -> Path | None:
 
 def _port_configure() -> int:
     try:
-        return int(lire_config(chemin_instance(_home_instance()))["port"])
+        config = lire_config(chemin_instance(_home_instance()))
+        # Expo on : le runtime n’a plus de port hôte ; `/health` passe par Caddy :80.
+        if config.get("exposition"):
+            return 80
+        return int(config["port"])
     except (OSError, ValueError, KeyError):
         return PORT_PAR_DEFAUT
+
+
+def _appliquer_compose(instance: Path) -> int | None:
+    """`docker compose up -d --remove-orphans` ; rend un code d’erreur ou `None` si OK."""
+    compose = instance / "compose.yaml"
+    try:
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(compose),
+                "up",
+                "-d",
+                "--remove-orphans",
+            ],
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        print(f"KO — `docker compose up` a échoué ({erreur})")
+        return 1
+    return None
+
+
+def _exposition(action: str) -> int:
+    """Active ou désactive l’exposition web (Caddy) et réapplique Compose."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    actif = action == "on"
+    try:
+        definir_exposition(instance, actif)
+        regenerer_compose(instance)
+    except (OSError, ValueError, KeyError) as erreur:
+        print(f"KO — impossible de {'activer' if actif else 'désactiver'} l’exposition ({erreur})")
+        return 1
+    echec = _appliquer_compose(instance)
+    if echec is not None:
+        return echec
+    if actif:
+        domaine = str(lire_config(instance).get("domaine") or "").strip()
+        if domaine:
+            print(f"OK — exposition web activée (HTTPS via « {domaine} » dès que DNS/NAT le permettent)")
+        else:
+            print(
+                "OK — exposition web activée (ports Caddy sur 127.0.0.1 seulement ; "
+                "pas de HTTP public — `wap-runtime domaine <hote>` pour HTTPS)"
+            )
+    else:
+        print("OK — exposition web désactivée")
+    return 0
+
+
+def _domaine(hote: str) -> int:
+    """Configure le nom de domaine pour TLS Let’s Encrypt et réapplique Compose."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    try:
+        domaine = normaliser_domaine(hote)
+        definir_domaine(instance, domaine)
+        regenerer_compose(instance)
+    except ValueError as erreur:
+        print(f"KO — domaine invalide : {erreur} (attendu un nom d’hôte, ex. cockpit.exemple.test)")
+        return 1
+    except (OSError, KeyError) as erreur:
+        print(f"KO — impossible d’enregistrer le domaine ({erreur})")
+        return 1
+    echec = _appliquer_compose(instance)
+    if echec is not None:
+        return echec
+    print(f"OK — domaine « {domaine} » (HTTPS / Let’s Encrypt dès que DNS/NAT le permettent)")
+    return 0
+
+
+def _diagnostic() -> int:
+    """Rapport : ce que l’instance a fait vs ce qui reste côté DNS / NAT / CGNAT."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    try:
+        etat = observer_diagnostic(instance)
+    except (OSError, ValueError, KeyError) as erreur:
+        print(f"KO — diagnostic impossible ({erreur})")
+        return 1
+    lignes, code = formater_diagnostic(etat)
+    print("\n".join(lignes))
+    return code
 
 
 def _health(port: int | None) -> int:
@@ -233,6 +337,46 @@ def _repo(action: str, slug: str | None, nom: str | None) -> int:
     return 0
 
 
+def _cockpit_auth(login: str, avec_password: bool) -> int:
+    """Crée ou change les identifiants cockpit (distinct de `wap-runtime auth`)."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    login = (login or "").strip()
+    if not login:
+        print("KO — login requis : `wap-runtime cockpit-auth --login <login>`")
+        return 1
+    if avec_password:
+        mot_de_passe = sys.stdin.read()
+        if mot_de_passe.endswith("\n"):
+            mot_de_passe = mot_de_passe[:-1]
+        if mot_de_passe.endswith("\r"):
+            mot_de_passe = mot_de_passe[:-1]
+    else:
+        import getpass
+
+        mot_de_passe = getpass.getpass("Mot de passe cockpit : ")
+    if not mot_de_passe:
+        print("KO — mot de passe vide")
+        return 1
+    try:
+        action = definir_identifiants_cockpit(instance, login, mot_de_passe)
+    except ValueError as erreur:
+        print(f"KO — {erreur}")
+        return 1
+    except OSError as erreur:
+        print(f"KO — écriture des identifiants impossible ({erreur})")
+        return 1
+    if action == "cree":
+        print(f"OK — identifiants cockpit créés (login « {login} »)")
+    else:
+        print(
+            f"OK — mot de passe cockpit changé (login « {login} ») ; "
+            "sessions serveur invalidées"
+        )
+    return 0
+
+
 def _auth(cible: str | None, avec_jeton: bool) -> int:
     """`cible` : `None` (GitHub), `status`, `claude` ou `agent` (Cursor)."""
     instance = _instance_existante()
@@ -340,6 +484,38 @@ def main(argv=None) -> int:
     auth.add_argument(
         "--with-token", action="store_true", help="lit le token (ou la clé API) sur stdin"
     )
+    cockpit_auth = sous.add_parser(
+        "cockpit-auth",
+        help="crée ou change les identifiants d’accès web au cockpit "
+        "(distinct de `auth` GitHub / agents)",
+    )
+    cockpit_auth.add_argument("--login", required=True, help="login unique de l’instance")
+    cockpit_auth.add_argument(
+        "--with-password",
+        action="store_true",
+        help="lit le mot de passe sur stdin",
+    )
+    exposition = sous.add_parser(
+        "exposition",
+        help="active ou désactive l’exposition web (Caddy, ports 80/443)",
+    )
+    exposition.add_argument(
+        "action",
+        choices=["on", "off"],
+        help="`on` : reverse proxy public ; `off` : accès local / SSH seulement",
+    )
+    domaine = sous.add_parser(
+        "domaine",
+        help="configure le nom de domaine pour HTTPS Let’s Encrypt (Caddy)",
+    )
+    domaine.add_argument(
+        "hote",
+        help="nom d’hôte qui doit pointer vers cette machine (ex. cockpit.exemple.test)",
+    )
+    sous.add_parser(
+        "diagnostic",
+        help="rapporte Caddy, ports, auth cockpit, et le reste DNS/NAT côté opérateur",
+    )
     setup_ = sous.add_parser(
         "setup",
         help="provisionne la machine : socle, instance, Compose, attente de /health",
@@ -351,6 +527,14 @@ def main(argv=None) -> int:
         return _setup(args.instance_seule)
     if args.commande == "auth":
         return _auth(args.cible, args.with_token)
+    if args.commande == "cockpit-auth":
+        return _cockpit_auth(args.login, args.with_password)
+    if args.commande == "exposition":
+        return _exposition(args.action)
+    if args.commande == "domaine":
+        return _domaine(args.hote)
+    if args.commande == "diagnostic":
+        return _diagnostic()
     if args.commande == "repo":
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
