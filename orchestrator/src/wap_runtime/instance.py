@@ -55,11 +55,25 @@ def preparer_instance(
     for nom in DOSSIERS_RUNNER:
         (instance / nom).mkdir(exist_ok=True)
     # Cette passe tourne en utilisateur d’instance : le runner reprend son UID.
-    contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
-    compose = _compose(contexte, config["port"], os.getuid(), os.getgid())
-    (instance / "compose.yaml").write_text(compose)
+    regenerer_compose(instance, direct_url=direct_url)
     _aligner_pack(depot_pack, Path(config["pack_path"]), config["pack_ref"])
     return instance
+
+
+def regenerer_compose(
+    instance: Path,
+    direct_url: Mapping | None = _PAQUET_INSTALLE,
+) -> None:
+    """Réécrit `compose.yaml` et le Caddyfile depuis `config.toml` (sans toucher au pack)."""
+    if direct_url is _PAQUET_INSTALLE:
+        direct_url = _direct_url_du_paquet()
+    config = lire_config(instance)
+    exposition = bool(config.get("exposition", False))
+    contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
+    (instance / "compose.yaml").write_text(
+        _compose(contexte, config["port"], os.getuid(), os.getgid(), exposition)
+    )
+    _ecrire_caddyfile(instance, exposition)
 
 
 def ref_des_images(direct_url: Mapping | None) -> str:
@@ -71,6 +85,11 @@ def ref_des_images(direct_url: Mapping | None) -> str:
 
 def lire_config(instance: Path) -> dict:
     return tomllib.loads((instance / "config.toml").read_text())
+
+
+def definir_exposition(instance: Path, actif: bool) -> None:
+    """Écrit `exposition` dans `config.toml` (la passe Compose lit cette clé)."""
+    _ecrire_cle_config(instance / "config.toml", "exposition", bool(actif))
 
 
 def desinstaller(home: Path, purge: bool) -> Path | None:
@@ -98,6 +117,7 @@ def _config_par_defaut(instance: Path, env: Mapping[str, str]) -> dict:
         "pack_ref": env.get("WAP_PACK_REF", "main"),
         "pack_path": str(instance / "pack"),
         "version": __version__,
+        "exposition": False,
     }
 
 
@@ -134,7 +154,62 @@ def _direct_url_du_paquet() -> dict | None:
     return json.loads(texte) if texte else None
 
 
-def _compose(contexte: str, port: int, uid: int, gid: int) -> str:
+def _ecrire_cle_config(chemin: Path, cle: str, valeur) -> None:
+    """Met à jour ou ajoute une clé scalaire de premier niveau dans `config.toml`."""
+    texte = chemin.read_text() if chemin.exists() else ""
+    ligne = f"{cle} = {json.dumps(valeur)}"
+    if re.search(rf"^{re.escape(cle)} = ", texte, re.MULTILINE):
+        chemin.write_text(
+            re.sub(rf"^{re.escape(cle)} = .*$", ligne, texte, flags=re.MULTILINE)
+        )
+        return
+    table = re.search(r"^\s*\[", texte, re.MULTILINE)
+    debut = texte[: table.start()] if table else texte
+    fin = texte[table.start() :] if table else ""
+    if debut and not debut.endswith("\n"):
+        debut += "\n"
+    chemin.write_text(debut + ligne + "\n" + (("\n" + fin) if fin else ""))
+
+
+def _ecrire_caddyfile(instance: Path, exposition: bool) -> None:
+    chemin = instance / "Caddyfile"
+    if not exposition:
+        chemin.unlink(missing_ok=True)
+        return
+    # Relais borné au cockpit de cette instance (`runtime`) — ADR 0011.
+    chemin.write_text(
+        f""":80 {{
+	reverse_proxy runtime:{PORT_CONTENEUR}
+}}
+"""
+    )
+
+
+def _compose(contexte: str, port: int, uid: int, gid: int, exposition: bool = False) -> str:
+    # Expo on : seuls 80/443 du proxy sont publiés ; runtime reste sur le réseau Compose.
+    ports_runtime = (
+        ""
+        if exposition
+        else (
+            "\n    ports:\n"
+            f'      - "127.0.0.1:{port}:{PORT_CONTENEUR}"'
+        )
+    )
+    caddy = ""
+    if exposition:
+        caddy = """
+  # Entrée publique opt-in : seuls 80/443 ; relaie uniquement vers `runtime` (cockpit).
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+    depends_on:
+      - runtime
+    restart: unless-stopped
+"""
     return f"""\
 # Généré par wap-runtime depuis config.toml : réécrit à chaque passe, ne pas éditer.
 name: wap-runtime
@@ -154,9 +229,7 @@ services:
     # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur. Sans `:ro` : le
     # cockpit persiste le toggle Pilote (remplacement atomique dans ce dossier).
     volumes:
-      - ".:{INSTANCE_CONTENEUR}"
-    ports:
-      - "127.0.0.1:{port}:{PORT_CONTENEUR}"
+      - ".:{INSTANCE_CONTENEUR}"{ports_runtime}
     restart: unless-stopped
   # Sessions des agents : pas de socket Docker, aucun port publié ; le `runtime` lui
   # parle sur le réseau Compose.
@@ -179,7 +252,7 @@ services:
       - "./jobs:/jobs"
       - "./runner-home:{HOME_RUNNER}"
     restart: unless-stopped
-"""
+{caddy}"""
 
 
 def _aligner_pack(depot: str, pack: Path, ref: str) -> None:

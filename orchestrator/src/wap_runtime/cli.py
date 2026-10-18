@@ -14,7 +14,13 @@ from pathlib import Path
 from wap_runtime.agents import AGENTS, CURSOR, connecte, lancer_auth_agent
 from wap_runtime.auth import lancer_auth, lire_secrets, statut
 from wap_runtime.identifiants_cockpit import definir as definir_identifiants_cockpit
-from wap_runtime.instance import chemin_instance, desinstaller, lire_config
+from wap_runtime.instance import (
+    chemin_instance,
+    definir_exposition,
+    desinstaller,
+    lire_config,
+    regenerer_compose,
+)
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
     RegistryErreur,
@@ -52,9 +58,47 @@ def _instance_existante() -> Path | None:
 
 def _port_configure() -> int:
     try:
-        return int(lire_config(chemin_instance(_home_instance()))["port"])
+        config = lire_config(chemin_instance(_home_instance()))
+        # Expo on : le runtime n’a plus de port hôte ; `/health` passe par Caddy :80.
+        if config.get("exposition"):
+            return 80
+        return int(config["port"])
     except (OSError, ValueError, KeyError):
         return PORT_PAR_DEFAUT
+
+
+def _exposition(action: str) -> int:
+    """Active ou désactive l’exposition web (Caddy) et réapplique Compose."""
+    instance = _instance_existante()
+    if instance is None:
+        return 1
+    actif = action == "on"
+    try:
+        definir_exposition(instance, actif)
+        regenerer_compose(instance)
+    except (OSError, ValueError, KeyError) as erreur:
+        print(f"KO — impossible de {'activer' if actif else 'désactiver'} l’exposition ({erreur})")
+        return 1
+    compose = instance / "compose.yaml"
+    try:
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(compose),
+                "up",
+                "-d",
+                "--remove-orphans",
+            ],
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        print(f"KO — `docker compose up` a échoué ({erreur})")
+        return 1
+    print(f"OK — exposition web {'activée' if actif else 'désactivée'}")
+    return 0
 
 
 def _health(port: int | None) -> int:
@@ -392,6 +436,15 @@ def main(argv=None) -> int:
         action="store_true",
         help="lit le mot de passe sur stdin",
     )
+    exposition = sous.add_parser(
+        "exposition",
+        help="active ou désactive l’exposition web (Caddy, ports 80/443)",
+    )
+    exposition.add_argument(
+        "action",
+        choices=["on", "off"],
+        help="`on` : reverse proxy public ; `off` : accès local / SSH seulement",
+    )
     setup_ = sous.add_parser(
         "setup",
         help="provisionne la machine : socle, instance, Compose, attente de /health",
@@ -405,6 +458,8 @@ def main(argv=None) -> int:
         return _auth(args.cible, args.with_token)
     if args.commande == "cockpit-auth":
         return _cockpit_auth(args.login, args.with_password)
+    if args.commande == "exposition":
+        return _exposition(args.action)
     if args.commande == "repo":
         return _repo(args.action, getattr(args, "slug", None), getattr(args, "nom", None))
     if args.commande == "serve":
