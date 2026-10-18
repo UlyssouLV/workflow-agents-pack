@@ -240,6 +240,30 @@ def test_deuxieme_session_sur_le_meme_repo_refusee(runner, instance):
     assert refus.value.session == ouverte
 
 
+def test_saisir_passe_le_texte_par_stdin_pas_en_argument(runner, instance, monkeypatch):
+    """Le texte utilisateur ne doit jamais figurer dans l’argv de tmux (S6350)."""
+    from wap_runtime.runner import RunnerErreur
+
+    session = Sessions(instance / "jobs").creer(SLUG, 30, "claude", 'claude "/implement #30"')
+    appels_run: list[tuple[list[str], bytes | None]] = []
+
+    def faux_run(cmd, *args, input=None, **kwargs):
+        appels_run.append((list(cmd), input if isinstance(input, (bytes, type(None))) else None))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", faux_run)
+    runner.saisir(session["id"], "/implement #30\r")
+
+    for cmd, _ in appels_run:
+        assert "/implement #30" not in " ".join(cmd)
+    assert any(cmd[:2] == ["tmux", "load-buffer"] and stdin == b"/implement #30" for cmd, stdin in appels_run)
+    assert any(cmd[:2] == ["tmux", "paste-buffer"] and f"wap-{session['id']}" in cmd for cmd, _ in appels_run)
+    assert any(cmd == ["tmux", "send-keys", "-t", f"wap-{session['id']}", "Enter"] for cmd, _ in appels_run)
+
+    with pytest.raises(RunnerErreur, match="inconnue"):
+        runner.saisir("pas-un-id", "x\r")
+
+
 def test_session_sur_un_autre_repo_acceptee(runner, instance):
     Sessions(instance / "jobs").creer("o/autre", 3, "claude", 'claude "/implement #3"')
 
