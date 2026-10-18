@@ -16,14 +16,9 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.4.2** — Session libre et réponse attendue : depuis le détail d’un repo, **Nouvelle session** (agent + branche) lance l’agent vide dans le clone géré ; une session ouverte par repo, activité *travaille* / *réponse attendue* / *inconnue* par les hooks, page **Sessions** et compteur de réponses attendues ([#62](https://github.com/UlyssouLV/workflow-agents-pack/issues/62), [spec](../../specs/v0.4.2-session-libre-et-reponse-attendue.md), [ADR 0007](../../adr/0007-sessions-par-repo-activite-par-hooks.md)).
 - **0.5.0** — Pilote (autopilot borné) : toggle opt-in par repo, boucle dans `runtime` qui lance le premier `/implement #n` éligible, notifie aux stops et reprend ; l’enchaînement reste le pack ([#73](https://github.com/UlyssouLV/workflow-agents-pack/issues/73), [spec](../../specs/v0.5.0-pilote.md), [ADR 0008](../../adr/0008-boucle-pilote-dans-le-runtime.md)).
 - **0.5.1** — Modèle Cursor par session : préférence repo, override à Nouvelle session, `--model` (sauf Auto), héritage via `precedente`, affichage cockpit ([#82](https://github.com/UlyssouLV/workflow-agents-pack/issues/82), [spec](../../specs/v0.5.1-modele-cursor-par-session.md), [ADR 0009](../../adr/0009-modele-cursor-preference-et-heritage.md)).
+- **0.6.0** — Accès web authentifié : identifiants cockpit + sessions serveur, auth obligatoire (y compris local), reverse proxy Caddy opt-in (80/443), TLS Let’s Encrypt dès qu’un domaine pointe, pas de HTTP public ; diagnostic CLI ; README refondu ([#89](https://github.com/UlyssouLV/workflow-agents-pack/issues/89), [spec](../../specs/v0.6.0-acces-web-authentifie.md), [ADR 0010](../../adr/0010-identifiants-cockpit-auth-obligatoire.md), [ADR 0011](../../adr/0011-caddy-exposition-web-opt-in.md)).
 
-## Prochaine : 0.6.0 — Accès web authentifié
-
-Objectif. Joindre son cockpit depuis Internet de façon sûre : personne n’atteint le cockpit sans s’être authentifié auprès de cette instance (identifiants propres à l’instance), aucun service runtime exposé en clair. Quand on y arrive via un reverse proxy depuis Internet vers une machine du réseau privé, ce chemin doit être **absolument sûr** : il n’ouvre aucune faille qui exposerait le reste du réseau privé.
-
-Hors périmètre : instances multiples sur le même serveur ; SaaS multi-tenant ; comptes partagés entre instances.
-
-## Ensuite : 0.7.0 — CI
+## Prochaine : 0.7.0 — CI
 
 Objectif. Chaque changement proposé sur l’orchestrateur est vérifié automatiquement (tests, contrôles de qualité) avant d’être accepté : on sait vite si la branche est saine, sans relancer à la main toute la suite.
 
