@@ -1,87 +1,12 @@
 """Exposition web opt-in : Caddy Compose, CLI on/off (ADR 0011, #93)."""
 
-import os
-import re
-from pathlib import Path
-
-import pytest
-
-from wap_runtime.instance import preparer_instance
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib
-
-
-def git(*args, cwd) -> str:
-    import subprocess
-
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
-def commit(depot: Path, message: str) -> str:
-    (depot / "trace.txt").write_text(message)
-    git("add", "trace.txt", cwd=depot)
-    git("commit", "--quiet", "-m", message, cwd=depot)
-    return git("rev-parse", "HEAD", cwd=depot)
-
-
-@pytest.fixture
-def depot_pack(tmp_path) -> Path:
-    depot = tmp_path / "depot-pack"
-    depot.mkdir()
-    git("init", "--quiet", "--initial-branch=main", cwd=depot)
-    git("config", "user.email", "test@example.com", cwd=depot)
-    git("config", "user.name", "Test", cwd=depot)
-    commit(depot, "main 1")
-    return depot
-
-
-@pytest.fixture
-def home(tmp_path, monkeypatch) -> Path:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("WAP_PORT", raising=False)
-    monkeypatch.delenv("WAP_PACK_REF", raising=False)
-    return home
-
-
-def passe(home: Path, depot_pack: Path, **env) -> Path:
-    return preparer_instance(home, env=env, depot_pack=str(depot_pack), direct_url=None)
-
-
-def lire_config(instance: Path) -> dict:
-    return tomllib.loads((instance / "config.toml").read_text())
-
-
-def service(compose: str, nom: str) -> str:
-    blocs = re.split(r"^  (?=\S)", compose.split("\nservices:\n", 1)[1], flags=re.MULTILINE)
-    return next(b for b in blocs if b.startswith(f"{nom}:"))
-
-
-def activer_exposition(instance: Path) -> None:
-    config = instance / "config.toml"
-    texte = config.read_text()
-    if "exposition" in texte:
-        config.write_text(re.sub(r"^exposition = .+$", "exposition = true", texte, flags=re.M))
-    else:
-        config.write_text(texte + "exposition = true\n")
-
-
-@pytest.fixture
-def faux_docker(tmp_path, monkeypatch) -> Path:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    journal = tmp_path / "docker.log"
-    docker = bin_dir / "docker"
-    docker.write_text(f'#!/bin/sh\necho "$*" >> "{journal}"\n')
-    docker.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
-    return journal
+from helpers_pack import (
+    activer_exposition,
+    ecrire_cle,
+    lire_config,
+    passe,
+    service,
+)
 
 
 def test_config_par_defaut_desactive_l_exposition(home, depot_pack):
@@ -123,12 +48,7 @@ def test_compose_avec_exposition_sans_domaine_borne_caddy_au_loopback(home, depo
 def test_compose_avec_exposition_et_domaine_publie_80_443(home, depot_pack):
     instance = passe(home, depot_pack)
     activer_exposition(instance)
-    config = instance / "config.toml"
-    texte = config.read_text()
-    if "domaine" in texte:
-        config.write_text(re.sub(r"^domaine = .+$", 'domaine = "cockpit.exemple.test"', texte, flags=re.M))
-    else:
-        config.write_text(texte + 'domaine = "cockpit.exemple.test"\n')
+    ecrire_cle(instance, "domaine", "cockpit.exemple.test")
     passe(home, depot_pack)
 
     caddy = service((instance / "compose.yaml").read_text(), "caddy")
@@ -165,7 +85,8 @@ def test_cli_active_et_desactive_l_exposition(home, depot_pack, faux_docker, cap
     assert '"127.0.0.1:80:80"' in service(compose, "caddy")
     assert (home / ".wap-runtime" / "Caddyfile").is_file()
     journal = faux_docker.read_text()
-    assert "compose" in journal and "up" in journal
+    assert "compose" in journal
+    assert "up" in journal
 
     assert main(["exposition", "off"]) == 0
     assert "OK — exposition web désactivée" in capsys.readouterr().out

@@ -22,6 +22,7 @@ from wap_runtime.instance import (
     definir_exposition,
     desinstaller,
     lire_config,
+    normaliser_domaine,
     regenerer_compose,
 )
 from wap_runtime.provisionnement import demarrer_instance, setup
@@ -127,14 +128,14 @@ def _domaine(hote: str) -> int:
     instance = _instance_existante()
     if instance is None:
         return 1
-    domaine = hote.strip()
-    if not domaine or "/" in domaine or " " in domaine or domaine.startswith("."):
-        print("KO — domaine invalide : attendu un nom d’hôte (ex. cockpit.exemple.test)")
-        return 1
     try:
+        domaine = normaliser_domaine(hote)
         definir_domaine(instance, domaine)
         regenerer_compose(instance)
-    except (OSError, ValueError, KeyError) as erreur:
+    except ValueError as erreur:
+        print(f"KO — domaine invalide : {erreur} (attendu un nom d’hôte, ex. cockpit.exemple.test)")
+        return 1
+    except (OSError, KeyError) as erreur:
         print(f"KO — impossible d’enregistrer le domaine ({erreur})")
         return 1
     echec = _appliquer_compose(instance)

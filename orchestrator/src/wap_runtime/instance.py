@@ -18,6 +18,7 @@ from wap_runtime import __version__
 from wap_runtime.runner import PORT_RUNNER
 
 NOM_INSTANCE = ".wap-runtime"
+FICHIER_CONFIG = "config.toml"
 DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
 # Ref des images quand le paquet n’a pas d’origine VCS (installation locale ou
 # éditable) : la base du canal d’intégration, défaut de `WAP_REF` (ADR 0005).
@@ -30,6 +31,11 @@ INSTANCE_CONTENEUR = "/instance"
 # Seuls dossiers de l’instance montés en écriture dans `runner` (ADR 0004).
 DOSSIERS_RUNNER = ("clones", "jobs", "runner-home")
 HOME_RUNNER = "/home/runner"
+# Hôte DNS pour TLS : labels alphanumériques / tirets, pas de chemin ni `..`.
+_RE_DOMAINE = re.compile(
+    r"^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+    r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 
 
 def chemin_instance(home: Path) -> Path:
@@ -50,7 +56,7 @@ def preparer_instance(
         direct_url = _direct_url_du_paquet()
     instance = chemin_instance(home)
     instance.mkdir(parents=True, exist_ok=True)
-    config = _completer_config(instance / "config.toml", _config_par_defaut(instance, env))
+    config = _completer_config(_chemin_config(instance), _config_par_defaut(instance, env))
     _creer_secrets(instance / "secrets.env")
     for nom in DOSSIERS_RUNNER:
         (instance / nom).mkdir(exist_ok=True)
@@ -92,17 +98,25 @@ def ref_des_images(direct_url: Mapping | None) -> str:
 
 
 def lire_config(instance: Path) -> dict:
-    return tomllib.loads((instance / "config.toml").read_text())
+    return tomllib.loads(_chemin_config(instance).read_text())
 
 
 def definir_exposition(instance: Path, actif: bool) -> None:
     """Écrit `exposition` dans `config.toml` (la passe Compose lit cette clé)."""
-    _ecrire_cle_config(instance / "config.toml", "exposition", bool(actif))
+    _ecrire_cle_config(instance, "exposition", bool(actif))
 
 
 def definir_domaine(instance: Path, domaine: str) -> None:
     """Écrit `domaine` dans `config.toml` (hôte pour TLS Let’s Encrypt via Caddy)."""
-    _ecrire_cle_config(instance / "config.toml", "domaine", str(domaine).strip())
+    _ecrire_cle_config(instance, "domaine", normaliser_domaine(domaine))
+
+
+def normaliser_domaine(domaine: str) -> str:
+    """Valide un nom d’hôte DNS (rejette chemins, espaces, `..`)."""
+    hote = str(domaine).strip().lower()
+    if not hote or not _RE_DOMAINE.fullmatch(hote) or ".." in hote or "/" in hote:
+        raise ValueError(f"domaine invalide : {domaine!r}")
+    return hote
 
 
 def desinstaller(home: Path, purge: bool) -> Path | None:
@@ -168,8 +182,18 @@ def _direct_url_du_paquet() -> dict | None:
     return json.loads(texte) if texte else None
 
 
-def _ecrire_cle_config(chemin: Path, cle: str, valeur) -> None:
+def _chemin_config(instance: Path) -> Path:
+    """`config.toml` sous l’instance — jamais dérivé d’une entrée CLI."""
+    racine = instance.resolve()
+    chemin = (racine / FICHIER_CONFIG).resolve()
+    if not chemin.is_relative_to(racine):
+        raise ValueError("chemin config hors de l’instance")
+    return chemin
+
+
+def _ecrire_cle_config(instance: Path, cle: str, valeur) -> None:
     """Met à jour ou ajoute une clé scalaire de premier niveau dans `config.toml`."""
+    chemin = _chemin_config(instance)
     texte = chemin.read_text() if chemin.exists() else ""
     ligne = f"{cle} = {json.dumps(valeur)}"
     if re.search(rf"^{re.escape(cle)} = ", texte, re.MULTILINE):
@@ -193,7 +217,7 @@ def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> No
     # Relais borné au cockpit de cette instance (`runtime`) — ADR 0011.
     # Avec domaine : site nommé → HTTPS automatique Let’s Encrypt (pas de HTTP public).
     # Sans domaine : écoute :80 en lab local seulement (ports Compose bornés à 127.0.0.1).
-    site = domaine if domaine else ":80"
+    site = normaliser_domaine(domaine) if domaine.strip() else ":80"
     chemin.write_text(
         f"""{site} {{
 	reverse_proxy runtime:{PORT_CONTENEUR}

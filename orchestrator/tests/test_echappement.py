@@ -1,14 +1,12 @@
 """Anti-échappement : proxy Caddy + surface cockpit ne relaient hors instance (#95, ADR 0011)."""
 
-import re
-from pathlib import Path
-
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from helpers_pack import activer_exposition, ecrire_cle, passe, service
 from wap_runtime.identifiants_cockpit import definir
-from wap_runtime.instance import PORT_CONTENEUR, preparer_instance
+from wap_runtime.instance import PORT_CONTENEUR
 from wap_runtime.server import creer_app
 
 LOGIN = "ops"
@@ -28,71 +26,10 @@ CIBLES_INTERDITES = (
 )
 
 
-def git(*args, cwd) -> str:
-    import subprocess
-
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
-def commit(depot: Path, message: str) -> str:
-    (depot / "trace.txt").write_text(message)
-    git("add", "trace.txt", cwd=depot)
-    git("commit", "--quiet", "-m", message, cwd=depot)
-    return git("rev-parse", "HEAD", cwd=depot)
-
-
-@pytest.fixture
-def depot_pack(tmp_path) -> Path:
-    depot = tmp_path / "depot-pack"
-    depot.mkdir()
-    git("init", "--quiet", "--initial-branch=main", cwd=depot)
-    git("config", "user.email", "test@example.com", cwd=depot)
-    git("config", "user.name", "Test", cwd=depot)
-    commit(depot, "main 1")
-    return depot
-
-
-@pytest.fixture
-def home(tmp_path, monkeypatch) -> Path:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("WAP_PORT", raising=False)
-    monkeypatch.delenv("WAP_PACK_REF", raising=False)
-    return home
-
-
-def passe(home: Path, depot_pack: Path, **env) -> Path:
-    return preparer_instance(home, env=env, depot_pack=str(depot_pack), direct_url=None)
-
-
-def ecrire_cle(instance: Path, cle: str, valeur) -> None:
-    import json
-
-    config = instance / "config.toml"
-    texte = config.read_text()
-    ligne = f"{cle} = {json.dumps(valeur)}"
-    if re.search(rf"^{re.escape(cle)} = ", texte, re.MULTILINE):
-        config.write_text(
-            re.sub(rf"^{re.escape(cle)} = .*$", ligne, texte, flags=re.MULTILINE)
-        )
-    else:
-        config.write_text(texte + ligne + "\n")
-
-
-def activer_exposition(instance: Path) -> None:
-    ecrire_cle(instance, "exposition", True)
-
-
-def service(compose: str, nom: str) -> str:
-    blocs = re.split(r"^  (?=\S)", compose.split("\nservices:\n", 1)[1], flags=re.MULTILINE)
-    return next(b for b in blocs if b.startswith(f"{nom}:"))
-
-
 def amont_reverse_proxy(caddyfile: str) -> str:
     """Extrait la ligne `reverse_proxy …` (cible unique attendue)."""
+    import re
+
     m = re.search(r"^\s*reverse_proxy\s+(.+)$", caddyfile, re.MULTILINE)
     assert m, f"pas de reverse_proxy dans {caddyfile!r}"
     return m.group(1).strip()
@@ -115,7 +52,8 @@ def test_caddy_ne_permet_pas_d_echapper_vers_hors_cockpit(home, depot_pack):
     # Pas d’upstream dynamique / catch-all (open proxy).
     assert "{" not in amont
     assert "*" not in amont
-    assert "http://" not in amont and "https://" not in amont
+    assert "http://" not in amont
+    assert "https://" not in amont
 
 
 def test_compose_expo_ne_publie_pas_de_chemin_vers_runner_ou_lan(home, depot_pack):
@@ -129,7 +67,8 @@ def test_compose_expo_ne_publie_pas_de_chemin_vers_runner_ou_lan(home, depot_pac
     runtime = service(compose, "runtime")
     runner = service(compose, "runner")
 
-    assert '"127.0.0.1:80:80"' in caddy and '"127.0.0.1:443:443"' in caddy
+    assert '"127.0.0.1:80:80"' in caddy
+    assert '"127.0.0.1:443:443"' in caddy
     assert "ports:" not in runtime
     assert "ports:" not in runner
     assert "network_mode: host" not in caddy
