@@ -57,6 +57,10 @@ code {
   color: inherit;
   text-decoration: none;
 }
+.badge.pilote {
+  background: #dafbe1;
+  border-color: #26a148;
+}
 .raison {
   color: #59636e;
   font-size: 0.85rem;

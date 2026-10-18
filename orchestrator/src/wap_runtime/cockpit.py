@@ -1,7 +1,8 @@
 """API du cockpit : l’état des repos liés, lu sur GitHub.
 
 Le registry est relu à chaque appel. La liste garde la lecture GitHub de chaque repo (et
-l’état d’auth) `CACHE_SECONDES` ; le détail d’un repo est lu en direct. Rien n’est persisté.
+l’état d’auth) `CACHE_SECONDES` ; le détail d’un repo est lu en direct. Le toggle Pilote
+est persisté dans le registry, pas ici.
 """
 
 import re
@@ -200,6 +201,8 @@ def _identite(repo: RepoLie, lu_a: datetime) -> dict:
         "nom": repo.nom,
         "url": f"https://github.com/{repo.slug}",
         "lu_a": lu_a.isoformat(),
+        "pilote": repo.pilote,
+        "agent": repo.agent,
     }
 
 

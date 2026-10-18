@@ -96,6 +96,10 @@ export interface Repo<V = VersionResume> {
   versions: V[];
   /** Session ouverte sur ce repo (badge « Session en cours »). */
   session: LienSession | null;
+  /** Toggle Pilote persisté dans `repos.toml`. */
+  pilote: boolean;
+  /** Agent préféré du pilote (`claude` | `cursor`). */
+  agent: Agent["id"];
 }
 
 export interface Liste {
@@ -203,6 +207,24 @@ export async function lireEnregistrement(id: string): Promise<string> {
     throw new ErreurApi(corps?.detail ?? `${chemin} : HTTP ${reponse.status}`);
   }
   return reponse.text();
+}
+
+/** `PATCH /api/repos/{owner}/{name}` : toggle Pilote et agent préféré, persistés dans le registry. */
+export async function enregistrerPilote(
+  repo: string,
+  pilote: boolean,
+  agent: Agent["id"],
+): Promise<{ pilote: boolean; agent: Agent["id"] }> {
+  const reponse = await fetch(`/api/repos/${repo}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ pilote, agent }),
+  });
+  const corps = await reponse.json().catch(() => null);
+  if (!reponse.ok) {
+    throw new ErreurApi(corps?.detail ?? `pilote : HTTP ${reponse.status}`);
+  }
+  return corps as { pilote: boolean; agent: Agent["id"] };
 }
 
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */

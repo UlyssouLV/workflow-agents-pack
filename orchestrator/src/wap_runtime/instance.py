@@ -25,7 +25,7 @@ REF_PAR_DEFAUT = "feat/runtime-orchestrator"
 # `direct_url.json` du paquet installé, lu quand l’appelant n’en passe pas.
 _PAQUET_INSTALLE = object()
 PORT_CONTENEUR = 8787
-# L’instance montée en lecture seule dans `runtime`, pour y lire `repos.toml`.
+# L’instance montée dans `runtime`, pour y lire et écrire `repos.toml` (toggle Pilote).
 INSTANCE_CONTENEUR = "/instance"
 # Seuls dossiers de l’instance montés en écriture dans `runner` (ADR 0004).
 DOSSIERS_RUNNER = ("clones", "jobs", "runner-home")
@@ -144,15 +144,17 @@ services:
       context: {contexte}
       dockerfile: Dockerfile
     image: wap-runtime:local
+    user: "{uid}:{gid}"
     env_file:
       - secrets.env
     environment:
       WAP_INSTANCE: {INSTANCE_CONTENEUR}
       WAP_RUNNER: http://runner:{PORT_RUNNER}
     # Le dossier et non `repos.toml` seul : absent, ce fichier deviendrait un dossier
-    # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur.
+    # sur l’hôte ; remplacé, il ne serait plus vu par le conteneur. Sans `:ro` : le
+    # cockpit persiste le toggle Pilote (remplacement atomique dans ce dossier).
     volumes:
-      - ".:{INSTANCE_CONTENEUR}:ro"
+      - ".:{INSTANCE_CONTENEUR}"
     ports:
       - "127.0.0.1:{port}:{PORT_CONTENEUR}"
     restart: unless-stopped

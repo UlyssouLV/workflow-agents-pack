@@ -23,7 +23,7 @@ from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
 from wap_runtime.github import API_GITHUB, ClientGitHub, GitHubErreur
 from wap_runtime.instance import chemin_instance
-from wap_runtime.registry import RegistryErreur, chemin_registry
+from wap_runtime.registry import AGENTS, RegistryErreur, chemin_registry, enregistrer, lire_registry
 from wap_runtime.runner import (
     PORT_RUNNER,
     Choix,
@@ -47,8 +47,13 @@ class Lancement(BaseModel):
     choix: Choix | None = None
 
 
+class PreferencePilote(BaseModel):
+    pilote: bool
+    agent: str
+
+
 def _instance_par_defaut() -> Path:
-    # Dans le conteneur, Compose monte l’instance en lecture seule sur `WAP_INSTANCE`.
+    # Dans le conteneur, Compose monte l’instance (le runtime y écrit `repos.toml`).
     instance = os.environ.get("WAP_INSTANCE")
     return Path(instance) if instance else chemin_instance(Path.home())
 
@@ -57,6 +62,11 @@ def _runner_par_defaut() -> httpx.Client:
     # Réseau Compose interne à l’instance, port non publié (ADR 0004) : pas de TLS entre services.
     defaut = httpx.URL(scheme="http", host="runner", port=PORT_RUNNER)
     return httpx.Client(base_url=os.environ.get("WAP_RUNNER", defaut))
+
+
+def _prefs_registry(chemin: Path) -> dict[str, dict]:
+    """Toggle et agent préféré, relu hors cache GitHub de la liste."""
+    return {r.slug.lower(): {"pilote": r.pilote, "agent": r.agent} for r in lire_registry(chemin)}
 
 
 def _lien(session: dict) -> dict:
@@ -137,7 +147,15 @@ def creer_app(
         liste = cockpit.liste()
         # Badge « Session en cours » : au plus une session ouverte par repo.
         ouvertes = {s["repo"].lower(): _lien(s) for s in sessions.toutes() if s["etat"] == OUVERTE}
-        repos_ = [{**r, "session": ouvertes.get(r["slug"].lower())} for r in liste["repos"]]
+        prefs = _prefs_registry(registry) if liste["erreur"] is None else {}
+        repos_ = [
+            {
+                **r,
+                "session": ouvertes.get(r["slug"].lower()),
+                **prefs.get(r["slug"].lower(), {}),
+            }
+            for r in liste["repos"]
+        ]
         return {**liste, "repos": repos_, "agents": agents}
 
     @app.get("/api/repos/{owner}/{name}")
@@ -146,6 +164,21 @@ def creer_app(
         ouverte = sessions.ouverte(slug)
         detail = lancements(_detail(slug), ouverte, agents)
         return {**detail, "agents": agents, "session": ouverte and _lien(ouverte)}
+
+    @app.patch("/api/repos/{owner}/{name}")
+    def pilote(owner: str, name: str, demande: PreferencePilote, requete: Request) -> dict:
+        _verifier_origine(requete)
+        slug = f"{owner}/{name}"
+        _detail(slug)
+        if demande.agent not in AGENTS:
+            raise HTTPException(422, f"agent inconnu : {demande.agent}")
+        try:
+            repo = enregistrer(registry, slug, demande.pilote, demande.agent)
+        except RegistryErreur as erreur:
+            raise HTTPException(500, str(erreur)) from erreur
+        except OSError as erreur:
+            raise HTTPException(500, f"écriture de {registry} impossible ({erreur})") from erreur
+        return {"pilote": repo.pilote, "agent": repo.agent}
 
     @app.get("/api/repos/{owner}/{name}/sessions")
     def sessions_du_repo(owner: str, name: str) -> dict:

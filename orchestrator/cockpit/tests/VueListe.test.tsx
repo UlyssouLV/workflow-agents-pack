@@ -69,6 +69,16 @@ describe("vue liste", () => {
     expect(ligne).toHaveTextContent("Implement");
     expect(ligne).toHaveTextContent("09:00:00");
     expect(within(ligne).queryByText("Intervention humaine requise")).toBeNull();
+    expect(within(ligne).queryByText("Pilote")).toBeNull();
+  });
+
+  it("affiche le badge Pilote sur un repo sous pilote", async () => {
+    simulerApi({ "/api/repos": liste({ repos: [repo({ pilote: true, agent: "cursor" })] }) });
+
+    render(<VueListe />);
+
+    const [ligne] = await lignes();
+    expect(within(ligne).getByText("Pilote")).toBeInTheDocument();
   });
 
   it("affiche le nom d’affichage du registry à la place du slug", async () => {

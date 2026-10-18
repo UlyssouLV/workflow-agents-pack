@@ -61,6 +61,8 @@ def test_identite_du_repo_et_heure_de_lecture(registry, github, horloge):
     assert corps["nom"] == "Mon repo"
     assert corps["url"] == "https://github.com/o/r"
     assert corps["lu_a"] == DEBUT.isoformat()
+    assert corps["pilote"] is False
+    assert corps["agent"] == "claude"
     assert corps["erreur"] is None
     assert corps["versions"] == []
     assert corps["bugs"] == []

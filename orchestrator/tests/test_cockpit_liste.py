@@ -73,6 +73,8 @@ def test_une_entree_par_repo_lie_dans_l_ordre_du_registry(registry, github, horl
     assert [(r["slug"], r["nom"]) for r in corps["repos"]] == [(SLUG, None), ("o/autre", "Autre")]
     assert entree(corps)["url"] == "https://github.com/o/r"
     assert entree(corps)["lu_a"] == DEBUT.isoformat()
+    assert entree(corps)["pilote"] is False
+    assert entree(corps)["agent"] == "claude"
 
 
 def test_le_registry_est_relu_a_chaque_requete(registry, github, horloge):

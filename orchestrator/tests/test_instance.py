@@ -306,13 +306,14 @@ def test_uninstall_garde_un_fichier_wap_runtime(home, faux_docker, lien_root):
     assert lien_root.read_text() == "à garder\n"
 
 
-def test_compose_monte_l_instance_et_donc_repos_toml_en_lecture_seule(home, depot_pack):
+def test_compose_monte_l_instance_en_ecriture_pour_persister_le_pilote(home, depot_pack):
     instance = passe(home, depot_pack)
 
     compose = (instance / "compose.yaml").read_text()
     # Le dossier, pas le fichier : un bind mount de fichier absent créerait un dossier
-    # `repos.toml` sur l’hôte, et ne verrait pas un fichier remplacé.
-    assert '- ".:/instance:ro"' in compose
+    # `repos.toml` sur l’hôte, et ne verrait pas un fichier remplacé. Écriture : toggle Pilote.
+    assert '- ".:/instance"' in compose
+    assert '- ".:/instance:ro"' not in compose
     assert "WAP_INSTANCE: /instance" in compose
 
 
@@ -379,10 +380,10 @@ def test_runtime_inchange_par_le_runner(home, depot_pack):
 
     runtime = service((instance / "compose.yaml").read_text(), "runtime")
     assert re.findall(r'^      - "(.+)"$', runtime, re.MULTILINE) == [
-        ".:/instance:ro",
+        ".:/instance",
         "127.0.0.1:9003:8787",
     ]
-    assert "user:" not in runtime
+    assert f'user: "{os.getuid()}:{os.getgid()}"' in runtime
 
 
 def test_dockerfile_du_runner_existe_dans_le_contexte_de_build(home, depot_pack):

@@ -122,6 +122,37 @@ describe("vue détail", () => {
     expect(screen.queryByRole("link", { name: "#30 Plantage" })).toBeNull();
   });
 
+  describe("pilote", () => {
+    it("montre le toggle et l’agent préféré persistés", async () => {
+      rendre({ "/api/repos/o/r": detail({ pilote: true, agent: "cursor" }) });
+
+      expect(await screen.findByRole("checkbox", { name: "Pilote" })).toBeChecked();
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("cursor");
+    });
+
+    it("enregistre le toggle et l’agent auprès du runtime", async () => {
+      const fetch = rendre({
+        "/api/repos/o/r": detail({ pilote: false, agent: "claude" }),
+        "PATCH /api/repos/o/r": { pilote: true, agent: "cursor" },
+      });
+      const toggle = await screen.findByRole("checkbox", { name: "Pilote" });
+
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        const corps = fetch.mock.calls.find(([, init]) => init?.method === "PATCH")?.[1]?.body;
+        expect(corps).toEqual(JSON.stringify({ pilote: true, agent: "claude" }));
+      });
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Agent" }), { target: { value: "cursor" } });
+
+      await waitFor(() => {
+        const patchs = fetch.mock.calls.filter(([, init]) => init?.method === "PATCH");
+        expect(patchs.at(-1)?.[1]?.body).toEqual(JSON.stringify({ pilote: true, agent: "cursor" }));
+      });
+    });
+  });
+
   describe("nouvelle session", () => {
     async function boutonNouvelle() {
       await screen.findByRole("heading", { level: 1 });

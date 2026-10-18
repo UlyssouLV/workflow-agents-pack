@@ -71,6 +71,10 @@ export function BadgeHumain() {
   return <span className="badge">Intervention humaine requise</span>;
 }
 
+export function BadgePilote() {
+  return <span className="badge pilote">Pilote</span>;
+}
+
 export function LibelleEtape({ etape }: { etape: Etape | null }) {
   if (etape === null) return null;
   return (
