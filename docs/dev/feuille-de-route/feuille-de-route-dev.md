@@ -21,6 +21,12 @@ Objectif. Démarrer et surveiller sans humain la chaîne des enfants `ready-for-
 
 Hors périmètre : SaaS multi-tenant, marketplace, orchestration hors machine utilisateur.
 
+## Ensuite : 0.5.1 — Modèle Cursor par session
+
+Objectif. Choisir le modèle Cursor au lancement d’une session (libre ou enchaînée) et pour le Pilote d’un repo, au lieu du défaut opaque de la CLI ; le choix est visible dans le cockpit et repris à chaque lancement Cursor de ce chemin.
+
+Hors périmètre : choix de modèle pour Claude Code ; changer de modèle au milieu d’une session déjà ouverte ; catalogue / quotas Cursor côté produit.
+
 ## Ensuite : 0.6.0 — Instances multiples isolées
 
 Objectif. Plusieurs personnes ont chacune leur orchestrateur sur un même serveur : un utilisateur système, un port, une identité GitHub, un registry et un cockpit par instance, sans rien de partagé entre instances.
@@ -29,15 +35,17 @@ Hors périmètre : accès au cockpit depuis Internet.
 
 ## Ensuite : 0.7.0 — Accès web authentifié
 
-Objectif. Chaque personne joint son cockpit depuis Internet de façon sûre : TLS, identifiants propres à l’instance, aucune instance accessible par une autre, aucun port runtime exposé en clair sur le réseau du serveur.
+Objectif. Chaque personne joint son cockpit depuis Internet de façon sûre : identifiants propres à l’instance, aucune instance accessible par une autre, aucun service runtime exposé en clair. Quand on y arrive via un reverse proxy depuis Internet vers une machine du réseau privé, ce chemin doit être **absolument sûr** : il n’ouvre aucune faille qui exposerait le reste du réseau privé.
 
 Hors périmètre : SaaS multi-tenant, comptes partagés entre instances.
 
+## Ensuite : 0.8.0 — Refonte graphique du cockpit
+
+Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : hiérarchie visuelle claire, pages liste / détail / sessions / terminal cohérentes, sans changer les capacités déjà livrées.
+
+Hors périmètre : nouvelles fonctionnalités métier ; redesign de la doc ou du README.
+
 ## Plus tard (pas encore numéroté)
-
-### Style du cockpit
-
-Un vrai design du cockpit (la 0.3.0 livre un style minimal).
 
 ### Labels déclencheurs configurables
 
@@ -54,3 +62,19 @@ Plusieurs sessions du runner sur le même clone (worktrees) : la 0.4.2 en autori
 ### Labels d’état posés par le pack (#24)
 
 Un hook du pack, versionné dans les repos métier et compatible macOS / Windows / Linux, pose et retire `in-agent-test` / `in-human-test` (Claude Code et Cursor, sur les postes comme dans le runner). Chantier du pack sur `main` ([#24](https://github.com/UlyssouLV/workflow-agents-pack/issues/24)).
+
+### Bug — skill afr ajoute des notions techniques dans la feuille de route (#80)
+
+**Constat :** Le skill `/afr` a enrichi l’Objectif d’une version (0.7.0) avec des notions techniques alors que la demande ne portait que sur un objectif produit (accès via reverse proxy sans exposer le réseau privé). La feuille sert à l’aiguillage (objectifs, attendus, hors scopes) ; les choix techniques se décident à l’ouverture de version via grill.
+
+**Reproductibilité :** Demander à `/afr` de détailler un Objectif qui touche à l’infra ou à la sécurité → le texte écrit contient des méthodes / mécanismes techniques.
+
+**Impact :** Feuille qui parle comme une mini-spec ; mauvais aiguillage avant « Ouvre la version » ; confusion avec les décisions réservées au grilling.
+
+**Cause probable :** `/afr` (ou son application) n’interdit pas assez fermement le détail d’implémentation dans un Objectif.
+
+**À corriger :** `/afr` n’écrit que des objectifs, attendus et hors scopes en langage produit ; aucune notion technique dans la feuille.
+
+**Hors périmètre :** Aucun.
+
+**Suivi :** [#80](https://github.com/UlyssouLV/workflow-agents-pack/issues/80) (`bug`). Trouvé dans : inconnu · Contexte : usage · Date : 2026-10-18 · Priorité : Informations manquantes.
