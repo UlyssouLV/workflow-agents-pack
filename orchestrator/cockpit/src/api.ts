@@ -82,6 +82,8 @@ export interface Session {
   skill: string | null;
   /** Premier message soumis, sinon le nom de l’agent. */
   titre: string;
+  /** ID Cursor effectif ; `null` = Auto, Claude, ou session d’avant 0.5.1. */
+  modele: string | null;
 }
 
 /** Une ligne de `GET /api/repos` : `erreur` non nulle → ni étape ni versions. */
@@ -100,6 +102,8 @@ export interface Repo<V = VersionResume> {
   pilote: boolean;
   /** Agent préféré du pilote (`claude` | `cursor`). */
   agent: Agent["id"];
+  /** Préférence modèle Cursor (`null` = Auto). */
+  modele: string | null;
   /** Pause/stop du pilote (`null` si OFF, en surveillance, ou prêt à lancer). */
   pilote_stop:
     | "attend"
@@ -218,22 +222,29 @@ export async function lireEnregistrement(id: string): Promise<string> {
   return reponse.text();
 }
 
-/** `PATCH /api/repos/{owner}/{name}` : toggle Pilote et agent préféré, persistés dans le registry. */
+/** Une entrée de `GET /api/modeles` (`id` nul = Auto). */
+export interface ModeleCursor {
+  id: string | null;
+  libelle: string;
+}
+
+/** `PATCH /api/repos/{owner}/{name}` : toggle Pilote, agent et modèle préféré. */
 export async function enregistrerPilote(
   repo: string,
   pilote: boolean,
   agent: Agent["id"],
-): Promise<{ pilote: boolean; agent: Agent["id"] }> {
+  modele?: string | null,
+): Promise<{ pilote: boolean; agent: Agent["id"]; modele: string | null }> {
   const reponse = await fetch(`/api/repos/${repo}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ pilote, agent }),
+    body: JSON.stringify(modele === undefined ? { pilote, agent } : { pilote, agent, modele }),
   });
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {
     throw new ErreurApi(corps?.detail ?? `pilote : HTTP ${reponse.status}`);
   }
-  return corps as { pilote: boolean; agent: Agent["id"] };
+  return corps as { pilote: boolean; agent: Agent["id"]; modele: string | null };
 }
 
 /** `POST /api/sessions` ; le navigateur y joint l’en-tête `Origin` que le runtime vérifie. */
@@ -242,11 +253,18 @@ export async function lancerSession(
   agent: Agent["id"],
   branche: string,
   choix?: ChoixClone,
+  modele?: string | null,
 ): Promise<Session> {
   const reponse = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ repo, agent, branche, ...(choix && { choix }) }),
+    body: JSON.stringify({
+      repo,
+      agent,
+      branche,
+      ...(choix && { choix }),
+      ...(modele !== undefined ? { modele } : {}),
+    }),
   });
   const corps = await reponse.json().catch(() => null);
   if (!reponse.ok) {

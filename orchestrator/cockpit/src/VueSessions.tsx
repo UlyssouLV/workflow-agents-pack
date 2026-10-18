@@ -1,5 +1,5 @@
 import type { Agent, SessionsDuRepo } from "./api";
-import { Entete, LIBELLES_ETAT_SESSION, libelleActivite } from "./commun";
+import { Entete, LIBELLES_ETAT_SESSION, libelleActivite, libelleModele } from "./commun";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 /** `/sessions` : toutes les sessions de l’instance, plus récentes d’abord. */
@@ -22,6 +22,7 @@ export function VueSessions() {
               <tr>
                 <th>Repo</th>
                 <th>Agent</th>
+                <th>Modèle</th>
                 <th>Branche</th>
                 <th>Titre</th>
                 <th>État</th>
@@ -33,6 +34,7 @@ export function VueSessions() {
                 <tr key={s.id}>
                   <td>{s.repo}</td>
                   <td>{nom(s.agent)}</td>
+                  <td>{libelleModele(s) ?? "—"}</td>
                   <td>{s.branche ?? "—"}</td>
                   <td>
                     <a href={s.url}>{s.titre}</a>

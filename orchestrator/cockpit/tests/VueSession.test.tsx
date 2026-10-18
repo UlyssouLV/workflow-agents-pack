@@ -20,6 +20,21 @@ function rendre(s = session()) {
 }
 
 describe("page de session", () => {
+  it("affiche Auto ou l’ID du modèle pour Cursor, pas de champ pour Claude", async () => {
+    rendre(session({ agent: "cursor", modele: null }));
+    expect(await screen.findByText("Auto")).toBeInTheDocument();
+    cleanup();
+
+    rendre(session({ agent: "cursor", modele: "composer-2" }));
+    expect(await screen.findByText("composer-2")).toBeInTheDocument();
+    cleanup();
+
+    rendre();
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByText("Auto")).toBeNull();
+    expect(screen.queryByText("Modèle")).toBeNull();
+  });
+
   it("montre le repo, le ticket, l’agent et la commande", async () => {
     rendre();
 
