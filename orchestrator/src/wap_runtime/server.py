@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from wap_runtime import __version__
 from wap_runtime.agents import etat_agents
+from wap_runtime.modeles import ModelesErreur, lister_modeles_cursor
 from wap_runtime.cockpit import Cockpit
 from wap_runtime.enregistrement import CAST
 from wap_runtime.eligibilite import lancements
@@ -201,6 +202,13 @@ def creer_app(
     @app.get("/api/agents")
     def agents_() -> dict:
         return {"agents": agents}
+
+    @app.get("/api/modeles")
+    def modeles() -> dict:
+        try:
+            return {"modeles": lister_modeles_cursor(env)}
+        except ModelesErreur as erreur:
+            raise HTTPException(erreur.code, erreur.detail) from erreur
 
     @app.get("/api/repos")
     def repos() -> dict:
