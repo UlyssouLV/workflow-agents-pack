@@ -34,7 +34,8 @@ describe("vue liste", () => {
       "href",
       "/sessions",
     );
-    expect(document.title).toBe("(2) Cockpit wap-runtime");
+    // Le titre est posé par un effet après le rendu du lien : on l’attend.
+    await waitFor(() => expect(document.title).toBe("(2) Cockpit wap-runtime"));
   });
 
   it("ne change pas le titre d’onglet sans réponse attendue", async () => {

@@ -12,6 +12,6 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     env: { TZ: "UTC" },
     // `npm run test:coverage` (CI) : lcov dans coverage/ pour l’artefact et Sonar.
-    coverage: { provider: "v8", include: ["src/**"], reporter: ["text", "lcov"] },
+    coverage: { provider: "v8", include: ["src/**"], reporter: ["text", "lcov"], reportOnFailure: true },
   },
 });

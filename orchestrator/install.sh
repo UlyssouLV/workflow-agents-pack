@@ -46,7 +46,10 @@ etape() {
 }
 
 # Avant tout apt : hors Debian 12+ / Ubuntu 22.04+, Python < 3.10 ferait échouer pipx sans message clair.
+# /etc/os-release n’existe que sur la machine cible.
+# shellcheck source=/dev/null
 OS_ID=$(. /etc/os-release 2>/dev/null && echo "${ID:-}") || OS_ID=
+# shellcheck source=/dev/null
 OS_VERSION=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-}") || OS_VERSION=
 case "$OS_ID:$OS_VERSION" in
   debian:1[2-9]* | debian:[2-9][0-9]*) ;;
