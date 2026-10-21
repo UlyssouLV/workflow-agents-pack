@@ -268,6 +268,12 @@ Hors Actions, le même script tourne depuis un clone au commit voulu : `bash orc
 
 **Visibilité publique (geste manuel unique)** : ghcr crée les paquets en privé au premier push et l’API GitHub ne change pas cette visibilité. Après le premier run vert du job `images`, pour `wap-runtime` puis `wap-runner` : profil GitHub → **Packages** → le paquet → **Package settings** → **Danger Zone → Change visibility → Public**. Vérifier sans jeton : `docker logout ghcr.io && docker buildx imagetools inspect ghcr.io/ulyssoulv/wap-runtime:staging` liste `linux/amd64` et `linux/arm64`.
 
+### Promotion à la Release
+
+Le workflow [`.github/workflows/promotion.yml`](.github/workflows/promotion.yml) tourne quand une Release est **publiée** ; seules les étiquettes `orchestrator-v*` le déclenchent (les Releases du pack n’ont aucun effet). Il résout le commit du tag et appelle [`orchestrator/scripts/promouvoir-images-release.sh`](orchestrator/scripts/promouvoir-images-release.sh), qui retaggue `:sha-<sha>` vers `:X.Y.Z` et `:latest` avec `docker buildx imagetools create`, pour les deux images, sans rebuild : même digest que l’image testée sur la PR. Le script refuse une étiquette hors `orchestrator-vX.Y.Z` ; si `:sha-<sha>` manque pour l’une des images, il échoue avant de créer le moindre tag. Une Release créée par le `GITHUB_TOKEN` d’un autre workflow ne déclenche pas la promotion (règle GitHub) : Finalise la crée avec le jeton de `gh`.
+
+Hors Actions : `bash orchestrator/scripts/promouvoir-images-release.sh orchestrator-vX.Y.Z [<sha>]` (défaut : commit du tag), après `docker login ghcr.io` avec un jeton `write:packages`. Vérifier : `docker buildx imagetools inspect ghcr.io/ulyssoulv/wap-runtime:X.Y.Z` et `…:sha-<sha>` donnent le même `Digest`.
+
 ### Secrets Sonar
 
 Dans **Settings → Secrets and variables → Actions → Repository secrets**, les trois mêmes valeurs que le `.env` local de `/qg` (même projet Sonar) :

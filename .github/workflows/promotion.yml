@@ -1,0 +1,38 @@
+# Promotion (ADR 0013) : la Release orchestrator-vX.Y.Z retaggue :sha-<sha du tag> vers :X.Y.Z et
+# :latest, sans rebuild. Le digest vient du job `images` de la CI, publié sur la PR verte.
+# Les Releases du pack (autres préfixes) ne déclenchent rien ; le script refuse le reste.
+name: Promotion
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-${{ github.event.release.tag_name }}
+
+jobs:
+  promotion:
+    name: promotion
+    if: ${{ startsWith(github.event.release.tag_name, 'orchestrator-v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # SHA du commit taggué (tag annoté compris), pas celui de la branche par défaut.
+      - run: bash orchestrator/scripts/promouvoir-images-release.sh "$TAG" "$(git rev-list -n 1 "refs/tags/$TAG")"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
