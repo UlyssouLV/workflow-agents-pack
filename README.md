@@ -273,13 +273,13 @@ L’organisation SonarCloud est dans `sonar-project.properties`. Sans ces secret
 
 ### Ruleset sur `feat/runtime-orchestrator`
 
-La protection est un réglage admin GitHub, posé et vérifié à la main (aucun script dans le dépôt). Dans **Settings → Rules → Rulesets → New ruleset → New branch ruleset** :
+La protection est un réglage admin GitHub, posé et vérifié à la main (aucun script dans le dépôt). Formulaire direct : [`settings/rules/new?target=branch`](https://github.com/UlyssouLV/workflow-agents-pack/settings/rules/new?target=branch). Sinon : onglet **Settings du dépôt** (pas celui du profil), colonne de gauche **Code and automation → Rules → Rulesets → New ruleset → New branch ruleset**.
 
 1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI rouge).
 2. **Target branches → Add target → Include by pattern** : `feat/runtime-orchestrator`.
-3. Cocher **Require a pull request before merging**.
-4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions). Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
-5. Laisser **Restrict deletions** et **Block force pushes** cochés, puis **Create**.
+3. Cocher **Require a pull request before merging**, avec **Required approvals : `0`** (on ne peut pas approuver sa propre PR : à 1, un mainteneur seul ne merge plus) ; dans **Allowed merge methods**, garder **Squash** (Finalise squashe).
+4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
+5. Laisser **Restrict deletions** et **Block force pushes** cochés, ne rien cocher d’autre (**Restrict updates** bloquerait tout push), puis **Create**.
 
 Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest` et `sonar`. Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
 
