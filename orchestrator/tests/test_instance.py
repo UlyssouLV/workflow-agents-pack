@@ -55,9 +55,15 @@ def home(tmp_path, monkeypatch) -> Path:
     return home
 
 
-def passe(home: Path, depot_pack: Path, direct_url=None, **env) -> Path:
+def passe(
+    home: Path, depot_pack: Path, direct_url=None, image_existe=lambda image: False, **env
+) -> Path:
     return preparer_instance(
-        home, env=env, depot_pack=str(depot_pack), direct_url=direct_url
+        home,
+        env=env,
+        depot_pack=str(depot_pack),
+        direct_url=direct_url,
+        image_existe=image_existe,
     )
 
 
@@ -77,15 +83,13 @@ def test_premiere_passe_sur_un_home_vide_cree_les_quatre_elements(home, depot_pa
 
 
 def test_config_par_defaut(home, depot_pack):
-    from wap_runtime import __version__
-
     instance = passe(home, depot_pack)
 
     assert lire_config(instance) == {
         "port": 8787,
         "pack_ref": "main",
         "pack_path": str(instance / "pack"),
-        "version": __version__,
+        "version": "feat/runtime-orchestrator",
         "exposition": False,
         "domaine": "",
     }
@@ -521,12 +525,173 @@ def test_wap_pack_ref_independant_du_ref_des_images(home, depot_pack):
     )
 
 
-def test_install_sh_installe_le_paquet_depuis_wap_ref():
+def test_install_sh_garde_wap_ref_prioritaire_sur_la_derniere_release():
     from wap_runtime import instance as module
 
     script = (Path(module.__file__).parents[2] / "install.sh").read_text()
-    assert 'WAP_REF="${WAP_REF:-feat/runtime-orchestrator}"' in script
-    assert (
-        'PAQUET="git+https://github.com/UlyssouLV/workflow-agents-pack@$WAP_REF'
-        '#subdirectory=orchestrator"'
-    ) in script
+    assert 'if [ -z "${WAP_REF:-}" ]; then' in script
+    assert "DEPOT=UlyssouLV/workflow-agents-pack\n" in script
+    assert 'paquet="git+https://github.com/$DEPOT@$WAP_REF#subdirectory=orchestrator"' in script
+
+
+def choisir_release(releases: list[dict]) -> subprocess.CompletedProcess:
+    """La fonction `derniere_release` d’`install.sh`, sur une liste de l’API des Releases."""
+    import json
+    from wap_runtime import instance as module
+
+    script = Path(module.__file__).parents[2] / "install.sh"
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'eval "$(sed -n "/^derniere_release()/,/^}}/p" "{script}")" && derniere_release',
+        ],
+        input=json.dumps(releases),
+        capture_output=True,
+        text=True,
+    )
+
+
+def release(tag: str, prerelease=False, draft=False) -> dict:
+    return {"tag_name": tag, "prerelease": prerelease, "draft": draft}
+
+
+def test_install_sh_choisit_la_release_orchestrateur_semver_la_plus_haute():
+    resultat = choisir_release(
+        [
+            release("orchestrator-v0.7.0"),
+            release("v9.9.9"),
+            release("orchestrator-v0.10.0"),
+            release("orchestrator-v0.9.1"),
+            release("orchestrator-v1.0.0", prerelease=True),
+            release("orchestrator-v2.0.0", draft=True),
+            release("orchestrator-v3.0.0-rc1"),
+        ]
+    )
+
+    assert resultat.returncode == 0, resultat.stderr
+    assert resultat.stdout.strip() == "orchestrator-v0.10.0"
+
+
+def test_install_sh_sans_release_orchestrateur_echoue():
+    resultat = choisir_release([release("v1.0.0"), release("orchestrator-v1.0.0", prerelease=True)])
+
+    assert resultat.returncode == 1, resultat.stderr
+    assert resultat.stdout.strip() == ""
+
+
+TAG_RELEASE = "orchestrator-v0.7.1"
+
+
+def publiees(*images: str):
+    """`image_existe` qui répond oui pour ces images seulement, et note les questions."""
+    questions = []
+
+    def image_existe(image: str) -> bool:
+        questions.append(image)
+        return image in images
+
+    image_existe.questions = questions
+    return image_existe
+
+
+def test_compose_tire_les_images_de_la_release_quand_elles_existent(home, depot_pack):
+    existe = publiees(
+        "ghcr.io/ulyssoulv/wap-runtime:0.7.1", "ghcr.io/ulyssoulv/wap-runner:0.7.1"
+    )
+    compose = (
+        passe(
+            home,
+            depot_pack,
+            direct_url=vcs(commit_id=SHA, requested_revision=TAG_RELEASE),
+            image_existe=existe,
+        )
+        / "compose.yaml"
+    ).read_text()
+
+    assert "image: ghcr.io/ulyssoulv/wap-runtime:0.7.1" in service(compose, "runtime")
+    assert "image: ghcr.io/ulyssoulv/wap-runner:0.7.1" in service(compose, "runner")
+    assert "build:" not in compose
+
+
+def test_compose_tire_les_images_sha_d_un_autre_ref_quand_elles_existent(home, depot_pack):
+    existe = publiees(
+        f"ghcr.io/ulyssoulv/wap-runtime:sha-{SHA}", f"ghcr.io/ulyssoulv/wap-runner:sha-{SHA}"
+    )
+    compose = (
+        passe(
+            home,
+            depot_pack,
+            direct_url=vcs(commit_id=SHA, requested_revision="v0.7.1-cd"),
+            image_existe=existe,
+        )
+        / "compose.yaml"
+    ).read_text()
+
+    assert f"image: ghcr.io/ulyssoulv/wap-runtime:sha-{SHA}" in service(compose, "runtime")
+    assert f"image: ghcr.io/ulyssoulv/wap-runner:sha-{SHA}" in service(compose, "runner")
+    assert "build:" not in compose
+
+
+def test_compose_construit_au_commit_si_une_des_images_manque(home, depot_pack):
+    existe = publiees(f"ghcr.io/ulyssoulv/wap-runtime:sha-{SHA}")
+    compose = (
+        passe(home, depot_pack, direct_url=vcs(commit_id=SHA), image_existe=existe)
+        / "compose.yaml"
+    ).read_text()
+
+    contexte = f"context: https://github.com/UlyssouLV/workflow-agents-pack.git#{SHA}:orchestrator"
+    assert contexte in service(compose, "runtime")
+    assert contexte in service(compose, "runner")
+    assert "ghcr.io" not in compose
+
+
+def test_sans_origine_vcs_le_compose_construit_sans_interroger_ghcr(home, depot_pack):
+    existe = publiees()
+
+    compose = (passe(home, depot_pack, image_existe=existe) / "compose.yaml").read_text()
+
+    assert existe.questions == []
+    assert "build:" in service(compose, "runtime")
+
+
+@pytest.mark.parametrize(
+    ("direct_url", "version"),
+    [
+        (vcs(commit_id=SHA, requested_revision=TAG_RELEASE), "0.7.1"),
+        (vcs(commit_id=SHA, requested_revision="v0.7.1-cd"), "v0.7.1-cd"),
+        (vcs(commit_id=SHA), SHA),
+        (None, "feat/runtime-orchestrator"),
+    ],
+)
+def test_config_garde_la_version_installee(home, depot_pack, direct_url, version):
+    instance = passe(home, depot_pack, direct_url=direct_url)
+
+    assert lire_config(instance)["version"] == version
+
+
+def test_une_nouvelle_installation_reecrit_la_version(home, depot_pack):
+    instance = passe(home, depot_pack, direct_url=vcs(commit_id=SHA, requested_revision="v0.7.1-cd"))
+
+    passe(home, depot_pack, direct_url=vcs(commit_id=SHA, requested_revision=TAG_RELEASE))
+
+    assert lire_config(instance)["version"] == "0.7.1"
+
+
+@pytest.mark.parametrize(("code", "attendu"), [(0, True), (1, False)])
+def test_image_publiee_interroge_ghcr_sans_jeton(faux_docker, code, attendu):
+    from wap_runtime.instance import image_publiee
+
+    docker = Path(os.environ["PATH"].split(os.pathsep)[0]) / "docker"
+    docker.write_text(f'#!/bin/sh\necho "$*" >> "{faux_docker}"\nexit {code}\n')
+
+    assert image_publiee("ghcr.io/ulyssoulv/wap-runtime:0.7.1") is attendu
+    assert faux_docker.read_text().strip() == "manifest inspect ghcr.io/ulyssoulv/wap-runtime:0.7.1"
+
+
+def test_image_publiee_sans_docker_repond_non(monkeypatch, tmp_path):
+    from wap_runtime.instance import image_publiee
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert image_publiee("ghcr.io/ulyssoulv/wap-runtime:0.7.1") is False

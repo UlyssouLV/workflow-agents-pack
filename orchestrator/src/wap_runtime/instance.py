@@ -7,14 +7,13 @@ import shutil
 import subprocess
 from importlib.metadata import distribution
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
-from wap_runtime import __version__
 from wap_runtime.runner import PORT_RUNNER
 
 NOM_INSTANCE = ".wap-runtime"
@@ -23,6 +22,9 @@ DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
 # Ref des images quand le paquet n’a pas d’origine VCS (installation locale ou
 # éditable) : la base du canal d’intégration, défaut de `WAP_REF` (ADR 0005).
 REF_PAR_DEFAUT = "feat/runtime-orchestrator"
+# Images publiées par la CI (ADR 0013) : paquets publics, tirés sans jeton.
+REGISTRE = "ghcr.io/ulyssoulv"
+_RE_TAG_RELEASE = re.compile(r"^orchestrator-v(\d+\.\d+\.\d+)$")
 # `direct_url.json` du paquet installé, lu quand l’appelant n’en passe pas.
 _PAQUET_INSTALLE = object()
 PORT_CONTENEUR = 8787
@@ -47,21 +49,24 @@ def preparer_instance(
     env: Mapping[str, str] = os.environ,
     depot_pack: str = DEPOT_PACK,
     direct_url: Mapping | None = _PAQUET_INSTALLE,
+    image_existe: Callable[[str], bool] | None = None,
 ) -> Path:
     """Une passe : crée ou complète l’instance, régénère Compose, aligne le pack.
 
-    Les images se construisent au ref lu dans `direct_url` (`ref_des_images`).
+    `version` reprend le paquet installé à chaque passe ; les images se tirent de
+    ghcr ou se construisent au ref lu dans `direct_url` (`regenerer_compose`).
     """
     if direct_url is _PAQUET_INSTALLE:
         direct_url = _direct_url_du_paquet()
     instance = chemin_instance(home)
     instance.mkdir(parents=True, exist_ok=True)
     config = _completer_config(_chemin_config(instance), _config_par_defaut(instance, env))
+    _ecrire_cle_config(instance, "version", version_installee(direct_url))
     _creer_secrets(instance / "secrets.env")
     for nom in DOSSIERS_RUNNER:
         (instance / nom).mkdir(exist_ok=True)
     # Cette passe tourne en utilisateur d’instance : le runner reprend son UID.
-    regenerer_compose(instance, direct_url=direct_url)
+    regenerer_compose(instance, direct_url=direct_url, image_existe=image_existe)
     _aligner_pack(depot_pack, Path(config["pack_path"]), config["pack_ref"])
     return instance
 
@@ -69,17 +74,30 @@ def preparer_instance(
 def regenerer_compose(
     instance: Path,
     direct_url: Mapping | None = _PAQUET_INSTALLE,
+    image_existe: Callable[[str], bool] | None = None,
 ) -> None:
-    """Réécrit `compose.yaml` et le Caddyfile depuis `config.toml` (sans toucher au pack)."""
+    """Réécrit `compose.yaml` et le Caddyfile depuis `config.toml` (sans toucher au pack).
+
+    Images ghcr à l’étiquette du paquet (`etiquette_des_images`) quand les deux
+    existent ; sinon build au commit du paquet (ADR 0005, secours).
+    """
     if direct_url is _PAQUET_INSTALLE:
         direct_url = _direct_url_du_paquet()
+    image_existe = image_existe or image_publiee
     config = lire_config(instance)
     exposition = bool(config.get("exposition", False))
     domaine = str(config.get("domaine") or "").strip()
+    etiquette = etiquette_des_images(direct_url)
+    images = None
+    if etiquette:
+        images = (f"{REGISTRE}/wap-runtime:{etiquette}", f"{REGISTRE}/wap-runner:{etiquette}")
+        if not all(image_existe(image) for image in images):
+            images = None
     contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
     (instance / "compose.yaml").write_text(
         _compose(
             contexte,
+            images,
             config["port"],
             os.getuid(),
             os.getgid(),
@@ -95,6 +113,42 @@ def ref_des_images(direct_url: Mapping | None) -> str:
     demandé à l’installation ; sans origine VCS, `REF_PAR_DEFAUT` (ADR 0005)."""
     vcs = (direct_url or {}).get("vcs_info", {})
     return vcs.get("commit_id") or vcs.get("requested_revision") or REF_PAR_DEFAUT
+
+
+def version_installee(direct_url: Mapping | None) -> str:
+    """`X.Y.Z` pour un paquet installé au tag de Release `orchestrator-vX.Y.Z`,
+    sinon le ref demandé, le commit, ou `REF_PAR_DEFAUT` sans origine VCS."""
+    vcs = (direct_url or {}).get("vcs_info", {})
+    demande = vcs.get("requested_revision") or ""
+    if release := _RE_TAG_RELEASE.fullmatch(demande):
+        return release.group(1)
+    return demande or vcs.get("commit_id") or REF_PAR_DEFAUT
+
+
+def etiquette_des_images(direct_url: Mapping | None) -> str | None:
+    """Étiquette ghcr des images du paquet : `X.Y.Z` (promotion de la Release),
+    `sha-<commit>` (staging de la PR), ou `None` sans commit connu (ADR 0013)."""
+    vcs = (direct_url or {}).get("vcs_info", {})
+    if release := _RE_TAG_RELEASE.fullmatch(vcs.get("requested_revision") or ""):
+        return release.group(1)
+    commit = vcs.get("commit_id")
+    return f"sha-{commit}" if commit else None
+
+
+def image_publiee(image: str) -> bool:
+    """L’image existe sur son registre (lecture anonyme des paquets publics)."""
+    try:
+        return (
+            subprocess.run(
+                ["docker", "manifest", "inspect", image],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        return False
 
 
 def lire_config(instance: Path) -> dict:
@@ -143,7 +197,6 @@ def _config_par_defaut(instance: Path, env: Mapping[str, str]) -> dict:
         "port": int(port),
         "pack_ref": env.get("WAP_PACK_REF", "main"),
         "pack_path": str(instance / "pack"),
-        "version": __version__,
         "exposition": False,
         "domaine": "",
     }
@@ -228,6 +281,7 @@ def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> No
 
 def _compose(
     contexte: str,
+    images: tuple[str, str] | None,
     port: int,
     uid: int,
     gid: int,
@@ -273,15 +327,24 @@ def _compose(
       - runtime
     restart: unless-stopped
 """
+    if images:
+        source_runtime = f"image: {images[0]}"
+        source_runner = f"image: {images[1]}"
+    else:
+        source_runtime = f"""build:
+      context: {contexte}
+      dockerfile: Dockerfile
+    image: wap-runtime:local"""
+        source_runner = f"""build:
+      context: {contexte}
+      dockerfile: runner/Dockerfile
+    image: wap-runner:local"""
     return f"""\
 # Généré par wap-runtime depuis config.toml : réécrit à chaque passe, ne pas éditer.
 name: wap-runtime
 services:
   runtime:
-    build:
-      context: {contexte}
-      dockerfile: Dockerfile
-    image: wap-runtime:local
+    {source_runtime}
     user: "{uid}:{gid}"
     env_file:
       - secrets.env
@@ -297,10 +360,7 @@ services:
   # Sessions des agents : pas de socket Docker, aucun port publié ; le `runtime` lui
   # parle sur le réseau Compose.
   runner:
-    build:
-      context: {contexte}
-      dockerfile: runner/Dockerfile
-    image: wap-runner:local
+    {source_runner}
     command: ["wap-runtime", "runner", "--host", "0.0.0.0", "--port", "{PORT_RUNNER}"]
     user: "{uid}:{gid}"
     init: true

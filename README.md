@@ -35,7 +35,7 @@ Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interac
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
 ```
 
-Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`).
+Elle installe `python3`, `pipx`, `git` et `curl`, résout la **dernière Release** `orchestrator-vX.Y.Z` publiée (ni brouillon ni prerelease, API GitHub publique), crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime` à ce tag, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/` (`version = "X.Y.Z"` dans `config.toml`), `docker compose up -d --build` avec les images `ghcr.io/ulyssoulv/wap-runtime:X.Y.Z` et `wap-runner:X.Y.Z` tirées de ghcr sans jeton (ADR 0013), attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`).
 
 Par défaut l’exposition web est **désactivée** : le service `runtime` n’écoute que sur `127.0.0.1`. Après l’install, créez les **identifiants cockpit** (obligatoires pour ouvrir le cockpit, y compris en local — ADR 0010) :
 
@@ -43,13 +43,13 @@ Par défaut l’exposition web est **désactivée** : le service `runtime` n’�
 sudo wap-runtime cockpit-auth --login <votre-login>
 ```
 
-L’instance a deux services Compose de base : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). Quand l’exposition web est activée, un troisième service **Caddy** publie uniquement les ports 80/443 et relaie vers le cockpit (ADR 0011). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Relancer `setup` reconstruit l’image (épinglages changés).
+L’instance a deux services Compose de base : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). Quand l’exposition web est activée, un troisième service **Caddy** publie uniquement les ports 80/443 et relaie vers le cockpit (ADR 0011). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Quand les images viennent de ghcr, elles ont été construites et testées sur la PR de la version ; en secours seulement (ci-dessous), relancer `setup` les reconstruit sur l’hôte.
 
 Options, par variables d’environnement passées à `sudo` :
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
-| `WAP_REF` | `feat/runtime-orchestrator` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` ; les images `runtime` et `runner` se construisent au même commit |
+| `WAP_REF` | dernière Release `orchestrator-vX.Y.Z` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` (prioritaire sur la dernière Release) ; les images `runtime` et `runner` sont tirées de ghcr à ce ref, ou construites au même commit |
 | `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) ; ignoré côté hôte quand l’exposition web est on |
 | `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
 | `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
@@ -60,13 +60,15 @@ Options, par variables d’environnement passées à `sudo` :
 curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 ```
 
-**Tester une branche de version** avant sa fusion (ADR 0005) : `WAP_REF` choisit le ref du paquet, et `setup` construit les images au commit du paquet installé (lu dans `direct_url.json`), donc paquet et images ne se désalignent pas. `WAP_PACK_REF` reste indépendant.
+**Tester une branche de version** avant sa fusion (ADR 0005, 0013) : `WAP_REF` choisit le ref du paquet, et `setup` tire les images `:sha-<commit>` du commit du paquet installé (lu dans `direct_url.json`), publiées par le job `images` quand la CI de la PR est verte ; `config.toml` garde le ref (`version = "<ref>"`). Paquet et images ne se désalignent pas. `WAP_PACK_REF` reste indépendant.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/<ref>/orchestrator/install.sh | sudo WAP_REF=<ref> bash
 ```
 
-Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`.
+Revenir à la version livrée : relancer `install.sh` sans `WAP_REF`.
+
+**Build en secours** : si l’une des deux images n’existe pas sur ghcr (fork, commit jamais passé en CI, Release pas encore promue), `setup` les construit sur l’hôte au commit du paquet, comme avant la 0.7.1 (ADR 0005). Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`, sans interroger ghcr.
 
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 
