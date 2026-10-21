@@ -1,10 +1,11 @@
 """`wap-runtime setup` : socle → instance → `docker compose up -d --build` → `/health`
-→ connexion GitHub.
+→ unité systemd → connexion GitHub.
 
 `setup` tourne en root (lancé par `install.sh`) : il installe le socle, lie
 `/usr/local/bin/wap-runtime` au binaire de l’utilisateur d’instance, puis relance
 `wap-runtime setup --instance-seule` en utilisateur d’instance `orchestrator` pour
-le reste (ADR 0002) et recopie sa sortie dans le journal. Il finit par la connexion
+le reste (ADR 0002) et recopie sa sortie dans le journal. Il écrit et active ensuite
+l’unité `wap-runtime.service` (mise à jour puis démarrage au boot). Il finit par la connexion
 GitHub de l’instance, seule étape qui peut interagir (ADR 0003), et indique l’auth
 des agents comme prochaine étape sans la lancer.
 """
@@ -31,7 +32,10 @@ from wap_runtime.socle import (
     journaliser,
     lier_commande,
     mode_debug,
+    resoudre,
 )
+from wap_runtime.unite import NOM as NOM_UNITE
+from wap_runtime.unite import UNITE, contenu_unite, installer_unite
 
 DELAI_HEALTH = 60
 ETAPE_INSTANCE = "instance"
@@ -47,6 +51,7 @@ def setup(
     home_orchestrator: Path = HOME_UTILISATEUR,
     terminal: Path = TERMINAL,
     lien_commande: Path = LIEN_COMMANDE,
+    unite: Path = UNITE,
 ) -> int:
     """Une passe complète, idempotente ; rend le code de sortie."""
     code = installer_socle(os_release, journal, env, home_orchestrator)
@@ -86,6 +91,12 @@ def setup(
         print(f"Journal : {journal}")
         return code
     instance = chemin_instance(home_orchestrator)
+    docker = resoudre("docker", env, home_orchestrator) or "docker"
+    try:
+        installer_unite(unite, contenu_unite(instance, UTILISATEUR, lien_commande, docker), env)
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        return _echec(f"unité {NOM_UNITE}", erreur)
+    print(f"OK — unité {NOM_UNITE} activée (mise à jour puis démarrage au boot)", flush=True)
     code = _connecter_github(instance, env, terminal)
     if code == 0:
         _indiquer_auth_agents(instance)

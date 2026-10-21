@@ -45,6 +45,7 @@ class Hote:
         self.env = {"PATH": str(self.bin), "WAP_PORT": str(self.port)}
         self.terminal = tmp_path / "pas-de-terminal"
         self.lien = tmp_path / "usr-local-bin" / "wap-runtime"
+        self.unite = tmp_path / "etc-systemd-system" / "wap-runtime.service"
         self.binaire("gh", FAUX_GH)
         for nom in ("systemctl", "curl", "claude", "agent", "useradd", "usermod"):
             self.binaire(nom)
@@ -92,6 +93,7 @@ class Hote:
             home_orchestrator=self.home,
             terminal=self.terminal,
             lien_commande=self.lien,
+            unite=self.unite,
         )
 
     def avec_terminal(self) -> None:
@@ -373,3 +375,73 @@ def test_setup_avec_un_gh_token_refuse_echoue_en_nommant_l_etape(hote, capsys):
 
     assert "KO — l’étape « gh auth login » a échoué" in capsys.readouterr().out
     assert hote.secrets() == ""
+
+
+def directives(unite: Path) -> dict[str, list[str]]:
+    """`Cle=valeur` de l’unité, par clé (une clé peut revenir)."""
+    lues: dict[str, list[str]] = {}
+    for ligne in unite.read_text().splitlines():
+        cle, egal, valeur = ligne.partition("=")
+        if egal:
+            lues.setdefault(cle, []).append(valeur)
+    return lues
+
+
+def test_setup_ecrit_l_unite_de_demarrage_de_l_instance(hote):
+    assert hote.setup() == 0
+
+    d = directives(hote.unite)
+    instance = hote.home / ".wap-runtime"
+    assert d["Type"] == ["oneshot"]
+    assert d["RemainAfterExit"] == ["yes"]
+    assert d["Requires"] == ["docker.service"]
+    assert set(d["After"]) == {"docker.service network-online.target"}
+    assert d["Wants"] == ["network-online.target"]
+    assert d["User"] == ["orchestrator"]
+    assert d["WorkingDirectory"] == [str(instance)]
+    assert d["ExecStartPre"] == [f"-+{hote.lien} update"]
+    assert d["ExecStart"] == [f"{hote.bin / 'docker'} compose up -d --wait"]
+    assert d["ExecStop"] == [f"{hote.bin / 'docker'} compose down"]
+    assert d["TimeoutStartSec"] == ["infinity"]
+    assert d["Restart"] == ["on-failure"]
+    assert int(d["StartLimitBurst"][0]) > 0
+    assert int(d["StartLimitIntervalSec"][0]) > 0
+    assert d["WantedBy"] == ["multi-user.target"]
+
+
+def test_setup_recharge_systemd_et_active_l_unite(hote):
+    assert hote.setup() == 0
+
+    lignes = hote.lignes_appels()
+    rechargement = indice(lignes, "systemctl daemon-reload")
+    activation = indice(lignes, "systemctl enable wap-runtime.service")
+    assert rechargement < activation
+    assert indice(lignes, "runuser -u orchestrator -- ") < rechargement
+
+
+def test_setup_relance_garde_l_unite_identique(hote):
+    assert hote.setup() == 0
+    hote.arreter()
+    avant = hote.unite.read_text()
+    hote.appels.unlink()
+
+    assert hote.setup() == 0
+
+    assert hote.unite.read_text() == avant
+    assert "systemctl enable wap-runtime.service" in hote.lignes_appels()
+
+
+def test_setup_qui_echoue_avant_l_instance_n_ecrit_pas_l_unite(hote):
+    hote.binaire("useradd", "exit 9")
+
+    assert hote.setup() != 0
+
+    assert not hote.unite.exists()
+
+
+def test_setup_echoue_si_l_activation_de_l_unite_echoue(hote, capsys):
+    hote.binaire("systemctl", 'case "$1" in enable) exit 4 ;; esac')
+
+    assert hote.setup() != 0
+
+    assert "KO — l’étape « unité wap-runtime.service » a échoué" in capsys.readouterr().out

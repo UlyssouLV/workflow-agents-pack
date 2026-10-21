@@ -44,6 +44,8 @@ from wap_runtime.socle import (
     cible_commande,
     retirer_lien_commande,
 )
+from wap_runtime.unite import NOM as NOM_UNITE
+from wap_runtime.unite import UNITE, retirer_unite
 
 PORT_PAR_DEFAUT = 8787
 
@@ -292,6 +294,13 @@ def _enchainer(ticket: int) -> int:
 
 def _uninstall(purge: bool) -> int:
     home = _home_instance()
+    try:
+        # Avant le Compose : `disable --now` l’arrête par `ExecStop`, et le boot ne le relance plus.
+        if retirer_unite(UNITE):
+            print(f"Unité {NOM_UNITE} désactivée et retirée.")
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        print(f"KO — unité {NOM_UNITE} non retirée ({erreur}) ; instance conservée")
+        return 1
     try:
         instance = desinstaller(home, purge)
     except (OSError, subprocess.CalledProcessError) as erreur:

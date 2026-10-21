@@ -275,6 +275,7 @@ def lien_root(tmp_path, home, monkeypatch) -> Path:
     monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
     monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
     monkeypatch.setattr(cli, "LIEN_COMMANDE", lien)
+    monkeypatch.setattr(cli, "UNITE", tmp_path / "etc-systemd-system" / "wap-runtime.service")
     return lien
 
 
@@ -310,6 +311,67 @@ def test_uninstall_garde_un_fichier_wap_runtime(home, faux_docker, lien_root):
     assert main(["uninstall"]) == 0
 
     assert lien_root.read_text() == "à garder\n"
+
+
+@pytest.fixture
+def unite_installee(tmp_path, lien_root, monkeypatch) -> tuple[Path, Path]:
+    """Unité systemd présente et faux `systemctl` qui journalise ses appels."""
+    from wap_runtime import cli
+
+    unite = cli.UNITE
+    unite.parent.mkdir()
+    unite.write_text("[Unit]\n")
+    journal = tmp_path / "systemctl.log"
+    systemctl = Path(os.environ["PATH"].split(os.pathsep)[0]) / "systemctl"
+    systemctl.write_text(f'#!/bin/sh\necho "$*" >> "{journal}"\n')
+    systemctl.chmod(0o755)
+    return unite, journal
+
+
+@pytest.mark.parametrize("options", [[], ["--purge"]])
+def test_uninstall_desactive_et_supprime_l_unite(
+    home, depot_pack, faux_docker, unite_installee, options
+):
+    from wap_runtime.cli import main
+
+    unite, journal = unite_installee
+    passe(home, depot_pack)
+
+    assert main(["uninstall", *options]) == 0
+
+    assert not unite.exists()
+    assert journal.read_text().splitlines() == [
+        "disable --now wap-runtime.service",
+        "daemon-reload",
+    ]
+    assert "down" in faux_docker.read_text()
+
+
+def test_uninstall_sans_unite_n_appelle_pas_systemctl(home, depot_pack, faux_docker, lien_root):
+    from wap_runtime.cli import main
+
+    passe(home, depot_pack)
+
+    assert main(["uninstall"]) == 0
+
+    assert not (Path(os.environ["PATH"].split(os.pathsep)[0]) / "systemctl").exists()
+
+
+def test_uninstall_echoue_si_la_desactivation_de_l_unite_echoue(
+    home, depot_pack, faux_docker, unite_installee, capsys
+):
+    from wap_runtime.cli import main
+
+    unite, _ = unite_installee
+    systemctl = Path(os.environ["PATH"].split(os.pathsep)[0]) / "systemctl"
+    systemctl.write_text("#!/bin/sh\nexit 5\n")
+    instance = passe(home, depot_pack)
+
+    assert main(["uninstall", "--purge"]) != 0
+
+    assert unite.exists()
+    assert instance.exists()
+    assert "KO — " in capsys.readouterr().out
 
 
 def test_compose_monte_l_instance_en_ecriture_pour_persister_le_pilote(home, depot_pack):
