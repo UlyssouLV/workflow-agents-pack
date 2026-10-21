@@ -17,14 +17,9 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.5.0** — Pilote (autopilot borné) : toggle opt-in par repo, boucle dans `runtime` qui lance le premier `/implement #n` éligible, notifie aux stops et reprend ; l’enchaînement reste le pack ([#73](https://github.com/UlyssouLV/workflow-agents-pack/issues/73), [spec](../../specs/v0.5.0-pilote.md), [ADR 0008](../../adr/0008-boucle-pilote-dans-le-runtime.md)).
 - **0.5.1** — Modèle Cursor par session : préférence repo, override à Nouvelle session, `--model` (sauf Auto), héritage via `precedente`, affichage cockpit ([#82](https://github.com/UlyssouLV/workflow-agents-pack/issues/82), [spec](../../specs/v0.5.1-modele-cursor-par-session.md), [ADR 0009](../../adr/0009-modele-cursor-preference-et-heritage.md)).
 - **0.6.0** — Accès web authentifié : identifiants cockpit + sessions serveur, auth obligatoire (y compris local), reverse proxy Caddy opt-in (80/443), TLS Let’s Encrypt dès qu’un domaine pointe, pas de HTTP public ; diagnostic CLI ; README refondu ([#89](https://github.com/UlyssouLV/workflow-agents-pack/issues/89), [spec](../../specs/v0.6.0-acces-web-authentifie.md), [ADR 0010](../../adr/0010-identifiants-cockpit-auth-obligatoire.md), [ADR 0011](../../adr/0011-caddy-exposition-web-opt-in.md)).
+- **0.7.0** — CI : chaque PR vers `feat/runtime-orchestrator` lance un workflow GitHub Actions (checks `pytest` et `vitest` avec couverture, puis `sonar` qui analyse `orchestrator/` et échoue si le quality gate n’est pas `OK`) ; secrets Sonar et ruleset de la base (checks requis, posée à la main) documentés dans le README ; pas de CD ni de CI pack sur `main`. Bug relevé aux tests humains : un check ignoré s’affiche « ok » dans le cockpit ([#105](https://github.com/UlyssouLV/workflow-agents-pack/issues/105)) ([#99](https://github.com/UlyssouLV/workflow-agents-pack/issues/99), [spec](../../specs/v0.7.0-ci.md), [ADR 0012](../../adr/0012-ci-actions-sonar-sur-pr-base.md)).
 
-## Prochaine : 0.7.0 — CI
-
-Objectif. Chaque changement proposé sur l’orchestrateur est vérifié automatiquement (tests, contrôles de qualité) avant d’être accepté : on sait vite si la branche est saine, sans relancer à la main toute la suite.
-
-Hors périmètre : publication ou déploiement automatiques (0.7.1).
-
-## Ensuite : 0.7.1 — CD
+## Prochaine : 0.7.1 — CD
 
 Objectif. Une version validée se publie et se déploie sans enchaînement manuel : artefacts et mise à disposition suivent la validation CI, sur le modèle du repo ArgOS.
 
