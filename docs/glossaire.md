@@ -36,6 +36,14 @@
 
 **CI** — vérification automatique des changements proposés sur le canal orchestrateur : workflow GitHub Actions sur chaque PR vers la base d’intégration (`feat/runtime-orchestrator`), qui lance les suites (pytest, Vitest, avec couverture) puis un scan Sonar ; le job Sonar échoue si le quality gate n’est pas `OK`. Distinct des suites locales (`/t`) et de la seule lecture du gate (`/qg`).
 
+**CD** — publication et mise à disposition automatiques d’une version de l’orchestrateur : images `wap-runtime` et `wap-runner` poussées sur ghcr par la CI (staging), promues à la Release, puis tirées par chaque instance lors de sa mise à jour. Pas de déploiement poussé vers un serveur.
+
+**Staging** — les images construites au SHA de tête d’une PR verte vers la base : `:sha-<sha>` pour ce commit, `:staging` pour la dernière PR verte. Servent aux tests humains avant Finalise.
+
+**Promotion** — à la publication d’une Release `orchestrator-vX.Y.Z`, retag du digest `:sha-<sha>` de son commit vers `X.Y.Z` et `latest`, sans rebuild.
+
+**Mise à jour de l’instance** — passage d’une instance à la Release la plus récente : `sudo wap-runtime update`, et automatiquement au démarrage du serveur par l’unité `wap-runtime.service`. Seulement pour une instance installée depuis une Release (version semver).
+
 **Intervention humaine** — une étape qui attend quelqu’un (question en attente, CI en échec, tests humains, code review / Finalise) ; le cockpit la signale par un badge.
 
 **Runner** — le service de l’instance qui exécute les sessions agents sur les clones gérés, dans un conteneur sans accès à l’hôte (ADR 0004).

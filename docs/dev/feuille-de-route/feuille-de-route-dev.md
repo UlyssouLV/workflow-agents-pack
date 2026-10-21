@@ -23,17 +23,17 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 
 Objectif. Une version validée se publie et se déploie sans enchaînement manuel : artefacts et mise à disposition suivent la validation CI, sur le modèle du repo ArgOS.
 
-Hors périmètre : parcours d’enregistrement self-service (0.8.0).
+Hors périmètre : visualisation du codespace par session (0.8.0) ; enregistrement self-service multi-orchestrateurs (Plus tard).
 
-## Ensuite : 0.8.0 — Enregistrement d’orchestrateur par compte GitHub
+## Ensuite : 0.8.0 — Visualisation du codespace par session
 
-Objectif. Une personne crée son orchestrateur sur le serveur depuis le web avec son compte GitHub : elle s’enregistre, obtient une instance isolée, et peut y démarrer / lier un workflow — sans que l’admin provisionne à la main.
+Objectif. Depuis une session d’agent, on voit clairement avec quel dépôt / workspace local l’agent travaille : une vue type VS Code dans le navigateur, liée à cette session — pas seulement le terminal.
 
-Hors périmètre : refonte graphique du cockpit (0.8.1) ; SaaS multi-tenant hors de ce serveur ; facturation.
+Hors périmètre : refonte graphique globale du cockpit (0.8.1) ; enregistrement multi-orchestrateurs (Plus tard).
 
 ## Ensuite : 0.8.1 — Refonte graphique du cockpit
 
-Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : hiérarchie visuelle claire, pages liste / détail / sessions / terminal / enregistrement cohérentes, sans changer les capacités déjà livrées.
+Objectif. Un vrai design du cockpit à la place du style minimal de la 0.3.0 : hiérarchie visuelle claire, pages liste / détail / sessions / terminal / codespace cohérentes, sans changer les capacités déjà livrées.
 
 Hors périmètre : nouvelles fonctionnalités métier ; redesign de la doc ou du README.
 
@@ -44,6 +44,10 @@ Objectif. Ce dépôt a plusieurs chantiers (pack, orchestrateur, …) mais une s
 Hors périmètre : nouvelles capacités du cockpit ou du runtime ; chantier labels d’état du pack (#24) ; correctif du skill `/afr` (#80).
 
 ## Plus tard (pas encore numéroté)
+
+### Enregistrement d’orchestrateur par compte GitHub
+
+Une personne crée son orchestrateur sur le serveur depuis le web avec son compte GitHub : elle s’enregistre, obtient une instance isolée, et peut y démarrer / lier un workflow — sans que l’admin provisionne à la main. (Reporté : se concentrer d’abord sur une instance qui marche bien pour soi.)
 
 ### Labels déclencheurs configurables
 
