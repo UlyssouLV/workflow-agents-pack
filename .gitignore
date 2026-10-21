@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 *.db
 .env
+.coverage
+coverage.xml
 
 # Pack installé depuis main (update-from-pack.sh + dispatch.py) — ADR 0001.
 /agents/skills/

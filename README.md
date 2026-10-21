@@ -247,8 +247,44 @@ cd orchestrator && .venv/bin/pytest
 cd orchestrator/cockpit && npm test
 ```
 
+## CI
+
+Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (ADR [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md)) : il tourne sur **chaque PR vers `feat/runtime-orchestrator`**, à l’ouverture puis à chaque push sur la branche de la PR, sans filtre de chemins. Un nouveau push annule le run en cours de la même PR. Pas de CI sur `main` ni sur un push hors PR.
+
+| Check | Ce qu’il vérifie |
+| --- | --- |
+| `pytest` | Suite `orchestrator/tests/` (Python 3.12, dépendances verrouillées par hash) avec couverture |
+| `vitest` | Suite `orchestrator/cockpit/tests/` (Node 24, `npm run test:coverage`) avec couverture |
+| `sonar` | Après `pytest` et `vitest` : scan Sonar de `orchestrator/` ([`sonar-project.properties`](sonar-project.properties)) avec les deux couvertures ; **échoue si le quality gate n’est pas `OK`** |
+
+Les trois doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+
+### Secrets Sonar
+
+Dans **Settings → Secrets and variables → Actions → Repository secrets**, les trois mêmes valeurs que le `.env` local de `/qg` (même projet Sonar) :
+
+| Secret | Valeur |
+| --- | --- |
+| `SONAR_HOST_URL` | URL de l’hôte Sonar, sans `/` final (ex. `https://sonarcloud.io`) |
+| `SONAR_TOKEN` | Jeton Sonar autorisé à analyser le projet |
+| `SONAR_PROJECT_KEY` | Clé du projet Sonar |
+
+L’organisation SonarCloud est dans `sonar-project.properties`. Sans ces secrets (ou sur une PR venant d’un fork, qui ne les reçoit pas), le job `sonar` échoue. Pas de rotation automatique : un jeton changé se remet à la main ici et dans `.env`.
+
+### Ruleset sur `feat/runtime-orchestrator`
+
+La protection est un réglage admin GitHub, posé et vérifié à la main (aucun script dans le dépôt). Formulaire direct : [`settings/rules/new?target=branch`](https://github.com/UlyssouLV/workflow-agents-pack/settings/rules/new?target=branch). Sinon : onglet **Settings du dépôt** (pas celui du profil), colonne de gauche **Code and automation → Rules → Rulesets → New ruleset → New branch ruleset**.
+
+1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI en échec).
+2. **Target branches → Add target → Include by pattern** : `feat/runtime-orchestrator`.
+3. Cocher **Require a pull request before merging**, avec **Required approvals : `0`** (on ne peut pas approuver sa propre PR : à 1, un mainteneur seul ne merge plus) ; dans **Allowed merge methods**, garder **Squash** (Finalise squashe).
+4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
+5. Laisser **Restrict deletions** et **Block force pushes** cochés, ne rien cocher d’autre (**Restrict updates** bloquerait tout push), puis **Create**.
+
+Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest` et `sonar`. Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
+
 ## Repères
 
 - Règles pour les agents : [`AGENTS.md`](AGENTS.md).
-- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md)).
+- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md), [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md)).
 - Cycle Ouvre / Implement / Finalise, tracker, labels : [`agents/issue-tracker.md`](agents/issue-tracker.md), [`agents/docs/integration-channel.md`](agents/docs/integration-channel.md).

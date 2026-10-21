@@ -34,6 +34,8 @@
 
 **Étape** — ce que le cockpit affiche pour une version ouverte d’un repo lié, déduite du tracker (labels, sub-issues, checks de la PR) : une seule par version, choisie par priorité. L’étape d’un repo est celle de ses versions qui attend quelqu’un, sinon la plus prioritaire.
 
+**CI** — vérification automatique des changements proposés sur le canal orchestrateur : workflow GitHub Actions sur chaque PR vers la base d’intégration (`feat/runtime-orchestrator`), qui lance les suites (pytest, Vitest, avec couverture) puis un scan Sonar ; le job Sonar échoue si le quality gate n’est pas `OK`. Distinct des suites locales (`/t`) et de la seule lecture du gate (`/qg`).
+
 **Intervention humaine** — une étape qui attend quelqu’un (question en attente, CI en échec, tests humains, code review / Finalise) ; le cockpit la signale par un badge.
 
 **Runner** — le service de l’instance qui exécute les sessions agents sur les clones gérés, dans un conteneur sans accès à l’hôte (ADR 0004).
