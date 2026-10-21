@@ -3,3 +3,4 @@
 
 def test_panne_volontaire():
     assert False, "panne volontaire pour vérifier la ruleset (#103)"
+# second push : doit annuler le run du premier
