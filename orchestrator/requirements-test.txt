@@ -1,5 +1,5 @@
-# Outils de test (pytest + couverture) pour la CI, verrouillés par hash.
-# Régénérer : printf "pytest\npytest-cov\n" | uv pip compile - --python-version 3.12 --generate-hashes --no-header -o requirements-test.txt
+# Outils de test (extra `test` du pyproject) pour la CI, verrouillés par hash.
+# Régénérer : uv pip compile pyproject.toml --extra test --python-version 3.12 --generate-hashes --no-header -o requirements-test.txt
 coverage==7.16.2 \
     --hash=sha256:00d3eb96e9988c45f50cccd1f1496571ac5c1f91386ac02c4d55516eeda19a24 \
     --hash=sha256:01c6908bc613b420c26c818fe948e1b97dfd041a53c98b01c63bd8321f5c9aae \
@@ -144,7 +144,10 @@ pygments==2.21.0 \
 pytest==9.1.1 \
     --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
-    # via pytest-cov
+    # via
+    #   wap-runtime (pyproject.toml)
+    #   pytest-cov
 pytest-cov==7.1.0 \
     --hash=sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2 \
     --hash=sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678
+    # via wap-runtime (pyproject.toml)

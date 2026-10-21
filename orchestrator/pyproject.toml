@@ -13,7 +13,9 @@ dependencies = ['tomli>=2; python_version < "3.11"']
 # Service HTTP (`wap-runtime serve`), installé dans l’image depuis requirements.txt ;
 # la CLI de l’hôte n’en a pas besoin.
 serve = ["fastapi>=0.115", "uvicorn>=0.30", "httpx>=0.27", "websockets>=13"]
-dev = ["pytest", "pytest-cov", "wap-runtime[serve]"]
+# Outils de test de la CI, verrouillés dans requirements-test.txt.
+test = ["pytest", "pytest-cov"]
+dev = ["wap-runtime[test,serve]"]
 
 [project.scripts]
 wap-runtime = "wap_runtime.cli:main"
@@ -21,7 +23,8 @@ wap-runtime = "wap_runtime.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# `pytest --cov` (CI) : chemins relatifs à orchestrator/ dans coverage.xml, pour Sonar.
+# `pytest --cov` (CI) : chemins `src/…` relatifs à orchestrator/ dans coverage.xml ;
+# le job `sonar` de .github/workflows/ci.yml les préfixe en `orchestrator/src/…`.
 [tool.coverage.run]
 source = ["wap_runtime"]
 relative_files = true

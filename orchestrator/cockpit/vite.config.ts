@@ -11,7 +11,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     env: { TZ: "UTC" },
-    // `npm run test:coverage` (CI) : lcov dans coverage/ pour l’artefact et Sonar.
+    // `npm run test:coverage` (CI) : lcov dans coverage/ pour l’artefact et Sonar ; chemins `src/…`,
+    // préfixés en `orchestrator/cockpit/src/…` par le job `sonar` de .github/workflows/ci.yml.
     coverage: { provider: "v8", include: ["src/**"], reporter: ["text", "lcov"], reportOnFailure: true },
   },
 });

@@ -257,7 +257,7 @@ Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (ADR [0012](docs
 | `vitest` | Suite `orchestrator/cockpit/tests/` (Node 24, `npm run test:coverage`) avec couverture |
 | `sonar` | Après `pytest` et `vitest` : scan Sonar de `orchestrator/` ([`sonar-project.properties`](sonar-project.properties)) avec les deux couvertures ; **échoue si le quality gate n’est pas `OK`** |
 
-Les trois doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI rouge se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+Les trois doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
 
 ### Secrets Sonar
 
@@ -275,7 +275,7 @@ L’organisation SonarCloud est dans `sonar-project.properties`. Sans ces secret
 
 La protection est un réglage admin GitHub, posé et vérifié à la main (aucun script dans le dépôt). Formulaire direct : [`settings/rules/new?target=branch`](https://github.com/UlyssouLV/workflow-agents-pack/settings/rules/new?target=branch). Sinon : onglet **Settings du dépôt** (pas celui du profil), colonne de gauche **Code and automation → Rules → Rulesets → New ruleset → New branch ruleset**.
 
-1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI rouge).
+1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI en échec).
 2. **Target branches → Add target → Include by pattern** : `feat/runtime-orchestrator`.
 3. Cocher **Require a pull request before merging**, avec **Required approvals : `0`** (on ne peut pas approuver sa propre PR : à 1, un mainteneur seul ne merge plus) ; dans **Allowed merge methods**, garder **Squash** (Finalise squashe).
 4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.

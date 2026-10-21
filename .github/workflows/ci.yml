@@ -78,7 +78,8 @@ jobs:
         with:
           name: coverage-vitest
           path: orchestrator/cockpit/coverage
-      # Les rapports sont relatifs à leur suite ; Sonar résout depuis la racine du dépôt.
+      # Les rapports sont relatifs à leur suite (pyproject.toml, vite.config.ts) ; Sonar résout depuis
+      # la racine du dépôt (reportPaths de sonar-project.properties). Seul endroit qui réécrit les chemins.
       - run: |
           sed -i 's#filename="src/#filename="orchestrator/src/#' orchestrator/coverage.xml
           sed -i 's#^SF:src/#SF:orchestrator/cockpit/src/#' orchestrator/cockpit/coverage/lcov.info
