@@ -81,3 +81,19 @@ Un hook du pack, versionné dans les repos métier et compatible macOS / Windows
 **Hors périmètre :** Aucun.
 
 **Suivi :** [#80](https://github.com/UlyssouLV/workflow-agents-pack/issues/80) (`bug`). Trouvé dans : inconnu · Contexte : usage · Date : 2026-10-18 · Priorité : Informations manquantes.
+
+### Bug — Le cockpit affiche « ok » pour un check CI ignoré (#105)
+
+**Constat :** Dans la vue détail d’un repo, un check de la PR de version **ignoré** (conclusion `skipped`) s’affiche « ok ». Aux tests humains V0.7.0, `sonar` n’a pas tourné parce que `pytest` échouait, mais le cockpit affichait `sonar : ok` (le badge « CI en échec » restait juste). Capture en pièce jointe sur #105.
+
+**Reproductibilité :** PR de version avec un job qui échoue et un job qui en dépend (`needs:`), marqué `skipped` par GitHub ; ouvrir la vue détail du repo → le check ignoré apparaît « ok ».
+
+**Impact :** L’opérateur peut croire qu’un check (ici le quality gate Sonar) est passé alors qu’il n’a jamais tourné.
+
+**Cause probable :** `etat_check` range toute conclusion hors de l’ensemble d’échec en `ok`, donc `skipped` et `neutral` aussi.
+
+**À corriger :** Un check qui n’a pas tourné ne s’affiche pas comme réussi : il a un état visible distinct (ex. « ignoré »).
+
+**Hors périmètre :** Aucun.
+
+**Suivi :** [#105](https://github.com/UlyssouLV/workflow-agents-pack/issues/105) (`bug`). Trouvé dans : 0.7.0 · Contexte : test humain · Date : 2026-10-21 · Priorité : Informations manquantes.
