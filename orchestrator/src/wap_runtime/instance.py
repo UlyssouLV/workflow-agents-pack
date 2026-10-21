@@ -160,6 +160,11 @@ def definir_exposition(instance: Path, actif: bool) -> None:
     _ecrire_cle_config(instance, "exposition", bool(actif))
 
 
+def ecrire_version(instance: Path, version: str) -> None:
+    """Écrit `version` dans `config.toml` (`wap-runtime update`, après le recreate)."""
+    _ecrire_cle_config(instance, "version", version)
+
+
 def definir_domaine(instance: Path, domaine: str) -> None:
     """Écrit `domaine` dans `config.toml` (hôte pour TLS Let’s Encrypt via Caddy)."""
     _ecrire_cle_config(instance, "domaine", normaliser_domaine(domaine))

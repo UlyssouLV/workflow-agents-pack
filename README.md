@@ -70,6 +70,16 @@ Revenir à la version livrée : relancer `install.sh` sans `WAP_REF`.
 
 **Build en secours** : si l’une des deux images n’existe pas sur ghcr (fork, commit jamais passé en CI, Release pas encore promue), `setup` les construit sur l’hôte au commit du paquet, comme avant la 0.7.1 (ADR 0005). Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`, sans interroger ghcr.
 
+**Mise à jour** : `sudo wap-runtime update` applique la Release `orchestrator-vX.Y.Z` la plus haute (ni brouillon ni prerelease) si elle est strictement supérieure à `version` de `config.toml`. Elle réinstalle le paquet à ce tag pour `orchestrator` (`pipx install --force`), puis, dans le nouveau paquet, régénère `compose.yaml`, lance `docker compose pull` et `up -d --wait --force-recreate`, écrit `version` et supprime les anciennes images `ghcr.io/ulyssoulv/wap-*` seulement (jamais de `prune`). Elle ne touche ni à `secrets.env`, ni à `repos.toml`, `jobs/` ou `clones/`, ni aux autres clés de `config.toml`. Journal : `/var/log/wap-runtime/update.log`.
+
+| Code | Cas |
+| --- | --- |
+| `0` | Mise à jour faite (Caddy qui ne démarre pas, `runtime` et `runner` sains : avertissement, pas d’échec) |
+| `2` | Rien à faire : déjà à la dernière Release, version locale non semver (« pas une version de production » : instance installée avec `WAP_REF`), ou images `X.Y.Z` pas encore promues sur ghcr (rien n’est touché) |
+| `1` | Échec : Releases injoignables, session ouverte (liste affichée ; `--force` passe outre, au prix de l’interrompre), `pipx`, `pull` ou recreate en échec — journalisé, **sans rollback** : corriger puis relancer |
+
+**Depuis une instance 0.7.0** : elle n’a ni `update` ni `version` ; relancer une fois `install.sh` (sans `WAP_REF`) pour passer à la dernière Release, puis `sudo wap-runtime update` suffit.
+
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 
 **Commande `wap-runtime`** : `setup` crée le lien `/usr/local/bin/wap-runtime → ~orchestrator/.local/bin/wap-runtime`, dans le `secure_path` de sudo : `sudo wap-runtime …` se lance tel quel. Relancer `setup` le recrée s’il manque (instance 0.4.0) et n’y touche pas s’il est déjà là ; un autre fichier à cet emplacement fait échouer `setup` (`KO`) sans être écrasé.
@@ -84,7 +94,7 @@ L’instance vit sous `/home/orchestrator/.wap-runtime/` (ou `~/.wap-runtime/` d
 
 | Fichier | Rôle |
 | --- | --- |
-| `config.toml` | Port local, ref du pack, `exposition` (bool), `domaine` (hôte TLS) — `setup` / les CLI d’expo et de domaine réécrivent les clés qu’ils gèrent ; le reste des valeurs éditées est conservé |
+| `config.toml` | Port local, ref du pack, `version` installée (réécrite par `setup` et `update`), `exposition` (bool), `domaine` (hôte TLS) — `setup` / les CLI d’expo et de domaine réécrivent les clés qu’ils gèrent ; le reste des valeurs éditées est conservé |
 | `secrets.env` (`0600`) | Tokens GitHub / agents — jamais les identifiants cockpit |
 | `repos.toml` | Registry des repos liés (+ préférences Pilote / agent / modèle) |
 | `compose.yaml`, `Caddyfile` | Générés depuis `config.toml` — ne pas éditer à la main ; relancer `setup` ou les CLI d’expo / domaine |

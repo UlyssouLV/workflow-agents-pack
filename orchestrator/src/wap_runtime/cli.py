@@ -25,6 +25,8 @@ from wap_runtime.instance import (
     normaliser_domaine,
     regenerer_compose,
 )
+from wap_runtime.mise_a_jour import appliquer as appliquer_mise_a_jour
+from wap_runtime.mise_a_jour import mettre_a_jour
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
     RegistryErreur,
@@ -431,6 +433,15 @@ def _setup(instance_seule: bool) -> int:
     return setup()
 
 
+def _update(force: bool, version: str | None) -> int:
+    if version is not None:
+        return appliquer_mise_a_jour(Path.home(), version)
+    if os.geteuid() != 0:
+        print("KO — `wap-runtime update` doit tourner en root : `sudo wap-runtime update`")
+        return 1
+    return mettre_a_jour(force=force)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="wap-runtime")
     sous = parser.add_subparsers(dest="commande", required=True)
@@ -522,9 +533,21 @@ def main(argv=None) -> int:
     )
     # Relance interne de `setup` en utilisateur d’instance, après le socle.
     setup_.add_argument("--instance-seule", action="store_true", help=argparse.SUPPRESS)
+    update = sous.add_parser(
+        "update",
+        help="applique la Release orchestrator-vX.Y.Z la plus récente "
+        "(0 mise à jour faite, 2 rien à faire, 1 échec)",
+    )
+    update.add_argument(
+        "--force", action="store_true", help="met à jour même si une session est ouverte"
+    )
+    # Relance interne de `update` en utilisateur d’instance, dans le nouveau paquet.
+    update.add_argument("--instance-seule", metavar="X.Y.Z", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.commande == "setup":
         return _setup(args.instance_seule)
+    if args.commande == "update":
+        return _update(args.force, args.instance_seule)
     if args.commande == "auth":
         return _auth(args.cible, args.with_token)
     if args.commande == "cockpit-auth":
