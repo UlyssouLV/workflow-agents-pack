@@ -256,8 +256,17 @@ Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (ADR [0012](docs
 | `pytest` | Suite `orchestrator/tests/` (Python 3.12, dépendances verrouillées par hash) avec couverture |
 | `vitest` | Suite `orchestrator/cockpit/tests/` (Node 24, `npm run test:coverage`) avec couverture |
 | `sonar` | Après `pytest` et `vitest` : scan Sonar de `orchestrator/` ([`sonar-project.properties`](sonar-project.properties)) avec les deux couvertures ; **échoue si le quality gate n’est pas `OK`** |
+| `images` | Après les trois autres : construit et pousse les images de l’instance sur ghcr (staging, ci-dessous) ; ignoré pour une PR de fork |
 
-Les trois doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+Les quatre doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+
+### Images sur ghcr (staging)
+
+Le job `images` (ADR [0013](docs/adr/0013-images-ghcr-promotion-et-mise-a-jour-de-l-instance.md)) appelle [`orchestrator/scripts/publier-images-staging.sh`](orchestrator/scripts/publier-images-staging.sh) : buildx + QEMU, manifestes `linux/amd64` + `linux/arm64`, construits au **SHA de tête de la PR** (pas au merge-ref) et poussés vers `ghcr.io/ulyssoulv/wap-runtime` et `ghcr.io/ulyssoulv/wap-runner` en `:sha-<sha>` (SHA complet) et `:staging` (dernière PR verte). Le jeton du workflow suffit (`packages: write`), aucun secret à ajouter. Une PR de fork ne publie rien.
+
+Hors Actions, le même script tourne depuis un clone au commit voulu : `bash orchestrator/scripts/publier-images-staging.sh [<sha>]` (défaut : `HEAD`), après `docker login ghcr.io` avec un jeton `write:packages` et un buildx capable d’`arm64` (QEMU).
+
+**Visibilité publique (geste manuel unique)** : ghcr crée les paquets en privé au premier push et l’API GitHub ne change pas cette visibilité. Après le premier run vert du job `images`, pour `wap-runtime` puis `wap-runner` : profil GitHub → **Packages** → le paquet → **Package settings** → **Danger Zone → Change visibility → Public**. Vérifier sans jeton : `docker logout ghcr.io && docker buildx imagetools inspect ghcr.io/ulyssoulv/wap-runtime:staging` liste `linux/amd64` et `linux/arm64`.
 
 ### Secrets Sonar
 
@@ -278,13 +287,13 @@ La protection est un réglage admin GitHub, posé et vérifié à la main (aucun
 1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI en échec).
 2. **Target branches → Add target → Include by pattern** : `feat/runtime-orchestrator`.
 3. Cocher **Require a pull request before merging**, avec **Required approvals : `0`** (on ne peut pas approuver sa propre PR : à 1, un mainteneur seul ne merge plus) ; dans **Allowed merge methods**, garder **Squash** (Finalise squashe).
-4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
+4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar`, `images` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
 5. Laisser **Restrict deletions** et **Block force pushes** cochés, ne rien cocher d’autre (**Restrict updates** bloquerait tout push), puis **Create**.
 
-Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest` et `sonar`. Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
+Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest`, `sonar` et `images` (`images` ajouté en 0.7.1 : sur un ruleset existant, **Edit** → **Add checks** → `images` → **Save changes**). Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
 
 ## Repères
 
 - Règles pour les agents : [`AGENTS.md`](AGENTS.md).
-- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md), [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md)).
+- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md), [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md), [0013](docs/adr/0013-images-ghcr-promotion-et-mise-a-jour-de-l-instance.md)).
 - Cycle Ouvre / Implement / Finalise, tracker, labels : [`agents/issue-tracker.md`](agents/issue-tracker.md), [`agents/docs/integration-channel.md`](agents/docs/integration-channel.md).
