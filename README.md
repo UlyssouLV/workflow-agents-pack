@@ -189,6 +189,23 @@ sudo wap-runtime diagnostic
 
 Code de sortie `≠ 0` s’il manque quelque chose **côté instance** (auth cockpit, ports, Caddy, domaine si expo on). Les lignes « Côté opérateur » sont informatives : à traiter sur votre DNS / box.
 
+Expo on et Caddy pas up : si 80 ou 443 répond quand même sur l’hôte, `diagnostic` dit que le port est **occupé par un autre processus** que le Caddy de l’instance (une ligne `KO` par port, avec la commande `ss` pour trouver qui l’écoute). Expo off : aucune alerte 80/443.
+
+### Hôte partagé
+
+L’orchestrateur peut tourner sur le même serveur qu’un autre service (ArgOS par exemple). Ce qui est propre à l’instance ne se partage pas :
+
+| Élément | Instance |
+| --- | --- |
+| Unité systemd | `wap-runtime.service` |
+| Utilisateur | `orchestrator` |
+| Dossier | `/home/orchestrator/.wap-runtime/` |
+| Projet Compose | `wap-runtime` (`name:` de `compose.yaml`) |
+| Images | `ghcr.io/ulyssoulv/wap-runtime`, `wap-runner` ; `update` ne supprime que les anciennes `wap-*` |
+| Port par défaut | `127.0.0.1:8787` (`WAP_PORT`) |
+
+**Conflit 80/443, non résolu en 0.7.1** : avec l’exposition on, le Caddy de l’instance veut 80/443 ; si un autre service les tient déjà, Caddy ne démarre pas. `runtime` et `runner` démarrent et se mettent à jour quand même (`update` avertit sans échouer ; au boot, l’unité `wap-runtime.service` finit en échec après ses relances, mais les deux services tournent), et `sudo wap-runtime diagnostic` nomme le port occupé. En attendant, gardez l’exposition **off** (local / tunnel SSH) sur un hôte partagé ; une **VM par service** supprime le conflit. Pas de reverse proxy partagé ni de ports Caddy configurables dans cette version.
+
 ## Connexion GitHub
 
 `sudo wap-runtime auth` lance `gh auth login` (device flow : un code et une URL à valider dans le navigateur) en utilisateur `orchestrator`, copie son token dans `secrets.env` (`0600`) sous `GH_TOKEN`, puis recrée le service `runtime` pour qu’il le lise (ADR 0003). `… | sudo wap-runtime auth --with-token` lit un token (fine-grained par exemple) sur stdin. Relancer `auth` reconnecte l’instance ou change de compte. `auth status` affiche une ligne par connexion — GitHub (compte connecté, ou « non connecté »), Claude Code, Cursor — et sort en code `0` si GitHub est connecté, `≠ 0` sinon (les agents sont au choix). En fin de `setup`, si l’instance n’est pas connectée : `GH_TOKEN` présent → utilisé ; sinon terminal disponible et pas `WAP_SKIP_AUTH=1` → `auth` ; sinon le setup réussit en affichant la prochaine étape.
