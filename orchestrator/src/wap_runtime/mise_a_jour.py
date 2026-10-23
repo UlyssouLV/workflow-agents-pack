@@ -128,6 +128,10 @@ def mettre_a_jour(
 def appliquer(home: Path, version: str) -> int:
     """Partie utilisateur d’instance, dans le paquet `version` : Compose, pull, recreate,
     `version`, anciennes images. Rend 0 ou 1."""
+    if not (semver := _semver(version)):
+        return _echec("version", f"« {version} » n’est pas X.Y.Z")
+    # Reconstruite des entiers lus : seule une version X.Y.Z atteint Compose et la config.
+    version = ".".join(map(str, semver))
     instance = chemin_instance(home)
     compose = instance / "compose.yaml"
     print("→ compose", flush=True)

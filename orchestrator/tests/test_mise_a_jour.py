@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from wap_runtime import cli
-from wap_runtime.mise_a_jour import mettre_a_jour
+from wap_runtime.mise_a_jour import appliquer, mettre_a_jour
 from wap_runtime.sessions import Sessions
 
 try:
@@ -264,3 +264,96 @@ def test_update_refuse_de_tourner_sans_root(monkeypatch, capsys):
     assert cli.main(["update"]) == 1
 
     assert "sudo wap-runtime update" in capsys.readouterr().out
+
+
+# Partie instance, appelée ici dans le processus de test (en vrai : relancée par `runuser`).
+
+
+@pytest.fixture
+def hote_instance(hote, monkeypatch):
+    monkeypatch.setenv("PATH", f"{hote.bin}:/usr/bin:/bin")
+    return hote
+
+
+def test_appliquer_regenere_tire_recree_ecrit_la_version_et_supprime_les_anciennes(hote_instance, capsys):
+    assert appliquer(hote_instance.home, "0.8.0") == 0
+
+    assert "image: ghcr.io/ulyssoulv/wap-runner:0.8.0" in hote_instance.compose()
+    docker = [a for a in hote_instance.lignes_appels() if a.startswith("docker ")]
+    assert docker[0].endswith(" pull")
+    assert docker[1].endswith(" up -d --wait --force-recreate")
+    assert [a for a in docker if a.startswith("docker image rm")] == [
+        "docker image rm ghcr.io/ulyssoulv/wap-runtime:0.7.1",
+        "docker image rm ccc",
+        "docker image rm ghcr.io/ulyssoulv/wap-runner:0.7.1",
+    ]
+    assert hote_instance.config()["version"] == "0.8.0"
+    assert "OK — instance en version 0.8.0" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("version", ["../0.8.0", "0.8.0\nport = 1", "latest"])
+def test_appliquer_refuse_une_version_non_semver_sans_rien_toucher(hote_instance, capsys, version):
+    assert appliquer(hote_instance.home, version) == 1
+
+    assert hote_instance.lignes_appels() == []
+    assert hote_instance.config()["version"] == "0.7.1"
+    assert "« version »" in capsys.readouterr().out
+
+
+def test_appliquer_echec_du_pull_rend_1_sans_recreate(hote_instance, capsys):
+    hote_instance.docker(pull=1)
+
+    assert appliquer(hote_instance.home, "0.8.0") == 1
+
+    assert not any("up -d" in a for a in hote_instance.lignes_appels())
+    assert hote_instance.config()["version"] == "0.7.1"
+    assert "docker compose pull" in capsys.readouterr().out
+
+
+def test_appliquer_runner_absent_rend_1(hote_instance, capsys):
+    hote_instance.docker(up=1, en_marche="runtime")
+
+    assert appliquer(hote_instance.home, "0.8.0") == 1
+
+    assert "runner ne tourne pas" in capsys.readouterr().out
+    assert hote_instance.config()["version"] == "0.7.1"
+
+
+def test_appliquer_caddy_absent_rend_0_avec_avertissement(hote_instance, capsys):
+    hote_instance.docker(up=1, en_marche="runtime\nrunner")
+
+    assert appliquer(hote_instance.home, "0.8.0") == 0
+
+    assert "Caddy" in capsys.readouterr().out
+
+
+def test_appliquer_image_non_supprimee_est_signalee(hote_instance, capsys):
+    hote_instance.binaire(
+        "docker",
+        'case "$*" in\n'
+        '  "image ls"*) printf "ghcr.io/ulyssoulv/wap-runner:0.7.1 ddd\\n" ;;\n'
+        '  "image rm"*) exit 1 ;;\n'
+        '  *" ps --status running --services") printf "runtime\\nrunner\\n" ;;\n'
+        "esac",
+    )
+
+    assert appliquer(hote_instance.home, "0.8.0") == 0
+
+    assert "image ghcr.io/ulyssoulv/wap-runner:0.7.1 non supprimée" in capsys.readouterr().out
+
+
+def test_config_illisible_rend_1(hote, capsys):
+    (hote.instance / "config.toml").write_text("version = \n")
+
+    assert hote.update() == 1
+
+    assert "config de l’instance illisible" in capsys.readouterr().out
+
+
+def test_echec_du_paquet_rend_1_sans_relance(hote, capsys):
+    hote.binaire("pipx", "exit 3")
+
+    assert hote.update() == 1
+
+    assert "pipx install" in capsys.readouterr().out
+    assert not any("--instance-seule" in a for a in hote.lignes_appels())

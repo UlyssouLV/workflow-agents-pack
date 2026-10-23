@@ -83,7 +83,7 @@ print(max(tags)[1])
 resoudre_wap_ref() {
   # API publique : aucun jeton (ADR 0013).
   local releases
-  releases=$(curl -fsSL "https://api.github.com/repos/$DEPOT/releases?per_page=100") || {
+  releases=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$DEPOT/releases?per_page=100") || {
     echo "KO — impossible de lister les Releases de $DEPOT ; passer WAP_REF=<ref>" >&2
     exit 1
   }
