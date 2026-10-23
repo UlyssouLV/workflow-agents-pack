@@ -35,7 +35,7 @@ Sur un serveur **Debian 12+ ou Ubuntu 22.04+**, une seule commande, sans interac
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/feat/runtime-orchestrator/orchestrator/install.sh | sudo bash
 ```
 
-Elle installe `python3`, `pipx` et `git`, crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime`, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/`, `docker compose up -d --build`, attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. Le service repart seul après un redémarrage (`restart: unless-stopped`).
+Elle installe `python3`, `pipx`, `git` et `curl`, résout la **dernière Release** `orchestrator-vX.Y.Z` publiée (ni brouillon ni prerelease, API GitHub publique), crée l’utilisateur système `orchestrator`, installe pour lui le paquet `wap-runtime` à ce tag, puis lance `wap-runtime setup` : socle manquant (Docker + Compose, `gh`, `claude`, `agent`, sans authentification), instance `/home/orchestrator/.wap-runtime/` (`version = "X.Y.Z"` dans `config.toml`), `docker compose up -d --build` avec les images `ghcr.io/ulyssoulv/wap-runtime:X.Y.Z` et `wap-runner:X.Y.Z` tirées de ghcr sans jeton (ADR 0013), attente de `GET /health`, puis connexion GitHub de l’instance si elle n’est pas faite (voir **Connexion GitHub**). La relancer répare ou met à niveau sans réinstaller ce qui est présent ni toucher à `secrets.env` ou aux valeurs éditées de `config.toml`. **Démarrage du serveur** : `setup` écrit et active l’unité systemd `/etc/systemd/system/wap-runtime.service` (sans la démarrer : Compose tourne déjà). À chaque boot, après Docker et le réseau, elle lance `wap-runtime update` en root — un échec ou « rien à faire » n’empêche pas le démarrage — puis `docker compose up -d --wait runtime runner` dans l’instance, en utilisateur `orchestrator`, et enfin Caddy s’il est configuré, sans bloquer (80/443 pris par un autre service ne met pas l’unité en échec) ; en cas d’échec de `runtime` ou `runner`, systemd relance au plus 5 fois en 10 minutes. L’instance démarre donc à la dernière Release. `restart: unless-stopped` reste dans le Compose pour les redémarrages de Docker. Relancer `setup` réécrit la même unité ; `update` la régénère depuis la nouvelle Release.
 
 Par défaut l’exposition web est **désactivée** : le service `runtime` n’écoute que sur `127.0.0.1`. Après l’install, créez les **identifiants cockpit** (obligatoires pour ouvrir le cockpit, y compris en local — ADR 0010) :
 
@@ -43,13 +43,13 @@ Par défaut l’exposition web est **désactivée** : le service `runtime` n’�
 sudo wap-runtime cockpit-auth --login <votre-login>
 ```
 
-L’instance a deux services Compose de base : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). Quand l’exposition web est activée, un troisième service **Caddy** publie uniquement les ports 80/443 et relaie vers le cockpit (ADR 0011). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Relancer `setup` reconstruit l’image (épinglages changés).
+L’instance a deux services Compose de base : `runtime` (API et cockpit, instance montée en écriture pour persister le toggle **Pilote** dans `repos.toml`) et `runner` (sessions des agents, ADR 0004). Quand l’exposition web est activée, un troisième service **Caddy** publie uniquement les ports 80/443 et relaie vers le cockpit (ADR 0011). L’image `runner` contient `git`, `gh`, `claude` (version épinglée), `agent` (version épinglée, archive vérifiée par empreinte SHA-256), Python 3 + venv, Node, `tmux` et les skills de Matt Pocock à un commit épinglé (`orchestrator/runner/Dockerfile`) ; aucun script téléchargé n’y est exécuté sans vérification et les scripts d’installation npm des dépendances ne tournent pas. Il tourne avec l’UID d’`orchestrator`, sans socket Docker ni port publié, et n’écrit que dans `clones/`, `jobs/` et `runner-home/` (son `HOME`), créés par `setup` et supprimés par `uninstall --purge`. Quand les images viennent de ghcr, elles ont été construites et testées sur la PR de la version ; en secours seulement (ci-dessous), relancer `setup` les reconstruit sur l’hôte.
 
 Options, par variables d’environnement passées à `sudo` :
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
-| `WAP_REF` | `feat/runtime-orchestrator` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` ; les images `runtime` et `runner` se construisent au même commit |
+| `WAP_REF` | dernière Release `orchestrator-vX.Y.Z` | Branche, tag ou commit d’où s’installe le paquet `wap-runtime` (prioritaire sur la dernière Release) ; les images `runtime` et `runner` sont tirées de ghcr à ce ref, ou construites au même commit |
 | `WAP_PORT` | `8787` | Port publié sur `127.0.0.1` (à la création de `config.toml`) ; ignoré côté hôte quand l’exposition web est on |
 | `WAP_PACK_REF` | `main` | Branche ou tag du pack cloné dans l’instance (à la création de `config.toml`) |
 | `WAP_DEBUG` | — | `1` : trace bash (`set -x`) et journal verbeux |
@@ -60,13 +60,25 @@ Options, par variables d’environnement passées à `sudo` :
 curl -fsSL …/orchestrator/install.sh | sudo WAP_PORT=9000 WAP_DEBUG=1 bash
 ```
 
-**Tester une branche de version** avant sa fusion (ADR 0005) : `WAP_REF` choisit le ref du paquet, et `setup` construit les images au commit du paquet installé (lu dans `direct_url.json`), donc paquet et images ne se désalignent pas. `WAP_PACK_REF` reste indépendant.
+**Tester une branche de version** avant sa fusion (ADR 0005, 0013) : `WAP_REF` choisit le ref du paquet, et `setup` tire les images `:sha-<commit>` du commit du paquet installé (lu dans `direct_url.json`), publiées par le job `images` quand la CI de la PR est verte ; `config.toml` garde le ref (`version = "<ref>"`). Paquet et images ne se désalignent pas. `WAP_PACK_REF` reste indépendant.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UlyssouLV/workflow-agents-pack/<ref>/orchestrator/install.sh | sudo WAP_REF=<ref> bash
 ```
 
-Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`.
+Revenir à la version livrée : relancer `install.sh` sans `WAP_REF`.
+
+**Build en secours** : si l’une des deux images n’existe pas sur ghcr (fork, commit jamais passé en CI, Release pas encore promue), `setup` les construit sur l’hôte au commit du paquet, comme avant la 0.7.1 (ADR 0005). Un paquet installé sans origine git (local ou éditable) construit les images depuis `feat/runtime-orchestrator`, sans interroger ghcr.
+
+**Mise à jour** : `sudo wap-runtime update` applique la Release `orchestrator-vX.Y.Z` la plus haute (ni brouillon ni prerelease) si elle est strictement supérieure à `version` de `config.toml`. Elle réinstalle le paquet à ce tag pour `orchestrator` (`pipx install --force`), puis, dans le nouveau paquet, régénère `compose.yaml`, lance `docker compose pull` et `up -d --wait --force-recreate`, écrit `version` et supprime les anciennes images `ghcr.io/ulyssoulv/wap-*` seulement (jamais de `prune`). Enfin, toujours dans le nouveau paquet mais en root, elle réécrit et réactive l’unité `wap-runtime.service`. Elle ne touche ni à `secrets.env`, ni à `repos.toml`, `jobs/` ou `clones/`, ni aux autres clés de `config.toml`. Journal : `/var/log/wap-runtime/update.log`.
+
+| Code | Cas |
+| --- | --- |
+| `0` | Mise à jour faite (Caddy qui ne démarre pas, `runtime` et `runner` sains : avertissement, pas d’échec) |
+| `2` | Rien à faire : déjà à la dernière Release, version locale non semver (« pas une version de production » : instance installée avec `WAP_REF`), ou images `X.Y.Z` pas encore promues sur ghcr (rien n’est touché) |
+| `1` | Échec : Releases injoignables, session ouverte (liste affichée ; `--force` passe outre, au prix de l’interrompre), `pipx`, `pull`, recreate ou unité en échec — journalisé, **sans rollback** : corriger puis relancer |
+
+**Depuis une instance 0.7.0** : elle n’a ni `update` ni `version` ; relancer une fois `install.sh` (sans `WAP_REF`) pour passer à la dernière Release, puis `sudo wap-runtime update` suffit.
 
 **Log et debug** : chaque étape est journalisée dans `/var/log/wap-runtime/install.log`. Un échec nomme l’étape, renvoie à ce log et sort en code `≠ 0` ; relancer avec `WAP_DEBUG=1` pour une trace détaillée.
 
@@ -74,7 +86,7 @@ Revenir à la base : relancer `install.sh` sans `WAP_REF`. Un paquet installé s
 
 **Santé** : `sudo wap-runtime health` dit en une ligne si le runtime répond (code `0` si OK), sur le port de `config.toml` (`--port N` pour un autre). Avec l’exposition activée, sondez plutôt le proxy (port 80 / 443) ou utilisez `sudo wap-runtime diagnostic`.
 
-**Désinstallation** : `sudo wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) arrête et retire le Compose, et retire le lien `/usr/local/bin/wap-runtime` s’il pointe vers le binaire d’`orchestrator` ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
+**Désinstallation** : `sudo wap-runtime uninstall` (en root, l’instance visée est celle d’`orchestrator`) désactive et supprime l’unité `wap-runtime.service`, arrête et retire le Compose, et retire le lien `/usr/local/bin/wap-runtime` s’il pointe vers le binaire d’`orchestrator` ; `--purge` supprime aussi l’instance. Docker, `gh` et les CLIs agents restent installés.
 
 ## Configuration
 
@@ -82,7 +94,7 @@ L’instance vit sous `/home/orchestrator/.wap-runtime/` (ou `~/.wap-runtime/` d
 
 | Fichier | Rôle |
 | --- | --- |
-| `config.toml` | Port local, ref du pack, `exposition` (bool), `domaine` (hôte TLS) — `setup` / les CLI d’expo et de domaine réécrivent les clés qu’ils gèrent ; le reste des valeurs éditées est conservé |
+| `config.toml` | Port local, ref du pack, `version` installée (réécrite par `setup` et `update`), `exposition` (bool), `domaine` (hôte TLS) — `setup` / les CLI d’expo et de domaine réécrivent les clés qu’ils gèrent ; le reste des valeurs éditées est conservé |
 | `secrets.env` (`0600`) | Tokens GitHub / agents — jamais les identifiants cockpit |
 | `repos.toml` | Registry des repos liés (+ préférences Pilote / agent / modèle) |
 | `compose.yaml`, `Caddyfile` | Générés depuis `config.toml` — ne pas éditer à la main ; relancer `setup` ou les CLI d’expo / domaine |
@@ -177,6 +189,23 @@ sudo wap-runtime diagnostic
 
 Code de sortie `≠ 0` s’il manque quelque chose **côté instance** (auth cockpit, ports, Caddy, domaine si expo on). Les lignes « Côté opérateur » sont informatives : à traiter sur votre DNS / box.
 
+Expo on et Caddy pas up : si 80 ou 443 répond quand même sur l’hôte, `diagnostic` dit que le port est **occupé par un autre processus** que le Caddy de l’instance (une ligne `KO` par port, avec la commande `ss` pour trouver qui l’écoute). Expo off : aucune alerte 80/443.
+
+### Hôte partagé
+
+L’orchestrateur peut tourner sur le même serveur qu’un autre service (ArgOS par exemple). Ce qui est propre à l’instance ne se partage pas :
+
+| Élément | Instance |
+| --- | --- |
+| Unité systemd | `wap-runtime.service` |
+| Utilisateur | `orchestrator` |
+| Dossier | `/home/orchestrator/.wap-runtime/` |
+| Projet Compose | `wap-runtime` (`name:` de `compose.yaml`) |
+| Images | `ghcr.io/ulyssoulv/wap-runtime`, `wap-runner` ; `update` ne supprime que les anciennes `wap-*` |
+| Port par défaut | `127.0.0.1:8787` (`WAP_PORT`) |
+
+**Conflit 80/443, non résolu en 0.7.1** : avec l’exposition on, le Caddy de l’instance veut 80/443 ; si un autre service les tient déjà, Caddy ne démarre pas. `runtime` et `runner` démarrent et se mettent à jour quand même (`update` avertit sans échouer ; au boot, l’unité `wap-runtime.service` finit en échec après ses relances, mais les deux services tournent), et `sudo wap-runtime diagnostic` nomme le port occupé. En attendant, gardez l’exposition **off** (local / tunnel SSH) sur un hôte partagé ; une **VM par service** supprime le conflit. Pas de reverse proxy partagé ni de ports Caddy configurables dans cette version.
+
 ## Connexion GitHub
 
 `sudo wap-runtime auth` lance `gh auth login` (device flow : un code et une URL à valider dans le navigateur) en utilisateur `orchestrator`, copie son token dans `secrets.env` (`0600`) sous `GH_TOKEN`, puis recrée le service `runtime` pour qu’il le lise (ADR 0003). `… | sudo wap-runtime auth --with-token` lit un token (fine-grained par exemple) sur stdin. Relancer `auth` reconnecte l’instance ou change de compte. `auth status` affiche une ligne par connexion — GitHub (compte connecté, ou « non connecté »), Claude Code, Cursor — et sort en code `0` si GitHub est connecté, `≠ 0` sinon (les agents sont au choix). En fin de `setup`, si l’instance n’est pas connectée : `GH_TOKEN` présent → utilisé ; sinon terminal disponible et pas `WAP_SKIP_AUTH=1` → `auth` ; sinon le setup réussit en affichant la prochaine étape.
@@ -256,8 +285,23 @@ Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (ADR [0012](docs
 | `pytest` | Suite `orchestrator/tests/` (Python 3.12, dépendances verrouillées par hash) avec couverture |
 | `vitest` | Suite `orchestrator/cockpit/tests/` (Node 24, `npm run test:coverage`) avec couverture |
 | `sonar` | Après `pytest` et `vitest` : scan Sonar de `orchestrator/` ([`sonar-project.properties`](sonar-project.properties)) avec les deux couvertures ; **échoue si le quality gate n’est pas `OK`** |
+| `images` | Après les trois autres : construit et pousse les images de l’instance sur ghcr (staging, ci-dessous) ; ignoré pour une PR de fork |
 
-Les trois doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+Les quatre doivent être verts pour merger. Le check `SonarCloud Code Analysis` que Sonar ajoute sur la PR n’est pas requis : `sonar` porte déjà le verdict du gate. Les suites gardent le faux `docker` des tests, pas de Docker Engine dans Actions. Une CI en échec se corrige jusqu’au vert : tests en local avec `/t`, gate avec `/cqg`.
+
+### Images sur ghcr (staging)
+
+Le job `images` (ADR [0013](docs/adr/0013-images-ghcr-promotion-et-mise-a-jour-de-l-instance.md)) appelle [`orchestrator/scripts/publier-images-staging.sh`](orchestrator/scripts/publier-images-staging.sh) : buildx + QEMU, manifestes `linux/amd64` + `linux/arm64`, construits au **SHA de tête de la PR** (pas au merge-ref) et poussés vers `ghcr.io/ulyssoulv/wap-runtime` et `ghcr.io/ulyssoulv/wap-runner` en `:sha-<sha>` (SHA complet) et `:staging` (dernière PR verte). Le jeton du workflow suffit (`packages: write`), aucun secret à ajouter. Une PR de fork ne publie rien.
+
+Hors Actions, le même script tourne depuis un clone au commit voulu : `bash orchestrator/scripts/publier-images-staging.sh [<sha>]` (défaut : `HEAD`), après `docker login ghcr.io` avec un jeton `write:packages` et un buildx capable d’`arm64` (QEMU).
+
+**Visibilité publique (geste manuel unique)** : ghcr crée les paquets en privé au premier push et l’API GitHub ne change pas cette visibilité. Après le premier run vert du job `images`, pour `wap-runtime` puis `wap-runner` : profil GitHub → **Packages** → le paquet → **Package settings** → **Danger Zone → Change visibility → Public**. Vérifier sans jeton : `docker logout ghcr.io && docker buildx imagetools inspect ghcr.io/ulyssoulv/wap-runtime:staging` liste `linux/amd64` et `linux/arm64`.
+
+### Promotion à la Release
+
+Le workflow [`.github/workflows/promotion.yml`](.github/workflows/promotion.yml) tourne quand une Release est **publiée** ; seuls les tags `orchestrator-v*` le déclenchent (les Releases du pack n’ont aucun effet). Il résout le commit du tag et appelle [`orchestrator/scripts/promouvoir-images-release.sh`](orchestrator/scripts/promouvoir-images-release.sh), qui retaggue `:sha-<sha>` vers `:X.Y.Z` et `:latest` avec `docker buildx imagetools create`, pour les deux images, sans rebuild : même digest que l’image testée sur la PR. Le script refuse un tag hors `orchestrator-vX.Y.Z` ; si `:sha-<sha>` manque pour l’une des images, il échoue avant de créer le moindre tag. Une Release créée par le `GITHUB_TOKEN` d’un autre workflow ne déclenche pas la promotion (règle GitHub) : Finalise la crée avec le jeton de `gh`.
+
+Hors Actions : `bash orchestrator/scripts/promouvoir-images-release.sh orchestrator-vX.Y.Z [<sha>]` (défaut : commit du tag), après `docker login ghcr.io` avec un jeton `write:packages`. Vérifier : `docker buildx imagetools inspect ghcr.io/ulyssoulv/wap-runtime:X.Y.Z` et `…:sha-<sha>` donnent le même `Digest`.
 
 ### Secrets Sonar
 
@@ -278,13 +322,13 @@ La protection est un réglage admin GitHub, posé et vérifié à la main (aucun
 1. **Ruleset name** : `feat/runtime-orchestrator` ; **Enforcement status** : `Active` ; **Bypass list** vide (sinon un admin peut merger une CI en échec).
 2. **Target branches → Add target → Include by pattern** : `feat/runtime-orchestrator`.
 3. Cocher **Require a pull request before merging**, avec **Required approvals : `0`** (on ne peut pas approuver sa propre PR : à 1, un mainteneur seul ne merge plus) ; dans **Allowed merge methods**, garder **Squash** (Finalise squashe).
-4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
+4. Cocher **Require status checks to pass**, puis **Add checks** : `pytest`, `vitest`, `sonar`, `images` (source GitHub Actions), pas `SonarCloud Code Analysis`. Laisser **Require branches to be up to date** décoché. Les noms n’apparaissent qu’après un premier run du workflow sur une PR.
 5. Laisser **Restrict deletions** et **Block force pushes** cochés, ne rien cocher d’autre (**Restrict updates** bloquerait tout push), puis **Create**.
 
-Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest` et `sonar`. Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
+Vérifier : `gh api repos/UlyssouLV/workflow-agents-pack/rules/branches/feat/runtime-orchestrator` doit lister une règle `required_status_checks` avec les contextes `pytest`, `vitest`, `sonar` et `images` (`images` ajouté en 0.7.1 : sur un ruleset existant, **Edit** → **Add checks** → `images` → **Save changes**). Sur une PR vers la base, le bouton de merge reste bloqué tant que l’un d’eux est rouge ou en attente.
 
 ## Repères
 
 - Règles pour les agents : [`AGENTS.md`](AGENTS.md).
-- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md), [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md)).
+- Specs de version : [`docs/specs/`](docs/specs/). Décisions : [`docs/adr/`](docs/adr/) (dont [0010](docs/adr/0010-identifiants-cockpit-auth-obligatoire.md), [0011](docs/adr/0011-caddy-exposition-web-opt-in.md), [0012](docs/adr/0012-ci-actions-sonar-sur-pr-base.md), [0013](docs/adr/0013-images-ghcr-promotion-et-mise-a-jour-de-l-instance.md)).
 - Cycle Ouvre / Implement / Finalise, tracker, labels : [`agents/issue-tracker.md`](agents/issue-tracker.md), [`agents/docs/integration-channel.md`](agents/docs/integration-channel.md).
