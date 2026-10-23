@@ -275,7 +275,7 @@ def lien_root(tmp_path, home, monkeypatch) -> Path:
     monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
     monkeypatch.setattr(cli, "HOME_UTILISATEUR", home)
     monkeypatch.setattr(cli, "LIEN_COMMANDE", lien)
-    monkeypatch.setattr(cli, "UNITE", tmp_path / "etc-systemd-system" / "wap-runtime.service")
+    monkeypatch.setattr(cli, "CHEMIN_UNITE", tmp_path / "etc-systemd-system" / "wap-runtime.service")
     return lien
 
 
@@ -318,7 +318,7 @@ def unite_installee(tmp_path, lien_root, monkeypatch) -> tuple[Path, Path]:
     """Unité systemd présente et faux `systemctl` qui journalise ses appels."""
     from wap_runtime import cli
 
-    unite = cli.UNITE
+    unite = cli.CHEMIN_UNITE
     unite.parent.mkdir()
     unite.write_text("[Unit]\n")
     journal = tmp_path / "systemctl.log"

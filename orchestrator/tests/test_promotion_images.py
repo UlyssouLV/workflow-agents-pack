@@ -72,11 +72,11 @@ def test_promotion_retaggue_le_digest_du_sha_en_version_et_latest(registre):
 
 
 @pytest.mark.parametrize(
-    "etiquette",
+    "tag",
     ["v0.7.1", "orchestrator-v0.7", "orchestrator-v0.7.1-rc1", "orchestrator-v0.7.1 ", "0.7.1", ""],
 )
-def test_promotion_refuse_une_etiquette_hors_orchestrator_vXYZ(registre, etiquette):
-    resultat = registre.promouvoir(etiquette, SHA)
+def test_promotion_refuse_un_tag_hors_orchestrator_vXYZ(registre, tag):
+    resultat = registre.promouvoir(tag, SHA)
 
     assert resultat.returncode != 0
     assert "orchestrator-vX.Y.Z" in resultat.stderr

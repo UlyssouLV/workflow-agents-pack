@@ -114,6 +114,10 @@ class Sessions:
         lues = (self.lire(d.name) for d in sorted(self.jobs.iterdir(), reverse=True))
         return [s for s in lues if s is not None]
 
+    def ouvertes(self) -> list[dict]:
+        """Les sessions ouvertes, de la plus récente à la plus ancienne."""
+        return [s for s in self.toutes() if s["etat"] == OUVERTE]
+
     def du_repo(self, slug: str) -> list[dict]:
         """Celles de `slug` (casse ignorée, comme GitHub), de la plus récente à la plus ancienne."""
         return [s for s in self.toutes() if s["repo"].lower() == slug.lower()]

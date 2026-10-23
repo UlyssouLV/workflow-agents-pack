@@ -36,6 +36,7 @@ class Hote:
         self.bin.mkdir()
         self.appels = tmp_path / "appels.log"
         self.journal = tmp_path / "log" / "update.log"
+        self.unite = tmp_path / "etc-systemd-system" / "wap-runtime.service"
         self.home = tmp_path / "home-orchestrator"
         self.instance = self.home / ".wap-runtime"
         self.instance.mkdir(parents=True)
@@ -56,6 +57,7 @@ class Hote:
         ]
         self.images_publiees = None  # toutes
         self.binaire("pipx")
+        self.binaire("systemctl")
         self.binaire("runuser", 'while [ "$1" != -- ]; do shift; done\nshift\nexec "$@"')
         self.docker()
 
@@ -84,6 +86,7 @@ class Hote:
             releases=lambda: self.releases,
             image_existe=lambda image: publiees is None or image in publiees,
             journal=self.journal,
+            unite=self.unite,
         )
 
     def lignes_appels(self) -> list[str]:
@@ -119,6 +122,36 @@ def test_succes_installe_le_paquet_au_tag_regenere_tire_recree_et_ecrit_la_versi
     assert docker[1].endswith(" up -d --wait --force-recreate")
     assert hote.config()["version"] == "0.8.0"
     assert "0.8.0" in capsys.readouterr().out
+
+
+def test_succes_regenere_et_reactive_l_unite_apres_le_recreate(hote, capsys):
+    assert hote.update() == 0
+
+    unite = hote.unite.read_text()
+    assert f"WorkingDirectory={hote.instance}" in unite
+    assert "ExecStartPre=-+/usr/local/bin/wap-runtime update" in unite
+    appels = hote.lignes_appels()
+    recreate = next(i for i, a in enumerate(appels) if a.endswith(" up -d --wait --force-recreate"))
+    rechargement = appels.index("systemctl daemon-reload")
+    assert recreate < rechargement < appels.index("systemctl enable wap-runtime.service")
+    assert "unité wap-runtime.service à jour" in capsys.readouterr().out
+
+
+def test_echec_de_l_unite_rend_1(hote, capsys):
+    hote.binaire("systemctl", "exit 1")
+
+    assert hote.update() == 1
+
+    assert "KO — l’étape « unité wap-runtime.service » a échoué" in capsys.readouterr().out
+
+
+def test_echec_du_recreate_ne_touche_pas_a_l_unite(hote):
+    hote.docker(up=1, en_marche="caddy")
+
+    assert hote.update() == 1
+
+    assert not hote.unite.exists()
+    assert not any(a.startswith("systemctl") for a in hote.lignes_appels())
 
 
 def test_succes_ne_supprime_que_les_anciennes_images_wap(hote):

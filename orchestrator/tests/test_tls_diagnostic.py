@@ -161,6 +161,37 @@ def test_diagnostic_caddy_up_ne_prend_pas_ses_ports_pour_un_conflit(
     assert "occupé" not in capsys.readouterr().out
 
 
+# `/proc/net/tcp` : :80 en LISTEN (0A) sur l’IP publique, :443 en TIME_WAIT (06).
+PROC_NET_TCP = """\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0A00000A:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1
+   1: 0100007F:01BB 0100007F:9C40 06 00000000:00000000 00:00000000 00000000     0        0 0
+"""
+
+
+def test_port_ecoute_lit_les_sockets_en_ecoute_sur_toutes_les_adresses(tmp_path):
+    from wap_runtime.diagnostic import _port_ecoute
+
+    (tmp_path / "tcp").write_text(PROC_NET_TCP)
+
+    assert _port_ecoute(80, tmp_path)
+    assert not _port_ecoute(443, tmp_path)
+
+
+def test_port_ecoute_lit_aussi_tcp6(tmp_path):
+    from wap_runtime.diagnostic import _port_ecoute
+
+    (tmp_path / "tcp").write_text(PROC_NET_TCP.splitlines()[0] + "\n")
+    (tmp_path / "tcp6").write_text(
+        PROC_NET_TCP.splitlines()[0] + "\n"
+        "   0: 00000000000000000000000000000000:01BB 00000000000000000000000000000000:0000 0A"
+        " 00000000:00000000 00:00000000 00000000     0        0 1\n"
+    )
+
+    assert _port_ecoute(443, tmp_path)
+    assert not _port_ecoute(80, tmp_path)
+
+
 def test_diagnostic_expo_off_pas_d_alerte_80_443(
     home, depot_pack, faux_docker, monkeypatch, capsys
 ):

@@ -32,10 +32,8 @@ from wap_runtime.socle import (
     journaliser,
     lier_commande,
     mode_debug,
-    resoudre,
 )
-from wap_runtime.unite import NOM as NOM_UNITE
-from wap_runtime.unite import UNITE, contenu_unite, installer_unite
+from wap_runtime.unite import CHEMIN_UNITE, NOM_UNITE, ecrire_unite
 
 DELAI_HEALTH = 60
 ETAPE_INSTANCE = "instance"
@@ -51,7 +49,7 @@ def setup(
     home_orchestrator: Path = HOME_UTILISATEUR,
     terminal: Path = TERMINAL,
     lien_commande: Path = LIEN_COMMANDE,
-    unite: Path = UNITE,
+    unite: Path = CHEMIN_UNITE,
 ) -> int:
     """Une passe complète, idempotente ; rend le code de sortie."""
     code = installer_socle(os_release, journal, env, home_orchestrator)
@@ -91,9 +89,8 @@ def setup(
         print(f"Journal : {journal}")
         return code
     instance = chemin_instance(home_orchestrator)
-    docker = resoudre("docker", env, home_orchestrator) or "docker"
     try:
-        installer_unite(unite, contenu_unite(instance, UTILISATEUR, lien_commande, docker), env)
+        ecrire_unite(home_orchestrator, unite, lien_commande, env)
     except (OSError, subprocess.CalledProcessError) as erreur:
         return _echec(f"unité {NOM_UNITE}", erreur)
     print(f"OK — unité {NOM_UNITE} activée (mise à jour puis démarrage au boot)", flush=True)

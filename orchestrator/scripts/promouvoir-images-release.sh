@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Promeut les images de l’instance à la Release <étiquette> (ADR 0013) : retaggue le digest
+# Promeut les images de l’instance à la Release <tag> (ADR 0013) : retaggue le digest
 # :sha-<sha> vers :X.Y.Z et :latest, sans rebuild (`docker buildx imagetools create`).
 # Usage : promouvoir-images-release.sh orchestrator-vX.Y.Z [<sha>] (défaut : commit du tag).
 # Appelé par le workflow `promotion` ; hors Actions, prérequis : docker buildx et
 # `docker login ghcr.io` avec un jeton qui a `write:packages`.
 set -euo pipefail
 
-ETIQUETTE="${1:-}"
-if [[ ! "$ETIQUETTE" =~ ^orchestrator-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-    echo "étiquette « $ETIQUETTE » refusée : attendu orchestrator-vX.Y.Z" >&2
+TAG="${1:-}"
+if [[ ! "$TAG" =~ ^orchestrator-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    echo "tag « $TAG » refusé : attendu orchestrator-vX.Y.Z" >&2
     exit 1
 fi
 VERSION="${BASH_REMATCH[1]}"
 
 ORCHESTRATOR="$(cd "$(dirname "$0")/.." && pwd)"
-SHA="${2:-$(git -C "$ORCHESTRATOR" rev-list -n 1 "$ETIQUETTE")}"
+SHA="${2:-$(git -C "$ORCHESTRATOR" rev-list -n 1 "$TAG")}"
 if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "SHA « $SHA » refusé : attendu un commit complet (40 caractères hexadécimaux)" >&2
     exit 1

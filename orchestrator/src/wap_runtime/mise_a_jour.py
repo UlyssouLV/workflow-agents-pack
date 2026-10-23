@@ -4,13 +4,13 @@ En root : lit `version` dans `config.toml`, choisit la Release, vérifie que ses
 sont sur ghcr et qu’aucune session n’est ouverte, puis réinstalle le paquet au tag
 pour l’utilisateur d’instance. Le reste tourne dans le **nouveau** paquet, relancé en
 utilisateur d’instance comme `setup --instance-seule` : Compose régénéré, pull,
-recreate, `version`, anciennes images `wap-*`. Codes : 0 mise à jour faite, 2 rien à
-faire, 1 échec (journalisé, pas de rollback).
+recreate, `version`, anciennes images `wap-*` ; puis, de nouveau en root, l’unité
+systemd. Codes : 0 mise à jour faite, 2 rien à faire, 1 échec (journalisé, pas de
+rollback).
 """
 
 import json
 import os
-import re
 import subprocess
 import sys
 import urllib.request
@@ -19,20 +19,26 @@ from typing import Callable, Mapping
 
 from wap_runtime.instance import (
     DEPOT_PACK,
+    PREFIXE_TAG,
     REGISTRE,
     chemin_instance,
     ecrire_version,
     image_publiee,
+    images_ghcr,
     lire_config,
     regenerer_compose,
+    semver,
+    version_du_tag,
 )
-from wap_runtime.sessions import OUVERTE, Sessions
+from wap_runtime.sessions import Sessions
 from wap_runtime.socle import HOME_UTILISATEUR, JOURNAL, UTILISATEUR, journaliser
+from wap_runtime.unite import CHEMIN_UNITE, NOM_UNITE, ecrire_unite
 
 JOURNAL_MISE_A_JOUR = JOURNAL.parent / "update.log"
-API_RELEASES = "https://api.github.com/repos/UlyssouLV/workflow-agents-pack/releases?per_page=100"
-PREFIXE_TAG = "orchestrator-v"
-_RE_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+API_RELEASES = (
+    f"https://api.github.com/repos/{DEPOT_PACK.removeprefix('https://github.com/')}"
+    "/releases?per_page=100"
+)
 # Seules images que la mise à jour supprime : jamais de `prune` global (hôte partagé).
 PREFIXE_IMAGES = f"{REGISTRE}/wap-"
 SERVICES_REQUIS = ("runtime", "runner")
@@ -49,13 +55,12 @@ def lister_releases() -> list[dict]:
 def release_cible(releases: list[dict], locale: str) -> str | None:
     """`X.Y.Z` de la Release publiée (ni brouillon ni prerelease) la plus haute,
     strictement supérieure à `locale` ; `None` sinon."""
-    plancher = _semver(locale)
+    plancher = semver(locale)
     candidates = [
         version
         for r in releases
         if not r.get("prerelease") and not r.get("draft")
-        and (tag := str(r.get("tag_name") or "")).startswith(PREFIXE_TAG)
-        and (version := _semver(tag.removeprefix(PREFIXE_TAG)))
+        and (version := semver(version_du_tag(str(r.get("tag_name") or "")) or ""))
         and version > plancher
     ]
     return ".".join(map(str, max(candidates))) if candidates else None
@@ -68,15 +73,16 @@ def mettre_a_jour(
     releases: Callable[[], list[dict]] = lister_releases,
     image_existe: Callable[[str], bool] = image_publiee,
     journal: Path = JOURNAL_MISE_A_JOUR,
+    unite: Path = CHEMIN_UNITE,
 ) -> int:
-    """Partie root : garde-fous, paquet au tag, puis `appliquer` dans le nouveau paquet."""
+    """Partie root : garde-fous, paquet au tag, `appliquer` puis l’unité dans le nouveau paquet."""
     instance = chemin_instance(home)
     try:
         locale = str(lire_config(instance).get("version") or "")
     except (OSError, ValueError) as erreur:
         print(f"KO — config de l’instance illisible ({erreur})")
         return ECHEC
-    if not _semver(locale):
+    if not semver(locale):
         print(f"Version « {locale} » : pas une version de production : rien à faire")
         return RIEN_A_FAIRE
     try:
@@ -87,11 +93,11 @@ def mettre_a_jour(
     if cible is None:
         print(f"OK — version {locale} à jour : rien à faire")
         return RIEN_A_FAIRE
-    manquantes = [i for i in _images(cible) if not image_existe(i)]
+    manquantes = [i for i in images_ghcr(cible) if not image_existe(i)]
     if manquantes:
         print(f"Release {cible} : images pas encore sur ghcr ({', '.join(manquantes)}) : rien à faire")
         return RIEN_A_FAIRE
-    ouvertes = [s for s in Sessions(instance / "jobs").toutes() if s["etat"] == OUVERTE]
+    ouvertes = Sessions(instance / "jobs").ouvertes()
     if ouvertes and not force:
         print(f"KO — {len(ouvertes)} session(s) ouverte(s) : le recreate du runner les interromprait")
         for s in ouvertes:
@@ -106,18 +112,19 @@ def mettre_a_jour(
     with journal.open("a") as log:
         journaliser(log, f"mise à jour {locale} → {cible}")
         paquet = f"git+{DEPOT_PACK}@{PREFIXE_TAG}{cible}#subdirectory=orchestrator"
-        code = _en_utilisateur(["pipx", "install", "--force", paquet], env_instance, log)
+        code = _lancer(_en_utilisateur("pipx", "install", "--force", paquet), env_instance, log)
         if code != 0:
             journaliser(log, f"paquet : échec (code {code})")
             print(f"KO — `pipx install` du paquet {cible} a échoué (code {code}) ; voir {journal}")
             return ECHEC
         # pipx recrée le venv au même chemin : `sys.executable` est désormais le nouveau paquet.
-        code = _en_utilisateur(
-            [sys.executable, "-m", "wap_runtime", "update", "--instance-seule", cible],
-            env_instance,
-            log,
-            relayer=True,
+        nouveau_paquet = [sys.executable, "-m", "wap_runtime", "update"]
+        code = _lancer(
+            _en_utilisateur(*nouveau_paquet, "--instance-seule", cible), env_instance, log, relayer=True
         )
+        if code == 0:
+            # En root (`/etc/systemd`), mais avec le `contenu_unite` de la nouvelle Release.
+            code = _lancer([*nouveau_paquet, "--unite-seule", str(unite)], env_instance, log, relayer=True)
         journaliser(log, f"mise à jour : {'OK' if code == 0 else f'échec (code {code})'}")
     if code != 0:
         print(f"Journal : {journal}")
@@ -128,10 +135,10 @@ def mettre_a_jour(
 def appliquer(home: Path, version: str) -> int:
     """Partie utilisateur d’instance, dans le paquet `version` : Compose, pull, recreate,
     `version`, anciennes images. Rend 0 ou 1."""
-    if not (semver := _semver(version)):
+    if not (lue := semver(version)):
         return _echec("version", f"« {version} » n’est pas X.Y.Z")
     # Reconstruite des entiers lus : seule une version X.Y.Z atteint Compose et la config.
-    version = ".".join(map(str, semver))
+    version = ".".join(map(str, lue))
     instance = chemin_instance(home)
     compose = instance / "compose.yaml"
     print("→ compose", flush=True)
@@ -160,21 +167,27 @@ def appliquer(home: Path, version: str) -> int:
     return FAIT
 
 
-def _images(version: str) -> tuple[str, str]:
-    return (f"{REGISTRE}/wap-runtime:{version}", f"{REGISTRE}/wap-runner:{version}")
+def regenerer_unite(home: Path, unite: Path) -> int:
+    """Partie root, dans le paquet de la nouvelle Release : réécrit et réactive l’unité."""
+    print(f"→ unité {NOM_UNITE}", flush=True)
+    try:
+        ecrire_unite(home, unite)
+    except (OSError, subprocess.CalledProcessError) as erreur:
+        return _echec(f"unité {NOM_UNITE}", erreur)
+    print(f"OK — unité {NOM_UNITE} à jour", flush=True)
+    return FAIT
 
 
-def _semver(texte: str) -> tuple[int, int, int] | None:
-    trouve = _RE_SEMVER.fullmatch(texte)
-    return tuple(map(int, trouve.groups())) if trouve else None
+def _en_utilisateur(*commande: str) -> list[str]:
+    return ["runuser", "-u", UTILISATEUR, "--", *commande]
 
 
-def _en_utilisateur(commande: list[str], env: Mapping[str, str], log, relayer: bool = False) -> int:
-    """Lance `commande` en utilisateur d’instance, sortie dans le journal ; `relayer`
-    recopie aussi les lignes d’étape et de résultat à l’écran."""
+def _lancer(commande: list[str], env: Mapping[str, str], log, relayer: bool = False) -> int:
+    """Lance `commande`, sortie dans le journal ; `relayer` recopie aussi les lignes
+    d’étape et de résultat à l’écran."""
     log.flush()
     enfant = subprocess.Popen(
-        ["runuser", "-u", UTILISATEUR, "--", *commande],
+        commande,
         env=dict(env),
         cwd="/",
         stdin=subprocess.DEVNULL,
@@ -221,13 +234,13 @@ def _supprimer_anciennes_images(version: str) -> None:
         ).stdout
     except OSError:
         return
-    gardees = set(_images(version))
+    gardees = set(images_ghcr(version))
     for ligne in sortie.splitlines():
         reference, _, ident = ligne.partition(" ")
         if not reference.startswith(PREFIXE_IMAGES) or reference in gardees:
             continue
-        cible = ident if reference.endswith(":<none>") else reference
-        if _docker("image", "rm", cible) != 0:
+        a_supprimer = ident if reference.endswith(":<none>") else reference
+        if _docker("image", "rm", a_supprimer) != 0:
             print(f"Attention — image {reference} non supprimée", flush=True)
 
 

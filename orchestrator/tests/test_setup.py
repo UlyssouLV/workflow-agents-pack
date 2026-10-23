@@ -400,7 +400,9 @@ def test_setup_ecrit_l_unite_de_demarrage_de_l_instance(hote):
     assert d["User"] == ["orchestrator"]
     assert d["WorkingDirectory"] == [str(instance)]
     assert d["ExecStartPre"] == [f"-+{hote.lien} update"]
-    assert d["ExecStart"] == [f"{hote.bin / 'docker'} compose up -d --wait"]
+    assert d["ExecStart"] == [f"{hote.bin / 'docker'} compose up -d --wait runtime runner"]
+    # Caddy ensuite, échec ignoré : 80/443 pris ne met pas l’unité en échec.
+    assert d["ExecStartPost"] == [f"-{hote.bin / 'docker'} compose up -d"]
     assert d["ExecStop"] == [f"{hote.bin / 'docker'} compose down"]
     assert d["TimeoutStartSec"] == ["infinity"]
     assert d["Restart"] == ["on-failure"]

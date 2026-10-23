@@ -12,6 +12,9 @@ from wap_runtime.identifiants_cockpit import est_configure
 from wap_runtime.instance import lire_config
 
 PORTS_PROXY = (80, 443)
+PROC_NET = Path("/proc/net")
+# État `LISTEN` dans `/proc/net/tcp` (hexadécimal, `include/net/tcp_states.h`).
+ETAT_LISTEN = "0A"
 
 
 @dataclass(frozen=True)
@@ -152,13 +155,32 @@ def _ports_proxy_publies(compose: str) -> bool:
     return a80 and a443
 
 
-def _port_ecoute(port: int) -> bool:
-    """Vrai si un processus accepte une connexion TCP sur ce port de l’hôte."""
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1):
-            return True
-    except OSError:
-        return False
+def _port_ecoute(port: int, proc_net: Path = PROC_NET) -> bool:
+    """Vrai si un processus écoute ce port TCP de l’hôte, sur n’importe quelle adresse.
+
+    Lit les sockets `LISTEN` de `/proc/net/tcp{,6}` (IP publique comprise, sans root) ;
+    hors Linux, se rabat sur une connexion à `127.0.0.1`.
+    """
+    tables = []
+    for nom in ("tcp", "tcp6"):
+        try:
+            tables.append((proc_net / nom).read_text())
+        except OSError:
+            continue
+    if not tables:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return True
+        except OSError:
+            return False
+    for table in tables:
+        for ligne in table.splitlines()[1:]:
+            champs = ligne.split()
+            if len(champs) < 4 or champs[3] != ETAT_LISTEN:
+                continue
+            if int(champs[1].rsplit(":", 1)[1], 16) == port:
+                return True
+    return False
 
 
 def _caddy_tourne(instance: Path) -> bool | None:

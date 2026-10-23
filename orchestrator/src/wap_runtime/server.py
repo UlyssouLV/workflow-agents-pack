@@ -253,7 +253,7 @@ def creer_app(
     def repos() -> dict:
         liste = cockpit.liste()
         # Badge « Session en cours » : au plus une session ouverte par repo.
-        ouvertes = {s["repo"].lower(): _lien(s) for s in sessions.toutes() if s["etat"] == OUVERTE}
+        ouvertes = {s["repo"].lower(): _lien(s) for s in sessions.ouvertes()}
         prefs = _prefs_registry(registry) if liste["erreur"] is None else {}
         repos_ = [
             {

@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from importlib.metadata import distribution
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, NamedTuple
 
 try:
     import tomllib
@@ -24,7 +24,9 @@ DEPOT_PACK = "https://github.com/UlyssouLV/workflow-agents-pack"
 REF_PAR_DEFAUT = "feat/runtime-orchestrator"
 # Images publiées par la CI (ADR 0013) : paquets publics, tirés sans jeton.
 REGISTRE = "ghcr.io/ulyssoulv"
-_RE_TAG_RELEASE = re.compile(r"^orchestrator-v(\d+\.\d+\.\d+)$")
+# Tag git d’une Release de l’orchestrateur : `orchestrator-vX.Y.Z`.
+PREFIXE_TAG = "orchestrator-v"
+_RE_SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 # `direct_url.json` du paquet installé, lu quand l’appelant n’en passe pas.
 _PAQUET_INSTALLE = object()
 PORT_CONTENEUR = 8787
@@ -88,11 +90,9 @@ def regenerer_compose(
     exposition = bool(config.get("exposition", False))
     domaine = str(config.get("domaine") or "").strip()
     etiquette = etiquette_des_images(direct_url)
-    images = None
-    if etiquette:
-        images = (f"{REGISTRE}/wap-runtime:{etiquette}", f"{REGISTRE}/wap-runner:{etiquette}")
-        if not all(image_existe(image) for image in images):
-            images = None
+    images = images_ghcr(etiquette) if etiquette else None
+    if images and not all(image_existe(image) for image in images):
+        images = None
     contexte = f"{DEPOT_PACK}.git#{ref_des_images(direct_url)}:orchestrator"
     (instance / "compose.yaml").write_text(
         _compose(
@@ -111,28 +111,53 @@ def regenerer_compose(
 def ref_des_images(direct_url: Mapping | None) -> str:
     """Ref git des images : le commit du paquet installé (PEP 610), à défaut le ref
     demandé à l’installation ; sans origine VCS, `REF_PAR_DEFAUT` (ADR 0005)."""
-    vcs = (direct_url or {}).get("vcs_info", {})
+    vcs = _vcs_info(direct_url)
     return vcs.get("commit_id") or vcs.get("requested_revision") or REF_PAR_DEFAUT
 
 
 def version_installee(direct_url: Mapping | None) -> str:
     """`X.Y.Z` pour un paquet installé au tag de Release `orchestrator-vX.Y.Z`,
     sinon le ref demandé, le commit, ou `REF_PAR_DEFAUT` sans origine VCS."""
-    vcs = (direct_url or {}).get("vcs_info", {})
+    vcs = _vcs_info(direct_url)
     demande = vcs.get("requested_revision") or ""
-    if release := _RE_TAG_RELEASE.fullmatch(demande):
-        return release.group(1)
-    return demande or vcs.get("commit_id") or REF_PAR_DEFAUT
+    return version_du_tag(demande) or demande or vcs.get("commit_id") or REF_PAR_DEFAUT
 
 
 def etiquette_des_images(direct_url: Mapping | None) -> str | None:
     """Étiquette ghcr des images du paquet : `X.Y.Z` (promotion de la Release),
     `sha-<commit>` (staging de la PR), ou `None` sans commit connu (ADR 0013)."""
-    vcs = (direct_url or {}).get("vcs_info", {})
-    if release := _RE_TAG_RELEASE.fullmatch(vcs.get("requested_revision") or ""):
-        return release.group(1)
+    vcs = _vcs_info(direct_url)
+    if version := version_du_tag(vcs.get("requested_revision") or ""):
+        return version
     commit = vcs.get("commit_id")
     return f"sha-{commit}" if commit else None
+
+
+class Images(NamedTuple):
+    """Images ghcr de l’instance à une même étiquette."""
+
+    runtime: str
+    runner: str
+
+
+def images_ghcr(etiquette: str) -> Images:
+    return Images(f"{REGISTRE}/wap-runtime:{etiquette}", f"{REGISTRE}/wap-runner:{etiquette}")
+
+
+def semver(texte: str) -> tuple[int, int, int] | None:
+    """`(X, Y, Z)` de `X.Y.Z`, sinon `None`."""
+    trouve = _RE_SEMVER.fullmatch(texte)
+    return tuple(map(int, trouve.groups())) if trouve else None
+
+
+def version_du_tag(tag: str) -> str | None:
+    """`X.Y.Z` du tag de Release `orchestrator-vX.Y.Z`, sinon `None`."""
+    version = tag.removeprefix(PREFIXE_TAG)
+    return version if tag.startswith(PREFIXE_TAG) and semver(version) else None
+
+
+def _vcs_info(direct_url: Mapping | None) -> Mapping:
+    return (direct_url or {}).get("vcs_info", {})
 
 
 def image_publiee(image: str) -> bool:
@@ -286,7 +311,7 @@ def _ecrire_caddyfile(instance: Path, exposition: bool, domaine: str = "") -> No
 
 def _compose(
     contexte: str,
-    images: tuple[str, str] | None,
+    images: Images | None,
     port: int,
     uid: int,
     gid: int,
@@ -333,8 +358,8 @@ def _compose(
     restart: unless-stopped
 """
     if images:
-        source_runtime = f"image: {images[0]}"
-        source_runner = f"image: {images[1]}"
+        source_runtime = f"image: {images.runtime}"
+        source_runner = f"image: {images.runner}"
     else:
         source_runtime = f"""build:
       context: {contexte}

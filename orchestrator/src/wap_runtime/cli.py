@@ -26,7 +26,7 @@ from wap_runtime.instance import (
     regenerer_compose,
 )
 from wap_runtime.mise_a_jour import appliquer as appliquer_mise_a_jour
-from wap_runtime.mise_a_jour import mettre_a_jour
+from wap_runtime.mise_a_jour import mettre_a_jour, regenerer_unite
 from wap_runtime.provisionnement import demarrer_instance, setup
 from wap_runtime.registry import (
     RegistryErreur,
@@ -44,8 +44,7 @@ from wap_runtime.socle import (
     cible_commande,
     retirer_lien_commande,
 )
-from wap_runtime.unite import NOM as NOM_UNITE
-from wap_runtime.unite import UNITE, retirer_unite
+from wap_runtime.unite import CHEMIN_UNITE, NOM_UNITE, retirer_unite
 
 PORT_PAR_DEFAUT = 8787
 
@@ -296,7 +295,7 @@ def _uninstall(purge: bool) -> int:
     home = _home_instance()
     try:
         # Avant le Compose : `disable --now` l’arrête par `ExecStop`, et le boot ne le relance plus.
-        if retirer_unite(UNITE):
+        if retirer_unite(CHEMIN_UNITE):
             print(f"Unité {NOM_UNITE} désactivée et retirée.")
     except (OSError, subprocess.CalledProcessError) as erreur:
         print(f"KO — unité {NOM_UNITE} non retirée ({erreur}) ; instance conservée")
@@ -442,9 +441,11 @@ def _setup(instance_seule: bool) -> int:
     return setup()
 
 
-def _update(force: bool, version: str | None) -> int:
+def _update(force: bool, version: str | None, unite: str | None) -> int:
     if version is not None:
         return appliquer_mise_a_jour(Path.home(), version)
+    if unite is not None:
+        return regenerer_unite(Path.home(), Path(unite))
     if os.geteuid() != 0:
         print("KO — `wap-runtime update` doit tourner en root : `sudo wap-runtime update`")
         return 1
@@ -551,12 +552,16 @@ def main(argv=None) -> int:
         "--force", action="store_true", help="met à jour même si une session est ouverte"
     )
     # Relance interne de `update` en utilisateur d’instance, dans le nouveau paquet.
-    update.add_argument("--instance-seule", metavar="X.Y.Z", help=argparse.SUPPRESS)
+    update.add_argument(
+        "--instance-seule", dest="version_instance", metavar="X.Y.Z", help=argparse.SUPPRESS
+    )
+    # Relance interne de `update` en root, dans le nouveau paquet : l’unité seule.
+    update.add_argument("--unite-seule", metavar="CHEMIN", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.commande == "setup":
         return _setup(args.instance_seule)
     if args.commande == "update":
-        return _update(args.force, args.instance_seule)
+        return _update(args.force, args.version_instance, args.unite_seule)
     if args.commande == "auth":
         return _auth(args.cible, args.with_token)
     if args.commande == "cockpit-auth":
