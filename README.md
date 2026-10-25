@@ -204,7 +204,7 @@ L’orchestrateur peut tourner sur le même serveur qu’un autre service (ArgOS
 | Images | `ghcr.io/ulyssoulv/wap-runtime`, `wap-runner` ; `update` ne supprime que les anciennes `wap-*` |
 | Port par défaut | `127.0.0.1:8787` (`WAP_PORT`) |
 
-**Conflit 80/443, non résolu en 0.7.1** : avec l’exposition on, le Caddy de l’instance veut 80/443 ; si un autre service les tient déjà, Caddy ne démarre pas. `runtime` et `runner` démarrent et se mettent à jour quand même (`update` avertit sans échouer ; au boot, l’unité `wap-runtime.service` finit en échec après ses relances, mais les deux services tournent), et `sudo wap-runtime diagnostic` nomme le port occupé. En attendant, gardez l’exposition **off** (local / tunnel SSH) sur un hôte partagé ; une **VM par service** supprime le conflit. Pas de reverse proxy partagé ni de ports Caddy configurables dans cette version.
+**Conflit 80/443, non résolu en 0.7.1** : avec l’exposition on, le Caddy de l’instance veut 80/443 ; si un autre service les tient déjà, Caddy ne démarre pas. `runtime` et `runner` démarrent et se mettent à jour quand même (`update` avertit sans échouer ; au boot, l’unité `wap-runtime.service` reste active, seul le démarrage de Caddy échoue), et `sudo wap-runtime diagnostic` nomme le port occupé. En attendant, gardez l’exposition **off** (local / tunnel SSH) sur un hôte partagé ; une **VM par service** supprime le conflit. Pas de reverse proxy partagé ni de ports Caddy configurables dans cette version.
 
 ## Connexion GitHub
 
