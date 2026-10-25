@@ -44,7 +44,7 @@ from wap_runtime.socle import (
     cible_commande,
     retirer_lien_commande,
 )
-from wap_runtime.unite import CHEMIN_UNITE, NOM_UNITE, retirer_unite
+from wap_runtime.unite import CHEMIN_UNITE, ENV_UNITE, NOM_UNITE, retirer_unite
 
 PORT_PAR_DEFAUT = 8787
 
@@ -441,11 +441,11 @@ def _setup(instance_seule: bool) -> int:
     return setup()
 
 
-def _update(force: bool, version: str | None, unite: str | None) -> int:
+def _update(force: bool, version: str | None, unite_seule: bool) -> int:
     if version is not None:
         return appliquer_mise_a_jour(Path.home(), version)
-    if unite is not None:
-        return regenerer_unite(Path.home(), Path(unite))
+    if unite_seule:
+        return regenerer_unite(Path.home(), Path(os.environ.get(ENV_UNITE) or CHEMIN_UNITE))
     if os.geteuid() != 0:
         print("KO — `wap-runtime update` doit tourner en root : `sudo wap-runtime update`")
         return 1
@@ -556,7 +556,7 @@ def main(argv=None) -> int:
         "--instance-seule", dest="version_instance", metavar="X.Y.Z", help=argparse.SUPPRESS
     )
     # Relance interne de `update` en root, dans le nouveau paquet : l’unité seule.
-    update.add_argument("--unite-seule", metavar="CHEMIN", help=argparse.SUPPRESS)
+    update.add_argument("--unite-seule", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.commande == "setup":
         return _setup(args.instance_seule)

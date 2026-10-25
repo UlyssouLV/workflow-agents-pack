@@ -32,7 +32,7 @@ from wap_runtime.instance import (
 )
 from wap_runtime.sessions import Sessions
 from wap_runtime.socle import HOME_UTILISATEUR, JOURNAL, UTILISATEUR, journaliser
-from wap_runtime.unite import CHEMIN_UNITE, NOM_UNITE, ecrire_unite
+from wap_runtime.unite import CHEMIN_UNITE, ENV_UNITE, NOM_UNITE, ecrire_unite
 
 JOURNAL_MISE_A_JOUR = JOURNAL.parent / "update.log"
 API_RELEASES = (
@@ -124,7 +124,8 @@ def mettre_a_jour(
         )
         if code == 0:
             # En root (`/etc/systemd`), mais avec le `contenu_unite` de la nouvelle Release.
-            code = _lancer([*nouveau_paquet, "--unite-seule", str(unite)], env_instance, log, relayer=True)
+            env_unite = {**env_instance, ENV_UNITE: str(unite)}
+            code = _lancer([*nouveau_paquet, "--unite-seule"], env_unite, log, relayer=True)
         journaliser(log, f"mise à jour : {'OK' if code == 0 else f'échec (code {code})'}")
     if code != 0:
         print(f"Journal : {journal}")

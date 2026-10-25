@@ -18,6 +18,8 @@ from wap_runtime.socle import LIEN_COMMANDE, UTILISATEUR, resoudre
 
 NOM_UNITE = "wap-runtime.service"
 CHEMIN_UNITE = Path("/etc/systemd/system") / NOM_UNITE
+# Chemin de l’unité pour `update --unite-seule` : par l’environnement, jamais par argv.
+ENV_UNITE = "WAP_UNITE"
 # Relances bornées : au plus 5 essais en 10 minutes, puis l’unité reste en échec.
 RELANCES = 5
 FENETRE_RELANCES_S = 600
