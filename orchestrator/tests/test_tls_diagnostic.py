@@ -105,3 +105,104 @@ def test_diagnostic_signale_reste_instance_sans_domaine(home, depot_pack, faux_d
     assert "KO — aucun domaine" in sortie or "domaine" in sortie.lower()
     assert "HTTP public" in sortie or "non supporté" in sortie
     assert "Côté opérateur" in sortie
+
+
+def _diagnostic_expo_caddy_ko(home, depot_pack, monkeypatch, capsys, occupes):
+    """Expo + domaine, Caddy pas up (faux docker muet), ports sondés simulés."""
+    from wap_runtime import diagnostic
+    from wap_runtime.cli import main
+    from wap_runtime.identifiants_cockpit import definir as definir_identifiants
+
+    instance = passe(home, depot_pack)
+    definir_identifiants(instance, "ops", "mot-de-passe-assez-long")
+    assert main(["exposition", "on"]) == 0
+    assert main(["domaine", "cockpit.exemple.test"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(diagnostic, "_port_ecoute", lambda port: port in occupes)
+    code = main(["diagnostic"])
+    return code, capsys.readouterr().out
+
+
+def test_diagnostic_signale_80_occupe_par_un_autre_processus(
+    home, depot_pack, faux_docker, monkeypatch, capsys
+):
+    code, sortie = _diagnostic_expo_caddy_ko(home, depot_pack, monkeypatch, capsys, {80})
+    assert code == 1
+    assert "KO — port 80 occupé par un autre processus" in sortie
+    assert "port 443 occupé" not in sortie
+    assert "ss -ltnp" in sortie
+
+
+def test_diagnostic_signale_443_occupe_par_un_autre_processus(
+    home, depot_pack, faux_docker, monkeypatch, capsys
+):
+    code, sortie = _diagnostic_expo_caddy_ko(home, depot_pack, monkeypatch, capsys, {80, 443})
+    assert code == 1
+    assert "KO — port 80 occupé" in sortie
+    assert "KO — port 443 occupé" in sortie
+
+
+def test_diagnostic_caddy_up_ne_prend_pas_ses_ports_pour_un_conflit(
+    home, depot_pack, faux_docker, monkeypatch, capsys
+):
+    from wap_runtime import diagnostic
+    from wap_runtime.cli import main
+    from wap_runtime.identifiants_cockpit import definir as definir_identifiants
+
+    instance = passe(home, depot_pack)
+    definir_identifiants(instance, "ops", "mot-de-passe-assez-long")
+    assert main(["exposition", "on"]) == 0
+    assert main(["domaine", "cockpit.exemple.test"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(diagnostic, "_caddy_tourne", lambda instance: True)
+    monkeypatch.setattr(diagnostic, "_port_ecoute", lambda port: True)
+
+    assert main(["diagnostic"]) == 0
+    assert "occupé" not in capsys.readouterr().out
+
+
+# `/proc/net/tcp` : :80 en LISTEN (0A) sur l’IP publique, :443 en TIME_WAIT (06).
+PROC_NET_TCP = """\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0A00000A:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1
+   1: 0100007F:01BB 0100007F:9C40 06 00000000:00000000 00:00000000 00000000     0        0 0
+"""
+
+
+def test_port_ecoute_lit_les_sockets_en_ecoute_sur_toutes_les_adresses(tmp_path):
+    from wap_runtime.diagnostic import _port_ecoute
+
+    (tmp_path / "tcp").write_text(PROC_NET_TCP)
+
+    assert _port_ecoute(80, tmp_path)
+    assert not _port_ecoute(443, tmp_path)
+
+
+def test_port_ecoute_lit_aussi_tcp6(tmp_path):
+    from wap_runtime.diagnostic import _port_ecoute
+
+    (tmp_path / "tcp").write_text(PROC_NET_TCP.splitlines()[0] + "\n")
+    (tmp_path / "tcp6").write_text(
+        PROC_NET_TCP.splitlines()[0] + "\n"
+        "   0: 00000000000000000000000000000000:01BB 00000000000000000000000000000000:0000 0A"
+        " 00000000:00000000 00:00000000 00000000     0        0 1\n"
+    )
+
+    assert _port_ecoute(443, tmp_path)
+    assert not _port_ecoute(80, tmp_path)
+
+
+def test_diagnostic_expo_off_pas_d_alerte_80_443(
+    home, depot_pack, faux_docker, monkeypatch, capsys
+):
+    from wap_runtime import diagnostic
+    from wap_runtime.cli import main
+    from wap_runtime.identifiants_cockpit import definir as definir_identifiants
+
+    instance = passe(home, depot_pack)
+    definir_identifiants(instance, "ops", "mot-de-passe-assez-long")
+    capsys.readouterr()
+    monkeypatch.setattr(diagnostic, "_port_ecoute", lambda port: True)
+
+    assert main(["diagnostic"]) == 0
+    assert "occupé" not in capsys.readouterr().out

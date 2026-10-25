@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import re
+import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from wap_runtime.identifiants_cockpit import est_configure
 from wap_runtime.instance import lire_config
+
+PORTS_PROXY = (80, 443)
+PROC_NET = Path("/proc/net")
+# État `LISTEN` dans `/proc/net/tcp` (hexadécimal, `include/net/tcp_states.h`).
+ETAT_LISTEN = "0A"
 
 
 @dataclass(frozen=True)
@@ -20,6 +26,8 @@ class EtatDiagnostic:
     auth_cockpit: bool
     caddy_up: bool | None
     ports_ok: bool | None
+    # Ports du proxy tenus par un autre processus que le Caddy de l’instance.
+    ports_occupes: tuple[int, ...] = ()
 
 
 def observer(instance: Path) -> EtatDiagnostic:
@@ -39,12 +47,15 @@ def observer(instance: Path) -> EtatDiagnostic:
     compose = (instance / "compose.yaml").read_text(encoding="utf-8")
     ports_ok = _ports_proxy_publies(compose)
     caddy_up = _caddy_tourne(instance)
+    # Caddy up tient lui-même 80/443 ; sinon un port qui écoute est à un autre service.
+    occupes = () if caddy_up else tuple(p for p in PORTS_PROXY if _port_ecoute(p))
     return EtatDiagnostic(
         exposition=True,
         domaine=domaine,
         auth_cockpit=auth,
         caddy_up=caddy_up,
         ports_ok=ports_ok,
+        ports_occupes=occupes,
     )
 
 
@@ -88,6 +99,13 @@ def formater(etat: EtatDiagnostic) -> tuple[list[str], int]:
     else:
         ko = True
         lignes.append("KO — impossible de sonder Caddy (`docker compose ps`)")
+
+    for port in etat.ports_occupes:
+        lignes.append(
+            f"KO — port {port} occupé par un autre processus que le Caddy de l’instance : "
+            f"Caddy ne peut pas démarrer — voir qui l’écoute (`sudo ss -ltnp 'sport = :{port}'`), "
+            "libérer le port ou garder l’exposition off (README, « Hôte partagé »)"
+        )
 
     if etat.domaine:
         lignes.append(f"OK — domaine configuré : {etat.domaine} (chemin HTTPS / Let’s Encrypt)")
@@ -135,6 +153,34 @@ def _ports_proxy_publies(compose: str) -> bool:
     a80 = '"80:80"' in compose or '"127.0.0.1:80:80"' in compose
     a443 = '"443:443"' in compose or '"127.0.0.1:443:443"' in compose
     return a80 and a443
+
+
+def _port_ecoute(port: int, proc_net: Path = PROC_NET) -> bool:
+    """Vrai si un processus écoute ce port TCP de l’hôte, sur n’importe quelle adresse.
+
+    Lit les sockets `LISTEN` de `/proc/net/tcp{,6}` (IP publique comprise, sans root) ;
+    hors Linux, se rabat sur une connexion à `127.0.0.1`.
+    """
+    tables = []
+    for nom in ("tcp", "tcp6"):
+        try:
+            tables.append((proc_net / nom).read_text())
+        except OSError:
+            continue
+    if not tables:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return True
+        except OSError:
+            return False
+    for table in tables:
+        for ligne in table.splitlines()[1:]:
+            champs = ligne.split()
+            if len(champs) < 4 or champs[3] != ETAT_LISTEN:
+                continue
+            if int(champs[1].rsplit(":", 1)[1], 16) == port:
+                return True
+    return False
 
 
 def _caddy_tourne(instance: Path) -> bool | None:

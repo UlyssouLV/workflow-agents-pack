@@ -18,9 +18,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 UTILISATEUR=orchestrator
 HOME_UTILISATEUR="/home/$UTILISATEUR"
-# Ref du paquet (branche, tag ou commit) ; `setup` construit les images au même commit (ADR 0005).
-WAP_REF="${WAP_REF:-feat/runtime-orchestrator}"
-PAQUET="git+https://github.com/UlyssouLV/workflow-agents-pack@$WAP_REF#subdirectory=orchestrator"
+DEPOT=UlyssouLV/workflow-agents-pack
 JOURNAL=/var/log/wap-runtime/install.log
 
 mkdir -p "$(dirname "$JOURNAL")"
@@ -62,7 +60,38 @@ esac
 
 paquets_de_base() {
   apt-get update
-  apt-get install -y python3 pipx git
+  apt-get install -y python3 pipx git curl
+}
+
+# Lit la liste de l’API des Releases sur stdin ; écrit le tag `orchestrator-vX.Y.Z`
+# publié (ni brouillon ni prerelease) le plus haut, ou échoue s’il n’y en a pas.
+derniere_release() {
+  python3 -c '
+import json, re, sys
+tags = [
+    (tuple(map(int, m.groups())), r["tag_name"])
+    for r in json.load(sys.stdin)
+    if not r.get("prerelease") and not r.get("draft")
+    and (m := re.fullmatch(r"orchestrator-v(\d+)\.(\d+)\.(\d+)", r.get("tag_name") or ""))
+]
+if not tags:
+    sys.exit(1)
+print(max(tags)[1])
+'
+}
+
+resoudre_wap_ref() {
+  # API publique : aucun jeton (ADR 0013).
+  local releases
+  releases=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$DEPOT/releases?per_page=100") || {
+    echo "KO — impossible de lister les Releases de $DEPOT ; passer WAP_REF=<ref>" >&2
+    exit 1
+  }
+  WAP_REF=$(printf '%s' "$releases" | derniere_release) || {
+    echo "KO — aucune Release orchestrator-vX.Y.Z publiée sur $DEPOT ; passer WAP_REF=<ref>" >&2
+    exit 1
+  }
+  journaliser "dernière Release : $WAP_REF"
 }
 
 creer_utilisateur() {
@@ -72,11 +101,19 @@ creer_utilisateur() {
 }
 
 installer_wap_runtime() {
+  local paquet="git+https://github.com/$DEPOT@$WAP_REF#subdirectory=orchestrator"
   # --force : réinstalle depuis WAP_REF, donc met à niveau ou change de ref un paquet existant.
-  runuser -u "$UTILISATEUR" -- env HOME="$HOME_UTILISATEUR" pipx install --force "$PAQUET"
+  runuser -u "$UTILISATEUR" -- env HOME="$HOME_UTILISATEUR" pipx install --force "$paquet"
 }
 
-etape "python3, pipx, git" paquets_de_base
+etape "python3, pipx, git, curl" paquets_de_base
+# Ref du paquet (branche, tag ou commit), par défaut la dernière Release ; `setup` tire
+# les images de ghcr à ce ref, ou les construit au même commit (ADR 0005, 0013).
+if [ -z "${WAP_REF:-}" ]; then
+  echo "→ dernière Release"
+  resoudre_wap_ref
+fi
+echo "  ref du paquet : $WAP_REF"
 etape "utilisateur $UTILISATEUR" creer_utilisateur
 etape "paquet wap-runtime" installer_wap_runtime
 
