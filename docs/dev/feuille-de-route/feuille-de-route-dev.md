@@ -18,14 +18,9 @@ Contrainte transverse : rien n’est global à la machine hôte. Registry, token
 - **0.5.1** — Modèle Cursor par session : préférence repo, override à Nouvelle session, `--model` (sauf Auto), héritage via `precedente`, affichage cockpit ([#82](https://github.com/UlyssouLV/workflow-agents-pack/issues/82), [spec](../../specs/v0.5.1-modele-cursor-par-session.md), [ADR 0009](../../adr/0009-modele-cursor-preference-et-heritage.md)).
 - **0.6.0** — Accès web authentifié : identifiants cockpit + sessions serveur, auth obligatoire (y compris local), reverse proxy Caddy opt-in (80/443), TLS Let’s Encrypt dès qu’un domaine pointe, pas de HTTP public ; diagnostic CLI ; README refondu ([#89](https://github.com/UlyssouLV/workflow-agents-pack/issues/89), [spec](../../specs/v0.6.0-acces-web-authentifie.md), [ADR 0010](../../adr/0010-identifiants-cockpit-auth-obligatoire.md), [ADR 0011](../../adr/0011-caddy-exposition-web-opt-in.md)).
 - **0.7.0** — CI : chaque PR vers `feat/runtime-orchestrator` lance un workflow GitHub Actions (checks `pytest` et `vitest` avec couverture, puis `sonar` qui analyse `orchestrator/` et échoue si le quality gate n’est pas `OK`) ; secrets Sonar et ruleset de la base (checks requis, posée à la main) documentés dans le README ; pas de CD ni de CI pack sur `main`. Bug relevé aux tests humains : un check ignoré s’affiche « ok » dans le cockpit ([#105](https://github.com/UlyssouLV/workflow-agents-pack/issues/105)) ([#99](https://github.com/UlyssouLV/workflow-agents-pack/issues/99), [spec](../../specs/v0.7.0-ci.md), [ADR 0012](../../adr/0012-ci-actions-sonar-sur-pr-base.md)).
+- **0.7.1** — CD : à chaque PR verte vers la base, le job `images` (check requis) publie `ghcr.io/ulyssoulv/wap-runtime` et `wap-runner` (multi-arch, publics) en `:sha-<sha>` / `:staging` ; la Release `orchestrator-vX.Y.Z` promeut ce digest vers `X.Y.Z` / `latest` sans rebuild ; `install.sh` installe par défaut la dernière Release (build sur l’hôte en secours) ; `sudo wap-runtime update` applique une Release plus récente (codes 0 / 2 / 1) et l’unité systemd `wap-runtime.service` la lance à chaque démarrage ; sur un hôte partagé, Caddy bloqué sur 80/443 ne bloque ni la mise à jour ni le démarrage, `diagnostic` nomme le port occupé ([#106](https://github.com/UlyssouLV/workflow-agents-pack/issues/106), [spec](../../specs/v0.7.1-cd.md), [ADR 0013](../../adr/0013-images-ghcr-promotion-et-mise-a-jour-de-l-instance.md)).
 
-## Prochaine : 0.7.1 — CD
-
-Objectif. Une version validée se publie et se déploie sans enchaînement manuel : artefacts et mise à disposition suivent la validation CI, sur le modèle du repo ArgOS.
-
-Hors périmètre : visualisation du codespace par session (0.8.0) ; enregistrement self-service multi-orchestrateurs (Plus tard).
-
-## Ensuite : 0.8.0 — Visualisation du codespace par session
+## Prochaine : 0.8.0 — Visualisation du codespace par session
 
 Objectif. Depuis une session d’agent, on voit clairement avec quel dépôt / workspace local l’agent travaille : une vue type VS Code dans le navigateur, liée à cette session — pas seulement le terminal.
 

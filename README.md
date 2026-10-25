@@ -21,7 +21,7 @@ Les versions de cette branche partent de `feat/runtime-orchestrator` et y revien
 | 0.6.0 | Accès web authentifié |
 | 0.7.0 | CI |
 | 0.7.1 | CD |
-| 0.8.0 | Enregistrement d’orchestrateur par compte GitHub |
+| 0.8.0 | Visualisation du codespace par session |
 | 0.8.1 | Refonte graphique du cockpit |
 | 0.9.0 | Main d’aiguillage et feuilles de route multi-branches |
 
