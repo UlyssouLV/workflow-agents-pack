@@ -1,7 +1,8 @@
 """Service HTTP du runtime (FastAPI) : `GET /health`, l’API du cockpit sous `/api/` et son front.
 
 Le terminal en direct d’une session (websocket `/api/sessions/{id}/terminal`) est relayé jusqu’au
-runner (`wap_runtime.terminal`).
+runner (`wap_runtime.terminal`), comme les changements de son codespace
+(`/api/sessions/{id}/codespace/evenements`, `wap_runtime.codespace`).
 """
 
 import os
@@ -420,6 +421,16 @@ def creer_app(
 
     @app.websocket("/api/sessions/{id_}/terminal")
     async def terminal(websocket: WebSocket, id_: str) -> None:
+        await _relayer_websocket(websocket, id_, "/terminal")
+
+    @app.websocket("/api/sessions/{id_}/codespace/evenements")
+    async def codespace_evenements(websocket: WebSocket, id_: str) -> None:
+        """Les changements du codespace en direct (dossiers dépliés, fichier ouvert, en-tête)."""
+        await _relayer_websocket(websocket, id_, "/codespace/evenements")
+
+    async def _relayer_websocket(websocket: WebSocket, id_: str, suite: str) -> None:
+        """Relaie un websocket d’une session ouverte jusqu’au runner, derrière l’authentification
+        du cockpit et la vérification d’origine."""
         from websockets.asyncio.client import connect
         from websockets.exceptions import WebSocketException
 
@@ -436,7 +447,7 @@ def creer_app(
             await websocket.close()
             return
         try:
-            amont = await connect(client_runner.url_terminal(id_), max_size=None)
+            amont = await connect(client_runner.url_websocket(id_, suite), max_size=None)
         except (OSError, TimeoutError, WebSocketException):
             await websocket.close()
             return

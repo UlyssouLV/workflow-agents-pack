@@ -71,6 +71,7 @@ export class FauxWebSocket {
   readyState = FauxWebSocket.CONNECTING;
   binaryType = "blob";
   envoyes: unknown[] = [];
+  onopen: ((evenement: Event) => void) | null = null;
   onmessage: ((evenement: MessageEvent) => void) | null = null;
   onclose: ((evenement: CloseEvent) => void) | null = null;
 
@@ -90,6 +91,17 @@ export class FauxWebSocket {
   role(role: "ecriture" | "lecture") {
     this.readyState = FauxWebSocket.OPEN;
     this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ role }) }));
+  }
+
+  /** Côté test : le runtime accepte (websocket du codespace, qui attend l’ouverture). */
+  accepter() {
+    this.readyState = FauxWebSocket.OPEN;
+    this.onopen?.(new Event("open"));
+  }
+
+  /** Côté test : un message JSON du runtime. */
+  message(corps: unknown) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(corps) }));
   }
 
   sortie(texte: string) {

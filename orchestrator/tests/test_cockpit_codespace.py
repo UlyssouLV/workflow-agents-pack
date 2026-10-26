@@ -11,13 +11,18 @@ import httpx
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+from watchfiles import Change
 
 from client_cockpit import avec_session
 from test_codespace import clone, jobs  # noqa: F401 (fixtures)
+from wap_runtime import codespace as codespace_
 from wap_runtime.registry import ajouter
 from wap_runtime.runner import Runner, creer_app_runner
 from wap_runtime.server import creer_app
 from wap_runtime.sessions import Sessions
+
+COCKPIT = "http://testserver"
 
 
 @pytest.fixture
@@ -108,3 +113,49 @@ def test_runner_injoignable_502(tmp_path, jobs, session):
     client = avec_session(creer_app(registry=registry, jeton="x", env={}, jobs=jobs, runner=injoignable), tmp_path)
 
     assert client.get(f"/api/sessions/{session['id']}/codespace").status_code == 502
+
+
+@pytest.fixture
+def un_changement_dans_src(monkeypatch, clone):
+    """Surveillance simulée : à chaque (re)démarrage, `src/neuf.py` vient d’apparaître."""
+
+    async def surveiller(*chemins, stop_event, **options):
+        yield {(Change.added, str(clone.resolve() / "src" / "neuf.py"))}
+        await stop_event.wait()
+
+    monkeypatch.setattr(codespace_, "awatch", surveiller)
+
+
+def evenements(client, session, origine=COCKPIT):
+    entetes = {"Origin": origine} if origine else {}
+    return client.websocket_connect(f"/api/sessions/{session['id']}/codespace/evenements", headers=entetes)
+
+
+def test_evenements_relayes_jusqu_au_runner(api, session, un_changement_dans_src):
+    with evenements(api, session) as ws:
+        ws.send_json({"dossiers": ["", "src"], "fichier": None})
+
+        assert ws.receive_json() == {"dossiers": ["", "src"], "fichier": False, "entete": False}
+
+
+def test_evenements_refuses_sans_authentification_cockpit(tmp_path, jobs, adresse_runner, session, un_changement_dans_src):
+    client = TestClient(app(tmp_path, jobs, adresse_runner))
+
+    with pytest.raises(WebSocketDisconnect):
+        with evenements(client, session) as ws:
+            ws.receive_json()
+
+
+@pytest.mark.parametrize("origine", [None, "http://evil.example"])
+def test_evenements_refuses_hors_origine_du_cockpit(api, session, un_changement_dans_src, origine):
+    with pytest.raises(WebSocketDisconnect):
+        with evenements(api, session, origine) as ws:
+            ws.receive_json()
+
+
+def test_evenements_refuses_sur_une_session_close(api, session, jobs):
+    Sessions(jobs).clore(session["id"], 0)
+
+    with pytest.raises(WebSocketDisconnect):
+        with evenements(api, session) as ws:
+            ws.receive_json()

@@ -643,12 +643,13 @@ class ClientRunner:
         except ValueError as erreur:
             raise RunnerErreur(f"le runner a répondu {reponse.status_code}") from erreur
 
-    def url_terminal(self, id_: str) -> str:
-        """Websocket du terminal de la session, sur le réseau Compose."""
-        if not ID_SESSION.fullmatch(id_):
+    def url_websocket(self, id_: str, suite: str) -> str:
+        """Websocket de la session sur le réseau Compose : `/terminal` (terminal en direct) ou
+        `/codespace/evenements` (codespace en direct)."""
+        if not ID_SESSION.fullmatch(id_) or suite not in ("/terminal", "/codespace/evenements"):
             raise RunnerErreur(f"session {id_} inconnue")
         base = str(self._http.base_url).rstrip("/")
-        return f"ws{base.removeprefix('http')}/sessions/{quote(id_, safe='')}/terminal"
+        return f"ws{base.removeprefix('http')}/sessions/{quote(id_, safe='')}{suite}"
 
     def lister_modeles(self) -> list[dict]:
         """`GET /modeles` du runner ; même contrat que `lister_modeles_cursor`."""
@@ -822,6 +823,18 @@ def creer_app_runner(runner: Runner):
     def diff(id_: str, chemin: str) -> dict:
         _, dossier = _codespace(id_)
         return _lire(codespace_.diff, dossier, chemin)
+
+    @app.websocket("/sessions/{id_}/codespace/evenements")
+    async def evenements(websocket: WebSocket, id_: str) -> None:
+        """Les changements du codespace en direct, selon l’abonnement du cockpit."""
+        try:
+            _, dossier = runner.clone_de(id_)
+        except codespace_.CodespaceErreur:
+            # Avant `accept` : la poignée de main est refusée.
+            await websocket.close()
+            return
+        await websocket.accept()
+        await codespace_.pousser_evenements(websocket, dossier)
 
     def _codespace(id_: str) -> tuple[dict, Path]:
         return _lire(runner.clone_de, id_)

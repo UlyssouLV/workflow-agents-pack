@@ -197,7 +197,7 @@ function Contenu({
       <div role="tabpanel" id="panneau-codespace" aria-labelledby="onglet-codespace" hidden={onglet !== "codespace"}>
         {codespaceVu && (
           <Suspense fallback={<p className="etat-terminal">Chargement du codespace…</p>}>
-            <Codespace id={session.id} />
+            <Codespace id={session.id} visible={onglet === "codespace"} />
           </Suspense>
         )}
       </div>

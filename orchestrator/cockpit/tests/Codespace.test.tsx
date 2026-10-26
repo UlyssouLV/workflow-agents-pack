@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EntreeCodespace } from "../src/api";
 import { App } from "../src/App";
+import { POLLING_CODESPACE_MS } from "../src/Codespace";
 import { session, simulerApi } from "./donnees";
 import { FauxMonaco, FauxTerminal, FauxWebSocket } from "./simulations";
 
@@ -85,7 +86,7 @@ describe("onglets de la page de session", () => {
     await screen.findByRole("tree", { name: "Fichiers du codespace" });
     fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
 
-    expect(FauxWebSocket.instances).toHaveLength(1);
+    expect(FauxWebSocket.instances.filter((w) => w.url.endsWith("/terminal"))).toEqual([ws]);
     expect(ws.readyState).toBe(FauxWebSocket.OPEN);
     expect(FauxTerminal.instances[0].libere).toBe(false);
     expect(ws.envoyes).not.toContainEqual({ prendre: true });
@@ -365,5 +366,152 @@ describe("Git dans le codespace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Diff avec HEAD" }));
 
     expect(await screen.findByText("ajout.py absent du clone")).toBeInTheDocument();
+  });
+});
+
+/** Le websocket des changements du codespace (à côté de celui du terminal). */
+function evenements(): FauxWebSocket[] {
+  return FauxWebSocket.instances.filter((ws) => ws.url.endsWith("/codespace/evenements"));
+}
+
+async function surveillance(): Promise<FauxWebSocket> {
+  await waitFor(() => expect(evenements()).toHaveLength(1));
+  const [ws] = evenements();
+  act(() => ws.accepter());
+  return ws;
+}
+
+function appels(fetch: ReturnType<typeof api>, chemin: string): number {
+  return fetch.mock.calls.filter(([c]) => c === chemin).length;
+}
+
+describe("codespace mis à jour en direct", () => {
+  it("s’abonne aux dossiers dépliés et au fichier ouvert, derrière le runtime du cockpit", async () => {
+    api();
+    await ouvrirCodespace();
+    const ws = await surveillance();
+
+    expect(ws.url).toBe(`ws://${window.location.host}${API}/codespace/evenements`);
+    expect(ws.envoyes.at(-1)).toEqual({ dossiers: [""], fichier: null });
+
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "src" }));
+    await waitFor(() => expect(ws.envoyes.at(-1)).toEqual({ dossiers: ["", "src"], fichier: null }));
+
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "app.py" }));
+    await waitFor(() => expect(ws.envoyes.at(-1)).toEqual({ dossiers: ["", "src"], fichier: "src/app.py" }));
+
+    fireEvent.click(within(arbre()).getByRole("button", { name: "src" }));
+    await waitFor(() => expect(ws.envoyes.at(-1)).toEqual({ dossiers: [""], fichier: "src/app.py" }));
+  });
+
+  it("un sous-dossier d’un dossier replié n’est plus surveillé", async () => {
+    api({ [`${API}/codespace/arbre?chemin=src`]: { chemin: "src", entrees: [entree("lib", { type: "dossier" })] } });
+    await ouvrirCodespace();
+    const ws = await surveillance();
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "src" }));
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "lib" }));
+    await waitFor(() => expect(ws.envoyes.at(-1)).toEqual({ dossiers: ["", "src", "src/lib"], fichier: null }));
+
+    fireEvent.click(within(arbre()).getByRole("button", { name: "src" }));
+
+    await waitFor(() => expect(ws.envoyes.at(-1)).toEqual({ dossiers: [""], fichier: null }));
+  });
+
+  it("un événement recharge, une fois, les dossiers concernés et le fichier ouvert", async () => {
+    let src = [entree("app.py", { taille: 17 })];
+    let contenu = "print('bonjour')\n";
+    const fetch = api({
+      [`${API}/codespace/arbre?chemin=src`]: () => ({ chemin: "src", entrees: src }),
+      [`${API}/codespace/fichier?chemin=src%2Fapp.py`]: () => ({ chemin: "src/app.py", taille: 17, contenu }),
+    });
+    await ouvrirCodespace();
+    const ws = await surveillance();
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "src" }));
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "app.py" }));
+    await waitFor(() => expect(FauxMonaco.editeurs[0].modele?.getValue()).toBe("print('bonjour')\n"));
+    const avant = {
+      racine: appels(fetch, `${API}/codespace/arbre?chemin=`),
+      src: appels(fetch, `${API}/codespace/arbre?chemin=src`),
+      identite: appels(fetch, `${API}/codespace`),
+    };
+
+    src = [entree("app.py", { taille: 17, statut: "modifie" }), entree("neuf.py", { statut: "non_suivi" })];
+    contenu = "print('au revoir')\n";
+    act(() => ws.message({ dossiers: ["", "src"], fichier: true, entete: false }));
+
+    expect(await within(arbre()).findByRole("treeitem", { name: "neuf.py" })).toBeInTheDocument();
+    await waitFor(() => expect(FauxMonaco.editeurs[0].modele?.getValue()).toBe("print('au revoir')\n"));
+    expect(appels(fetch, `${API}/codespace/arbre?chemin=`)).toBe(avant.racine + 1);
+    expect(appels(fetch, `${API}/codespace/arbre?chemin=src`)).toBe(avant.src + 1);
+    expect(appels(fetch, `${API}/codespace`)).toBe(avant.identite);
+  });
+
+  it("un fichier supprimé disparaît de l’arbre", async () => {
+    let racine = RACINE;
+    api({ [`${API}/codespace/arbre?chemin=`]: () => ({ chemin: "", entrees: racine }) });
+    await ouvrirCodespace();
+    const ws = await surveillance();
+    await within(arbre()).findByRole("treeitem", { name: "README.md" });
+
+    racine = RACINE.filter((e) => e.nom !== "README.md");
+    act(() => ws.message({ dossiers: [""], fichier: false, entete: false }));
+
+    await waitFor(() => expect(within(arbre()).queryByRole("treeitem", { name: "README.md" })).toBeNull());
+  });
+
+  it("changement de branche ou nouveau commit : l’en-tête suit", async () => {
+    let identite = { repo: "o/r", branche: "v0.8.0-codespace", head: "ea80c15", source: "direct" };
+    api({ [`${API}/codespace`]: () => identite });
+    const vue = await ouvrirCodespace();
+    const ws = await surveillance();
+    await within(vue).findByText("ea80c15");
+
+    identite = { ...identite, branche: "autre", head: "1234567" };
+    act(() => ws.message({ dossiers: [], fichier: false, entete: true }));
+
+    const entete = await within(vue).findByRole("group", { name: "Identité du codespace" });
+    await waitFor(() => expect(entete).toHaveTextContent("1234567"));
+    expect(within(entete).getByRole("link", { name: "autre" })).toBeInTheDocument();
+  });
+
+  it("revenir au Terminal ou quitter la page arrête la surveillance ; revenir la reprend", async () => {
+    api();
+    window.history.replaceState(null, "", `/sessions/${ID}/codespace`);
+    const { unmount } = render(<App chemin={`/sessions/${ID}/codespace`} />);
+    const ws = await surveillance();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
+    expect(ws.readyState).toBe(FauxWebSocket.CLOSED);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Codespace" }));
+    await waitFor(() => expect(evenements()).toHaveLength(2));
+    const suivant = evenements()[1];
+    expect(suivant.readyState).not.toBe(FauxWebSocket.CLOSED);
+
+    unmount();
+    expect(suivant.readyState).toBe(FauxWebSocket.CLOSED);
+  });
+
+  it.each([
+    ["surveillance indisponible", (ws: FauxWebSocket) => {
+      ws.message({ surveillance: "indisponible" });
+      ws.fermer();
+    }],
+    ["websocket refusé ou coupé", (ws: FauxWebSocket) => ws.fermer()],
+  ])("%s : la vue se rafraîchit par polling lent", async (_cas, couper) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetch = api();
+    await ouvrirCodespace();
+    const ws = await surveillance();
+    await within(arbre()).findByRole("treeitem", { name: "README.md" });
+    const avant = appels(fetch, `${API}/codespace/arbre?chemin=`);
+
+    act(() => couper(ws));
+    await act(() => vi.advanceTimersByTimeAsync(POLLING_CODESPACE_MS - 1000));
+    expect(appels(fetch, `${API}/codespace/arbre?chemin=`)).toBe(avant);
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+
+    expect(appels(fetch, `${API}/codespace/arbre?chemin=`)).toBe(avant + 1);
+    expect(appels(fetch, `${API}/codespace`)).toBeGreaterThan(1);
   });
 });

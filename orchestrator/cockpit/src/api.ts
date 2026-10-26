@@ -323,9 +323,18 @@ export async function terminerSession(id: string): Promise<Session> {
 
 /** Websocket du terminal en direct, sur le cockpit servi (le runtime vérifie son `Origin`). */
 export function urlTerminal(id: string): string {
+  return urlWebsocket(id, "/terminal");
+}
+
+/** Websocket des changements du codespace en direct (`EvenementCodespace`). */
+export function urlEvenementsCodespace(id: string): string {
+  return urlWebsocket(id, "/codespace/evenements");
+}
+
+function urlWebsocket(id: string, suite: string): string {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const { protocol, host } = window.location;
-  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
+  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}${suite}`;
 }
 
 /** `GET /api/sessions/{id}/codespace` : l’identité du clone de la session (`direct` : lu en direct). */
@@ -387,3 +396,17 @@ export function lireCodespace<T>(
   const requete = chemin === undefined ? "" : `?chemin=${encodeURIComponent(chemin)}`;
   return lire<T>(`/api/sessions/${encodeURIComponent(id)}/codespace${suite}${requete}`);
 }
+
+/** Envoyé sur le websocket des changements : ce que la vue montre (remplace le précédent). */
+export interface AbonnementCodespace {
+  /** Dossiers dépliés et visibles ; `""` : la racine. */
+  dossiers: string[];
+  /** Fichier ouvert (onglet actif). */
+  fichier: string | null;
+}
+
+/** Reçu sur le websocket des changements : une rafale regroupée (dossiers abonnés à relire,
+ * fichier ouvert changé, HEAD ou ref courante changé), ou la surveillance du disque impossible. */
+export type EvenementCodespace =
+  | { dossiers: string[]; fichier: boolean; entete: boolean }
+  | { surveillance: "indisponible" };

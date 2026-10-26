@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  AbonnementCodespace,
   ArbreCodespace,
   DiffCodespace,
   EntreeCodespace,
+  EvenementCodespace,
   FichierCodespace,
   IdentiteCodespace,
   StatutGit,
 } from "./api";
-import { lireCodespace } from "./api";
+import { lireCodespace, urlEvenementsCodespace } from "./api";
 import { monaco } from "./monaco";
 
 /** Un dossier chargé (ses entrées), ou le refus du runtime. */
@@ -24,11 +26,17 @@ const MARQUEURS: Record<StatutGit, [string, string]> = {
   non_suivi: ["U", "Non suivi"],
 };
 
+/** Sans surveillance du disque (indisponible, websocket coupé) : la vue est relue à ce rythme. */
+export const POLLING_CODESPACE_MS = 10_000;
 
 /** Vue du codespace d’une session (ADR 0014), en lecture seule : l’identité du clone, son
  * arborescence chargée dossier par dossier avec les marqueurs Git, et les fichiers ouverts en
- * onglets dans Monaco ; un fichier changé s’ouvre aussi en diff avec HEAD. */
-export function Codespace({ id }: { id: string }) {
+ * onglets dans Monaco ; un fichier changé s’ouvre aussi en diff avec HEAD.
+ *
+ * En direct, comme VS Code : tant qu’elle est `visible`, la vue s’abonne aux dossiers dépliés et
+ * au fichier ouvert, et les relit à chaque changement poussé par le runner ; sans surveillance,
+ * elle se relit toutes les `POLLING_CODESPACE_MS`. */
+export function Codespace({ id, visible = true }: { id: string; visible?: boolean }) {
   const [identite, setIdentite] = useState<IdentiteCodespace | { erreur: string } | null>(null);
   const [dossiers, setDossiers] = useState<Record<string, Dossier>>({});
   const [deplies, setDeplies] = useState<ReadonlySet<string>>(new Set());
@@ -40,6 +48,10 @@ export function Codespace({ id }: { id: string }) {
   const [enDiff, setEnDiff] = useState<ReadonlySet<string>>(new Set());
   const [diffs, setDiffs] = useState<Record<string, Diff>>({});
 
+  const lireIdentite = () =>
+    lireCodespace<IdentiteCodespace>(id, "").then(setIdentite, (erreur: Error) =>
+      setIdentite({ erreur: erreur.message }),
+    );
 
   const charger = (chemin: string) =>
     lireCodespace<ArbreCodespace>(id, "/arbre", chemin).then(
@@ -47,10 +59,20 @@ export function Codespace({ id }: { id: string }) {
       (erreur: Error) => setDossiers((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
     );
 
-  useEffect(() => {
-    lireCodespace<IdentiteCodespace>(id, "").then(setIdentite, (erreur: Error) =>
-      setIdentite({ erreur: erreur.message }),
+  const lireFichier = (chemin: string) =>
+    lireCodespace<FichierCodespace>(id, "/fichier", chemin).then(
+      (fichier) => setFichiers((f) => ({ ...f, [chemin]: fichier })),
+      (erreur: Error) => setFichiers((f) => ({ ...f, [chemin]: { erreur: erreur.message } })),
     );
+
+  const lireDiff = (chemin: string) =>
+    lireCodespace<DiffCodespace>(id, "/diff", chemin).then(
+      (diff) => setDiffs((d) => ({ ...d, [chemin]: diff })),
+      (erreur: Error) => setDiffs((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
+    );
+
+  useEffect(() => {
+    lireIdentite();
     charger("");
   }, [id]);
 
@@ -61,17 +83,22 @@ export function Codespace({ id }: { id: string }) {
       return;
     }
     setDeplies(suivants.add(chemin));
-    if (!(chemin in dossiers)) charger(chemin);
+    // Non surveillés tant que repliés : le dossier et ses sous-dossiers dépliés sont relus.
+    for (const dossier of dossiersVisibles(suivants)) if (contient(chemin, dossier)) charger(dossier);
   };
 
   const ouvrir = (chemin: string, statut: StatutGit | null) => {
     setStatuts((s) => ({ ...s, [chemin]: statut }));
     setOuverts((o) => (o.includes(chemin) ? o : [...o, chemin]));
     setActif(chemin);
-    lireCodespace<FichierCodespace>(id, "/fichier", chemin).then(
-      (fichier) => setFichiers((f) => ({ ...f, [chemin]: fichier })),
-      (erreur: Error) => setFichiers((f) => ({ ...f, [chemin]: { erreur: erreur.message } })),
-    );
+    lireFichier(chemin);
+  };
+
+  /** Un onglet repris : seul le fichier actif est surveillé, celui-ci a pu changer depuis. */
+  const activer = (chemin: string) => {
+    setActif(chemin);
+    lireFichier(chemin);
+    if (enDiff.has(chemin)) lireDiff(chemin);
   };
 
   const basculerDiff = (chemin: string) => {
@@ -81,11 +108,62 @@ export function Codespace({ id }: { id: string }) {
       return;
     }
     setEnDiff(suivants.add(chemin));
-    lireCodespace<DiffCodespace>(id, "/diff", chemin).then(
-      (diff) => setDiffs((d) => ({ ...d, [chemin]: diff })),
-      (erreur: Error) => setDiffs((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
-    );
+    lireDiff(chemin);
   };
+
+  const visibles = dossiersVisibles(deplies);
+  const abonnement: AbonnementCodespace = { dossiers: visibles, fichier: actif };
+  // Lu par le websocket au moment d’un événement : la vue telle qu’elle est alors.
+  const vue = useRef({ abonnement, diff: false });
+  vue.current = { abonnement, diff: actif !== null && enDiff.has(actif) };
+
+  /** Relit ce qu’un changement touche ; un changement d’en-tête (commit, branche) change aussi
+   * les marqueurs et le diff : tout ce qui est montré est relu. */
+  const relire = (evenement: { dossiers: string[]; fichier: boolean; entete: boolean }) => {
+    const { abonnement: courant, diff } = vue.current;
+    if (evenement.entete) lireIdentite();
+    for (const dossier of courant.dossiers)
+      if (evenement.entete || evenement.dossiers.includes(dossier)) charger(dossier);
+    if (courant.fichier !== null && (evenement.fichier || evenement.entete)) {
+      lireFichier(courant.fichier);
+      if (diff) lireDiff(courant.fichier);
+    }
+  };
+
+  const socket = useRef<WebSocket | null>(null);
+  const dejaVisible = useRef(false);
+  useEffect(() => {
+    if (!visible) return;
+    const tout = { dossiers: [], fichier: true, entete: true };
+    // De retour sur l’onglet : rien n’a été surveillé entre-temps.
+    if (dejaVisible.current) relire(tout);
+    dejaVisible.current = true;
+    let polling: ReturnType<typeof setInterval> | undefined;
+    const sonder = () => {
+      polling ??= setInterval(() => relire(tout), POLLING_CODESPACE_MS);
+    };
+    const ws = new WebSocket(urlEvenementsCodespace(id));
+    socket.current = ws;
+    ws.onopen = () => ws.send(JSON.stringify(vue.current.abonnement));
+    ws.onmessage = (message: MessageEvent) => {
+      const evenement = JSON.parse(String(message.data)) as EvenementCodespace;
+      if ("surveillance" in evenement) sonder();
+      else relire(evenement);
+    };
+    ws.onclose = sonder;
+    return () => {
+      ws.onclose = null;
+      ws.close();
+      socket.current = null;
+      clearInterval(polling);
+    };
+  }, [id, visible]);
+
+  const cle = JSON.stringify(abonnement);
+  useEffect(() => {
+    const ws = socket.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(cle);
+  }, [cle]);
 
   const fermer = (chemin: string) => {
     const restants = ouverts.filter((o) => o !== chemin);
@@ -116,7 +194,7 @@ export function Codespace({ id }: { id: string }) {
                     role="tab"
                     aria-selected={chemin === actif}
                     title={chemin}
-                    onClick={() => setActif(chemin)}
+                    onClick={() => activer(chemin)}
                   >
                     {nomDe(chemin)}
                   </button>
@@ -346,6 +424,20 @@ function EditeurMonaco({ fichier }: { fichier: { chemin: string; contenu: string
   }, [chemin, contenu]);
 
   return <div className="editeur" ref={conteneur} hidden={fichier === null} />;
+}
+
+/** La racine et les dossiers dépliés dont tous les parents le sont : ceux que l’arbre montre. */
+function dossiersVisibles(deplies: ReadonlySet<string>): string[] {
+  const visible = (chemin: string) => {
+    const parties = chemin.split("/");
+    return parties.every((_, i) => deplies.has(parties.slice(0, i + 1).join("/")));
+  };
+  return ["", ...[...deplies].filter(visible).sort()];
+}
+
+/** `dossier` est `chemin` ou l’un de ses sous-dossiers. */
+function contient(chemin: string, dossier: string): boolean {
+  return dossier === chemin || dossier.startsWith(`${chemin}/`);
 }
 
 function nomDe(chemin: string): string {

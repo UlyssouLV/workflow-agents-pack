@@ -2,12 +2,26 @@
 
 Tout chemin reçu est relatif au clone ; résolu (symlinks compris), il doit y rester. Un symlink
 qui sort du clone est listé comme lien, jamais suivi.
+
+En direct (websocket `…/codespace/evenements`) :
+- client → serveur : l’abonnement, qui remplace le précédent : `{"dossiers": ["", "src"],
+  "fichier": "src/app.py"}` (dossiers dépliés, fichier ouvert ou `null`).
+- serveur → client : `{"dossiers": [...], "fichier": bool, "entete": bool}` après une rafale de
+  changements (dossiers abonnés à relire, fichier ouvert changé, HEAD ou ref courante changé) ;
+  `{"surveillance": "indisponible"}` si le disque ne peut pas être surveillé, puis la fermeture.
 """
 
+import asyncio
+import json
 import os
 import subprocess
 from contextlib import suppress
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+
+from watchfiles import awatch
+
+from wap_runtime.terminal import premier_fini
 
 # Au-delà, ou binaire : « non affiché », avec la taille.
 TAILLE_MAX = 1024 * 1024
@@ -17,6 +31,10 @@ DOSSIER, FICHIER, LIEN = "dossier", "fichier", "lien"
 MODIFIE, AJOUTE, NON_SUIVI, IGNORE = "modifie", "ajoute", "non_suivi", "ignore"
 # Du plus fort au plus faible : un dossier prend le plus fort de ce qu’il contient.
 STATUTS = (MODIFIE, AJOUTE, NON_SUIVI)
+# Une rafale (un `npm install`) donne un seul événement : rien de neuf pendant ce délai, ou
+# `ATTENTE_MAX_MS` écoulées depuis le premier changement.
+REGROUPEMENT_MS = 300
+ATTENTE_MAX_MS = 1600
 
 
 class CodespaceErreur(Exception):
@@ -152,6 +170,8 @@ def _marquer(racine: Path, dossier: Path, entrees: list[dict]) -> None:
         ["git", "-C", str(racine), "status", "--porcelain=v2", "--ignored", "--no-renames", "-z",
          "--", relatif],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        # Lire sans réécrire l’index : sous surveillance, `.git/` changerait à chaque lecture.
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
     )
     # Git a échoué : rien n’est marqué.
     if sortie.returncode != 0:
@@ -197,3 +217,142 @@ def _git_ou_none(clone: Path, *args: str) -> str | None:
         ["git", "-C", str(clone), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL
     )
     return sortie.stdout.strip() or None if sortie.returncode == 0 else None
+
+
+@dataclass(frozen=True)
+class Abonnement:
+    """Ce que le cockpit montre : dossiers dépliés (`""` : la racine) et fichier ouvert."""
+
+    dossiers: frozenset[str] = frozenset()
+    fichier: str | None = None
+
+
+def lire_abonnement(texte: str | None) -> Abonnement | None:
+    """L’abonnement d’un message client ; `None` s’il n’en est pas un."""
+    try:
+        message = json.loads(texte or "")
+    except ValueError:
+        return None
+    if not isinstance(message, dict):
+        return None
+    dossiers, fichier = message.get("dossiers", []), message.get("fichier")
+    if not isinstance(dossiers, list) or not all(isinstance(d, str) for d in dossiers):
+        return None
+    if fichier is not None and not isinstance(fichier, str):
+        return None
+    return Abonnement(frozenset(dossiers), fichier)
+
+
+@dataclass
+class Veille:
+    """Ce qu’un abonnement fait surveiller sur le disque (chemins réels, jamais hors du clone), et
+    l’événement qu’en donne une rafale de changements."""
+
+    racine: Path
+    # Dossier réel surveillé → dossiers abonnés qu’il montre (un symlink interne en est un autre).
+    dossiers: dict[Path, set[str]] = field(default_factory=dict)
+    abonnes: frozenset[str] = frozenset()
+    fichier: Path | None = None
+
+    @classmethod
+    def de(cls, clone: Path, abonnement: Abonnement) -> "Veille":
+        veille = cls(clone.resolve(), abonnes=abonnement.dossiers)
+        for chemin in abonnement.dossiers:
+            with suppress(CodespaceErreur):
+                _, dossier = _resoudre(clone, chemin)
+                if dossier.is_dir():
+                    veille.dossiers.setdefault(dossier, set()).add(chemin)
+        if abonnement.fichier is not None:
+            with suppress(CodespaceErreur):
+                veille.fichier = _fichier(clone, abonnement.fichier)[1]
+        return veille
+
+    def chemins(self) -> list[Path]:
+        """Les dossiers à surveiller, sans récursion : les dossiers abonnés, celui du fichier ouvert
+        (un fichier remplacé par renommage reste vu), `.git/` pour HEAD et le dossier de la ref
+        courante."""
+        git = self.racine / ".git"
+        chemins = {*self.dossiers, git}
+        if self.fichier is not None:
+            chemins.add(self.fichier.parent)
+        if (branche := _git_ou_none(self.racine, "symbolic-ref", "--quiet", "HEAD")) is not None:
+            ref = Path(os.path.realpath(git / branche)).parent
+            if ref.is_relative_to(git) and ref.is_dir():
+                chemins.add(ref)
+        return sorted(chemins)
+
+    def evenement(self, changes: set[tuple[object, str]]) -> dict | None:
+        """`None` si rien de ce que montre le cockpit n’a changé."""
+        dossiers, fichier, entete = set(), False, False
+        refs = self.racine / ".git" / "refs" / "heads"
+        for _, brut in changes:
+            chemin = Path(brut)
+            if chemin.parent == self.racine / ".git" and chemin.name in ("HEAD", "packed-refs"):
+                entete = True
+            elif chemin.is_relative_to(refs):
+                entete = True
+            touche = set(self.dossiers.get(chemin.parent, ()))
+            if self.fichier is not None and chemin == self.fichier:
+                fichier = True
+                touche.add(self.fichier.parent.relative_to(self.racine).as_posix())
+            for abonne in touche:
+                dossiers |= {d for d in self.abonnes if _contient(d, abonne)}
+        if not (dossiers or fichier or entete):
+            return None
+        return {"dossiers": sorted(dossiers), "fichier": fichier, "entete": entete}
+
+
+def _contient(dossier: str, chemin: str) -> bool:
+    """`dossier` est `chemin` ou l’un de ses parents (`""` et `"."` : la racine)."""
+    if dossier in ("", "."):
+        return True
+    return chemin == dossier or chemin.startswith(dossier + "/")
+
+
+async def pousser_evenements(websocket, clone: Path) -> None:
+    """Websocket (Starlette, déjà accepté) : surveille le clone selon l’abonnement reçu et pousse
+    les événements, jusqu’à la déconnexion ; ferme le websocket si la surveillance est impossible.
+
+    Un nouvel abonnement, ou un changement d’en-tête (la ref courante a pu changer), relance la
+    surveillance sur les nouveaux chemins."""
+    abonnement = Abonnement()
+    relancer = asyncio.Event()
+
+    async def recevoir() -> None:
+        nonlocal abonnement
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            if (lu := lire_abonnement(message.get("text"))) is not None:
+                abonnement = lu
+                relancer.set()
+
+    async def pousser() -> None:
+        while True:
+            relancer.clear()
+            veille = Veille.de(clone, abonnement)
+            try:
+                async for changes in awatch(
+                    *veille.chemins(),
+                    watch_filter=None,
+                    recursive=False,
+                    step=REGROUPEMENT_MS,
+                    debounce=ATTENTE_MAX_MS,
+                    stop_event=relancer,
+                ):
+                    if (evenement := veille.evenement(changes)) is not None:
+                        await websocket.send_json(evenement)
+                        if evenement["entete"]:
+                            relancer.set()
+            except FileNotFoundError:
+                # Un dossier surveillé a disparu entre-temps : on relance sur ceux qui restent.
+                await asyncio.sleep(REGROUPEMENT_MS / 1000)
+            except (OSError, RuntimeError):
+                # Limite inotify atteinte, système de fichiers sans notification… : le cockpit
+                # se rabat sur un polling lent.
+                await websocket.send_json({"surveillance": "indisponible"})
+                await websocket.close()
+                return
+
+    await premier_fini(recevoir(), pousser())
