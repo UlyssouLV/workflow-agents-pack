@@ -52,6 +52,10 @@
 
 **Session** — un agent (Claude Code ou Cursor) lancé en mode interactif par le runner depuis le cockpit, dans un terminal affiché dans le navigateur, sur une branche du clone géré ; enregistrée sous `~/.wap-runtime/jobs/<id>/` et rejouable. Au plus une session ouverte par repo (ADR 0007). Une **session libre** démarre sans commande (`claude`, `agent`) : l’humain tape ce qu’il veut ; une session enchaînée lance `/implement #n`. Pour Cursor, chaque session a un **modèle** (ID CLI ou Auto) : défaut par repo lié, override possible à Nouvelle session, héritage via `precedente` pour l’enchaînement (ADR 0009).
 
+**Codespace** — l’arbre de travail du clone géré tel qu’une session le voit, affiché en lecture seule dans l’onglet Codespace de la session (arborescence, éditeur Monaco, marqueurs et diff Git) ; tout est visible, fichiers ignorés et `.git/` compris. En direct pour une session ouverte, depuis son **instantané** pour une session fermée (ADR 0014).
+
+**Instantané** — l’état de l’arbre de travail d’une session figé à sa fermeture ou à son interruption : un commit privé `refs/wap/sessions/<id>` du clone géré (suivi et non suivi, sans les fichiers ignorés, jamais poussé) plus `jobs/<id>/instantane.json` ; gardé tant que le clone existe (ADR 0014).
+
 **Session serveur** (aussi **session navigateur**) — l’authentification web au cockpit : cookie httpOnly + registre côté instance (~7 jours) ; distincte de la **session** agent ci-dessus. Créée au login, coupée à la déconnexion ou au changement du mot de passe cockpit (ADR 0010).
 
 **Activité** — ce que fait une session ouverte, remonté par les hooks des agents : *travaille*, *attend* (réponse attendue, avec le dernier skill s’il est connu) ou *inconnue* (valeur de départ, ou agent sans hooks) (ADR 0007). Le titre de la session est le premier message tapé, sinon le nom de l’agent.
