@@ -54,24 +54,24 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
   const [diffs, setDiffs] = useState<Record<string, Diff>>({});
 
   const lireIdentite = () =>
-    lireCodespace<IdentiteCodespace>(id, "").then(setIdentite, (erreur: Error) =>
+    void lireCodespace<IdentiteCodespace>(id, "").then(setIdentite, (erreur: Error) =>
       setIdentite({ erreur: erreur.message }),
     );
 
   const charger = (chemin: string) =>
-    lireCodespace<ArbreCodespace>(id, "/arbre", chemin).then(
+    void lireCodespace<ArbreCodespace>(id, "/arbre", chemin).then(
       (arbre) => setDossiers((d) => ({ ...d, [chemin]: arbre.entrees })),
       (erreur: Error) => setDossiers((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
     );
 
   const lireFichier = (chemin: string) =>
-    lireCodespace<FichierCodespace>(id, "/fichier", chemin).then(
+    void lireCodespace<FichierCodespace>(id, "/fichier", chemin).then(
       (fichier) => setFichiers((f) => ({ ...f, [chemin]: fichier })),
       (erreur: Error) => setFichiers((f) => ({ ...f, [chemin]: { erreur: erreur.message } })),
     );
 
   const lireDiff = (chemin: string) =>
-    lireCodespace<DiffCodespace>(id, "/diff", chemin).then(
+    void lireCodespace<DiffCodespace>(id, "/diff", chemin).then(
       (diff) => setDiffs((d) => ({ ...d, [chemin]: diff })),
       (erreur: Error) => setDiffs((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
     );
@@ -462,7 +462,7 @@ function dossiersVisibles(deplies: ReadonlySet<string>): string[] {
     const parties = chemin.split("/");
     return parties.every((_, i) => deplies.has(parties.slice(0, i + 1).join("/")));
   };
-  return ["", ...[...deplies].filter(visible).sort()];
+  return ["", ...[...deplies].filter(visible).sort((a, b) => a.localeCompare(b))];
 }
 
 /** `dossier` est `chemin` ou l’un de ses sous-dossiers. */

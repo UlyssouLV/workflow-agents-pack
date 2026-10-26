@@ -124,7 +124,7 @@ class Relecture:
             etat["pris_le"] = self._lu["pris_le"]
             if self.etat == ERREUR:
                 etat["erreur"] = self._lu["erreur"]
-        complet = self._lu if self.etat in (PRESENT, PERDU) else {}
+        complet = self._lu if self._lu is not None and self.etat in (PRESENT, PERDU) else {}
         head = complet.get("head")
         return {
             "repo": self._session["repo"],
