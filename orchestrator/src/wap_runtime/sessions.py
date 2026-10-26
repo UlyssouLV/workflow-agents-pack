@@ -22,6 +22,8 @@ from wap_runtime.enregistrement import CAST, TRANSCRIPTION, copier_transcription
 from wap_runtime.fichiers import remplacer
 
 OUVERTE, TERMINEE, ECHOUEE, INTERROMPUE = "ouverte", "terminée", "échouée", "interrompue"
+# Close par **Terminer** : un arrêt humain, pas un échec de l’agent.
+ARRETEE = "arrêtée"
 # Close par l’ouverture de la suivante (ADR 0006) : `suivante` la désigne.
 ENCHAINEE = "enchaînée"
 # Activité d’une session ouverte : hooks → `wap-runtime etat`.
@@ -148,17 +150,22 @@ class Sessions:
             None,
         )
 
+    def demander_arret(self, id_: str) -> None:
+        """**Terminer**, avant de couper le terminal : la clôture qui suit rend la session `arrêtée`,
+        quel que soit le code de sortie de l’agent. Une session close ne change pas."""
+        if (lue := self.lire(id_)) is not None and lue["etat"] == OUVERTE:
+            self._ecrire({**lue, "arret_demande": True})
+
     def clore(self, id_: str, code: int) -> dict:
         """Une session déjà close garde son état final."""
         if (lue := self.lire(id_))["etat"] != OUVERTE:
             return lue
         fin = self._figer(lue)
-        session = {
-            **lue,
-            "fin": fin.isoformat(),
-            "etat": TERMINEE if code == 0 else ECHOUEE,
-            "code_sortie": code,
-        }
+        if lue.get("arret_demande"):
+            etat = ARRETEE
+        else:
+            etat = TERMINEE if code == 0 else ECHOUEE
+        session = {**lue, "fin": fin.isoformat(), "etat": etat, "code_sortie": code}
         self._ecrire(session)
         return session
 

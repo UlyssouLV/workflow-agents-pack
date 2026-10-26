@@ -4,8 +4,9 @@ puis relu par le codespace d’une session close.
 La prise passe par un index provisoire (`GIT_INDEX_FILE`) : l’arbre de travail, l’index, la branche
 et le distant ne changent pas. Le commit (parent : HEAD, aucun sans commit) va sous
 `refs/wap/sessions/<id>`, hors de `refs/heads/` : jamais poussé. `jobs/<id>/instantane.json` dit
-`sha`, `head`, `branche`, `pris_le` et `ignores` (les entrées ignorées par dossier, non conservées),
-ou `pris_le` et `erreur`.
+`sha`, `head`, `branche`, `pris_le`, `ignores` (les entrées ignorées par dossier, non conservées) et
+`non_suivis` (fichiers et dossiers non suivis, que le commit ne distingue pas des ajoutés), ou
+`pris_le` et `erreur`.
 """
 
 import json
@@ -22,6 +23,7 @@ from wap_runtime.codespace import (
     FICHIER,
     LIEN,
     MODIFIE,
+    NON_SUIVI,
     STATUTS,
     TAILLE_MAX,
     CheminRefuse,
@@ -77,11 +79,13 @@ def _figer(clone: Path, id_: str) -> dict:
     sha = _git(clone, AUTEUR, "commit-tree", arbre, *parent, "-m", f"instantané session {id_}")
     _git(clone, {}, "update-ref", ref(id_), sha)
     ignores = _git(clone, {}, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
+    non_suivis = _git(clone, {}, "ls-files", "--others", "--exclude-standard", "--directory", "-z")
     return {
         "sha": sha,
         "head": head,
         "branche": _git_ou_none(clone, "symbolic-ref", "--short", "--quiet", "HEAD"),
         "ignores": _par_dossier(filter(None, ignores.split("\0"))),
+        "non_suivis": sorted(filter(None, non_suivis.split("\0"))),
     }
 
 
@@ -230,9 +234,11 @@ class Relecture:
         return sortie.stdout
 
     def _marquer(self, relatif: str, entrees: list[dict]) -> None:
-        """Statut par rapport au HEAD de l’époque (sans HEAD : tout est ajouté) ; un dossier prend le
-        plus fort de ce qu’il contient."""
+        """Statut par rapport au HEAD de l’époque (sans HEAD : tout est ajouté), un ajouté non suivi à
+        la prise restant non suivi ; un dossier prend le plus fort de ce qu’il contient."""
         par_nom = {e["nom"]: e for e in entrees}
+        # Avant la liste des non suivis (premiers instantanés de la 0.8.0) : tout est ajouté.
+        non_suivis = self._lu.get("non_suivis", [])
         prefixe = relatif + "/" if relatif else ""
         sortie = self._git(
             "diff-tree", "--no-commit-id", "-r", "-z", "--no-renames", "--name-status", "--root", self._sha,
@@ -244,7 +250,12 @@ class Relecture:
             if not lettre or not chemin.startswith(prefixe):
                 continue
             entree = par_nom.get(chemin.removeprefix(prefixe).split("/")[0])
-            statut = AJOUTE if lettre == "A" else MODIFIE
+            if lettre != "A":
+                statut = MODIFIE
+            elif any(chemin == n or (n.endswith("/") and chemin.startswith(n)) for n in non_suivis):
+                statut = NON_SUIVI
+            else:
+                statut = AJOUTE
             if entree is not None and (
                 entree["statut"] is None or STATUTS.index(statut) < STATUTS.index(entree["statut"])
             ):

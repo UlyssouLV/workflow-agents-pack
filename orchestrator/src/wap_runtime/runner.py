@@ -420,6 +420,7 @@ class Runner:
         session = self._sessions.lire(id_)
         if session is None or session["etat"] != OUVERTE:
             return session
+        self._sessions.demander_arret(id_)
         self._arreteur(nom_tmux(id_))
         limite = time.monotonic() + self._attente
         while time.monotonic() < limite:

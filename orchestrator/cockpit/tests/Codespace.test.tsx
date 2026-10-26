@@ -116,10 +116,10 @@ describe("codespace en direct", () => {
     expect(entete).toHaveTextContent("o/r");
     expect(entete).toHaveTextContent("v0.8.0-codespace");
     expect(entete).toHaveTextContent("ea80c15");
-    expect(within(entete).getByRole("link", { name: "v0.8.0-codespace" })).toHaveAttribute(
-      "href",
-      "https://github.com/o/r/tree/v0.8.0-codespace",
-    );
+    const lien = within(entete).getByRole("link", { name: "v0.8.0-codespace" });
+    expect(lien).toHaveAttribute("href", "https://github.com/o/r/tree/v0.8.0-codespace");
+    expect(lien).toHaveAttribute("target", "_blank");
+    expect(lien).toHaveAttribute("rel", "noopener noreferrer");
   });
 
   it("arborescence : racine, .git et ignorés listés ; les ignorés grisés", async () => {

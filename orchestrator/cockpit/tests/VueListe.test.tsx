@@ -96,6 +96,15 @@ describe("vue liste", () => {
     expect(within(ligne).queryByText("En pause")).toBeNull();
   });
 
+  it("montre une session arrêtée par Terminer sur la liste", async () => {
+    simulerApi({ "/api/repos": liste({ repos: [repo({ pilote: true, pilote_stop: "arretee" })] }) });
+
+    render(<VueListe />);
+
+    const [ligne] = await lignes();
+    expect(within(ligne).getByText("Session arrêtée")).toBeInTheDocument();
+  });
+
   it("montre humain requis et échec de lancement sur la liste", async () => {
     simulerApi({
       "/api/repos": liste({

@@ -252,7 +252,11 @@ function EnteteCodespace({ identite }: { identite: IdentiteCodespace | { erreur:
     <p role="group" aria-label="Identité du codespace" className="identite-codespace">
       <strong>{repo}</strong> · branche{" "}
       {branche ? (
-        <a href={`https://github.com/${repo}/tree/${branche.split("/").map(encodeURIComponent).join("/")}`}>
+        <a
+          href={`https://github.com/${repo}/tree/${branche.split("/").map(encodeURIComponent).join("/")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           {branche}
         </a>
       ) : (

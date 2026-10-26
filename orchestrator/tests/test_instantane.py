@@ -56,6 +56,7 @@ def salir(clone) -> None:
     git(clone, "add", "src/ajout.py")
     (clone / "docs").mkdir()
     (clone / "docs" / "notes.md").write_text("brouillon\n")
+    (clone / "src" / "brouillon.py").write_text("b = 2\n")
     (clone / "src" / "vieux.py").unlink()
     (clone / "node_modules" / "paquet").mkdir(parents=True)
     (clone / "node_modules" / "paquet" / "index.js").write_text("module.exports = 1;\n")
@@ -111,11 +112,23 @@ def test_instantane_pris_a_la_fermeture(sessions, session, clone, jobs, code, et
         "branche": BRANCHE,
         "pris_le": FIN.isoformat(),
         "ignores": {"": [".env", "node_modules/"], "src": ["__pycache__/"]},
+        "non_suivis": ["docs/", "src/brouillon.py"],
     }
     assert git(clone, "rev-parse", f"{sha}^") == head
     fichiers = git(clone, "ls-tree", "-r", "--name-only", sha).splitlines()
-    assert sorted(fichiers) == [".gitignore", "README.md", "docs/notes.md", "src/ajout.py", "src/app.py"]
+    assert sorted(fichiers) == [".gitignore", "README.md", "docs/notes.md", "src/ajout.py", "src/app.py", "src/brouillon.py"]
     assert git(clone, "show", f"{sha}:README.md") == "# r modifié"
+
+
+def test_instantane_pris_a_l_arret(sessions, session, clone, jobs):
+    """**Terminer** : la session passe `arrêtée` et laisse son instantané, comme les autres fins."""
+    salir(clone)
+
+    sessions.demander_arret(session["id"])
+    close = sessions.clore(session["id"], 129)
+
+    assert close["etat"] == "arrêtée"
+    assert instantane(jobs, session)["sha"] == git(clone, "rev-parse", f"refs/wap/sessions/{session['id']}")
 
 
 def test_la_prise_ne_change_ni_arbre_ni_index_ni_branche_ni_distant(sessions, session, clone):
@@ -249,15 +262,27 @@ def test_arbre_de_l_instantane_avec_marqueurs_et_non_conserves(client, close):
         "nom": "README.md", "type": "fichier", "taille": len("# r modifié\n".encode()),
         "statut": "modifie", "ignore": False, "non_conserve": False,
     }
-    assert racine["docs"]["statut"] == "ajoute"
+    assert racine["docs"]["statut"] == "non_suivi"
     assert racine["src"]["statut"] == "modifie"
     assert src["ajout.py"]["statut"] == "ajoute"
+    assert src["brouillon.py"]["statut"] == "non_suivi"
     assert src["app.py"]["statut"] is None
     assert "vieux.py" not in src
     for nom in (".git", "node_modules"):
         assert (racine[nom]["type"], racine[nom]["non_conserve"]) == ("dossier", True)
     assert (racine[".env"]["type"], racine[".env"]["ignore"], racine[".env"]["non_conserve"]) == ("fichier", True, True)
     assert src["__pycache__"]["non_conserve"] is True
+
+
+def test_instantane_sans_liste_des_non_suivis_les_marque_ajoutes(client, close, jobs):
+    """Instantané pris avant que les non suivis soient notés : tout ce qui manque à HEAD est ajouté."""
+    chemin = jobs / close["id"] / "instantane.json"
+    lu = json.loads(chemin.read_text())
+    del lu["non_suivis"]
+    chemin.write_text(json.dumps(lu))
+
+    assert entrees(client, close)["docs"]["statut"] == "ajoute"
+    assert entrees(client, close, "src")["brouillon.py"]["statut"] == "ajoute"
 
 
 def test_fichier_et_diff_de_l_instantane_par_rapport_au_head_de_l_epoque(client, close):

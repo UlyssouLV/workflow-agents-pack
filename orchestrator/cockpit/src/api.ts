@@ -58,7 +58,7 @@ export interface LienSession {
 
 /** `interrompue` : le runner a redémarré pendant la session. `enchaînée` : close par l’ouverture
  * de sa `suivante`, à la demande de son agent (ADR 0006). */
-export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue" | "enchaînée";
+export type EtatSession = "ouverte" | "terminée" | "arrêtée" | "échouée" | "interrompue" | "enchaînée";
 
 /** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
 export interface Session {
@@ -109,6 +109,7 @@ export interface Repo<V = VersionResume> {
     | "attend"
     | "humain_requis"
     | "echouee"
+    | "arretee"
     | "interrompue"
     | "aucun_eligible"
     | "echec_lancement"

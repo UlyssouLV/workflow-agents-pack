@@ -247,7 +247,7 @@ def test_terminer_arrete_l_agent_et_clot_la_session(client, session, etat_tmux):
 
         assert reponse.status_code == 200
         close = reponse.json()
-        assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
+        assert (close["etat"], close["code_sortie"]) == ("arrêtée", 129)
         assert close["fin"] is not None
         jusqu_a_la_fermeture(ws)
     assert not tmux_tourne(session)
@@ -271,7 +271,7 @@ def test_terminer_force_la_cloture_si_l_agent_ne_s_arrete_pas(tmp_path, jobs):
 
     close = runner.terminer(ouverte["id"])
 
-    assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
+    assert (close["etat"], close["code_sortie"]) == ("arrêtée", 129)
 
 
 def test_terminal_refuse_sur_une_session_close(client, session):

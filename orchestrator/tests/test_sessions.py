@@ -323,6 +323,26 @@ def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path
     assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
 
 
+@pytest.mark.parametrize("code", [129, 0])
+def test_une_session_dont_l_arret_est_demande_se_clot_arretee(sessions, code):
+    """**Terminer** demande l’arrêt avant de couper le terminal : un arrêt humain, pas un échec."""
+    session = creer(sessions)
+
+    sessions.demander_arret(session["id"])
+    close = sessions.clore(session["id"], code)
+
+    assert (close["etat"], close["code_sortie"]) == ("arrêtée", code)
+
+
+def test_demander_l_arret_d_une_session_close_ne_change_rien(sessions):
+    session = creer(sessions)
+    close = sessions.clore(session["id"], 1)
+
+    sessions.demander_arret(session["id"])
+
+    assert sessions.lire(session["id"]) == close
+
+
 def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path, faux_claude):
     """L’agent écrit dans un vrai terminal ; ce qu’il affiche va aussi dans `terminal.cast`."""
     session = creer(sessions)
