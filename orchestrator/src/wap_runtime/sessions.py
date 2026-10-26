@@ -3,9 +3,9 @@
 Le runner les crée et les clôt ; le `runtime` les lit (l’instance lui est montée en lecture
 seule). Rien n’est supprimé automatiquement.
 
-`python -m wap_runtime.sessions <jobs> <id>` : lancé dans la session tmux, exécute l’agent de
-la session sur son ticket en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription puis clôt la
-session selon son code de sortie.
+`python -m wap_runtime.sessions <jobs> <id> [<clones>]` : lancé dans la session tmux, exécute l’agent
+de la session sur son ticket en l’enregistrant (`wap_runtime.enregistrement`), copie sa transcription
+puis clôt la session selon son code de sortie (avec son instantané si `<clones>` est donné).
 """
 
 import json
@@ -44,10 +44,16 @@ def publique(session: dict) -> dict:
 
 class Sessions:
     def __init__(
-        self, jobs: Path, horloge: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+        self,
+        jobs: Path,
+        horloge: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        clones: Path | None = None,
     ):
+        """`clones` : le dossier des clones gérés (le runner) ; une session qui s’y ferme laisse
+        son instantané (`wap_runtime.instantane`). Sans lui (le `runtime`, les lectures), aucun."""
         self.jobs = jobs
         self._horloge = horloge
+        self._clones = clones
 
     def creer(
         self,
@@ -146,9 +152,10 @@ class Sessions:
         """Une session déjà close garde son état final."""
         if (lue := self.lire(id_))["etat"] != OUVERTE:
             return lue
+        fin = self._figer(lue)
         session = {
             **lue,
-            "fin": self._horloge().isoformat(),
+            "fin": fin.isoformat(),
             "etat": TERMINEE if code == 0 else ECHOUEE,
             "code_sortie": code,
         }
@@ -185,7 +192,9 @@ class Sessions:
     def enchainer(self, id_: str, suivante: str) -> dict:
         """La session ouverte `id_` passe `enchaînée` vers `suivante` ; l’exécuteur, en la clôturant
         ensuite, lui laisse cet état."""
-        session = {**self.lire(id_), "fin": self._horloge().isoformat(), "etat": ENCHAINEE, "suivante": suivante}
+        lue = self.lire(id_)
+        fin = self._figer(lue)
+        session = {**lue, "fin": fin.isoformat(), "etat": ENCHAINEE, "suivante": suivante}
         self._ecrire(session)
         return session
 
@@ -195,10 +204,21 @@ class Sessions:
         interrompues = []
         for session in self.toutes():
             if session["etat"] == OUVERTE:
-                session = {**session, "fin": self._horloge().isoformat(), "etat": INTERROMPUE}
+                fin = self._figer(session)
+                session = {**session, "fin": fin.isoformat(), "etat": INTERROMPUE}
                 self._ecrire(session)
                 interrompues.append(session)
         return interrompues
+
+    def _figer(self, session: dict) -> datetime:
+        """L’instantané de la session qui se ferme, avant son état final : une session close a
+        déjà le sien. Rend l’heure de fin."""
+        fin = self._horloge()
+        if self._clones is not None:
+            from wap_runtime.instantane import prendre
+
+            prendre(self._clones / session["repo"], self.jobs / session["id"], session["id"], fin)
+        return fin
 
     def _ecrire(self, session: dict) -> None:
         # Le `runtime` lit ce fichier pendant que le runner le réécrit.
@@ -206,7 +226,7 @@ class Sessions:
         remplacer(self.jobs / session["id"] / "session.json", contenu, 0o644)
 
 
-def executer(jobs: Path, id_: str) -> int:
+def executer(jobs: Path, id_: str, clones: Path | None = None) -> int:
     """L’agent hérite de la taille et de la saisie du terminal (tmux) ; rend son code de sortie,
     une fois le terminal enregistré, la transcription copiée et la session close.
 
@@ -221,9 +241,9 @@ def executer(jobs: Path, id_: str) -> int:
     code = enregistrer(commande_agent(agent, ticket, session.get("modele")), jobs / id_ / CAST)
     depuis = datetime.fromisoformat(session["debut"]).timestamp()
     copier_transcription(session["agent"], Path.home(), depuis, jobs / id_ / TRANSCRIPTION)
-    Sessions(jobs).clore(id_, code)
+    Sessions(jobs, clones=clones).clore(id_, code)
     return code
 
 
 if __name__ == "__main__":
-    sys.exit(executer(Path(sys.argv[1]), sys.argv[2]))
+    sys.exit(executer(Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3]) if len(sys.argv) > 3 else None))

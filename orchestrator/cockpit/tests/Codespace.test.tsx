@@ -515,3 +515,83 @@ describe("codespace mis à jour en direct", () => {
     expect(appels(fetch, `${API}/codespace`)).toBeGreaterThan(1);
   });
 });
+
+describe("codespace d’une session close : l’instantané", () => {
+  const PRIS_LE = "2026-10-26T15:30:00+00:00";
+
+  function apiInstantane(identite: Record<string, unknown>, routes: Record<string, unknown> = {}) {
+    return api({
+      [API]: session({ etat: "terminée", fin: PRIS_LE, code_sortie: 0 }),
+      [`${API}/codespace`]: { repo: "o/r", branche: "v0.8.0-codespace", head: "ea80c15", source: "instantane", ...identite },
+      ...routes,
+    });
+  }
+
+  const PRESENT = { instantane: { etat: "present", pris_le: PRIS_LE } };
+
+  it("bandeau daté, branche et HEAD de l’époque, sans surveillance", async () => {
+    apiInstantane(PRESENT);
+    const vue = await ouvrirCodespace();
+
+    expect(await within(vue).findByRole("status")).toHaveTextContent(
+      `Instantané de fin de session — ${new Date(PRIS_LE).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`,
+    );
+    const entete = within(vue).getByRole("group", { name: "Identité du codespace" });
+    expect(entete).toHaveTextContent("v0.8.0-codespace");
+    expect(entete).toHaveTextContent("ea80c15");
+    await within(arbre()).findByRole("treeitem", { name: "README.md" });
+    expect(evenements()).toEqual([]);
+  });
+
+  it("entrées ignorées et .git/ grisées « non conservé », ni dépliables ni ouvrables", async () => {
+    apiInstantane(PRESENT, {
+      [`${API}/codespace/arbre?chemin=`]: {
+        chemin: "",
+        entrees: [
+          entree(".git", { type: "dossier", taille: null, non_conserve: true }),
+          entree("node_modules", { type: "dossier", taille: null, ignore: true, non_conserve: true }),
+          entree(".env", { taille: null, ignore: true, non_conserve: true }),
+          entree("README.md", { taille: 4, statut: "modifie", non_conserve: false }),
+        ],
+      },
+    });
+    await ouvrirCodespace();
+
+    for (const nom of [".git", "node_modules", ".env"]) {
+      const item = await within(arbre()).findByRole("treeitem", { name: nom });
+      expect(item).toHaveClass("non-conserve");
+      expect(item).toHaveTextContent("non conservé");
+      expect(within(item).queryByRole("button")).toBeNull();
+    }
+    expect(within(arbre()).getByRole("treeitem", { name: "README.md" })).toHaveTextContent("M");
+  });
+
+  it("diff d’un fichier par rapport au HEAD de l’époque", async () => {
+    apiInstantane(PRESENT, {
+      [`${API}/codespace/arbre?chemin=`]: { chemin: "", entrees: [entree("README.md", { statut: "modifie" })] },
+      [`${API}/codespace/diff?chemin=README.md`]: { chemin: "README.md", head: "# r\n", courant: "# r modifié\n" },
+    });
+    await ouvrirCodespace();
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "README.md" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Diff avec HEAD" }));
+
+    await waitFor(() => expect(FauxMonaco.editeursDiff[0]?.modele?.modified.getValue()).toBe("# r modifié\n"));
+    expect(FauxMonaco.editeursDiff[0].modele?.original.getValue()).toBe("# r\n");
+  });
+
+  it.each([
+    [{ instantane: { etat: "absent" } }, "Pas d’instantané (session antérieure à la 0.8.0)"],
+    [{ instantane: { etat: "perdu", pris_le: PRIS_LE } }, "Instantané perdu : le clone a été supprimé ou recloné depuis"],
+    [
+      { instantane: { etat: "erreur", pris_le: PRIS_LE, erreur: "git add a échoué" } },
+      "Instantané non pris : git add a échoué",
+    ],
+  ])("sans instantané lisible : son message, pas d’arbre (%o)", async (identite, message) => {
+    apiInstantane(identite);
+    const vue = await ouvrirCodespace();
+
+    expect(await within(vue).findByRole("status")).toHaveTextContent(message);
+    expect(screen.queryByRole("tree", { name: "Fichiers du codespace" })).toBeNull();
+  });
+});

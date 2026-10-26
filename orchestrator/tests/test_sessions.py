@@ -389,3 +389,24 @@ def test_sessions_d_un_repo_de_la_plus_recente_a_la_plus_ancienne(sessions, horl
     seconde = creer(sessions, repo="O/R")
 
     assert [s["id"] for s in sessions.du_repo("o/r")] == [seconde["id"], premiere["id"]]
+
+
+def test_l_executeur_laisse_l_instantane_du_clone_a_la_fermeture(tmp_path, faux_claude):
+    clones = tmp_path / "clones"
+    clone = clones / "o" / "r"
+    clone.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(clone), "init", "--quiet", "-b", "main"], check=True)
+    session = creer(Sessions(tmp_path / "jobs"))
+    faux_claude(f"import pathlib; pathlib.Path({str(clone / 'neuf.py')!r}).write_text('x = 1\\n')")
+
+    subprocess.run(
+        [*executeur(tmp_path, session), str(clones)], stdin=subprocess.DEVNULL, capture_output=True, check=True
+    )
+
+    instantane = json.loads((tmp_path / "jobs" / session["id"] / "instantane.json").read_text())
+    fichiers = subprocess.run(
+        ["git", "-C", str(clone), "ls-tree", "--name-only", instantane["sha"]],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert fichiers == ["neuf.py"]
+    assert Sessions(tmp_path / "jobs").lire(session["id"])["etat"] == "terminée"

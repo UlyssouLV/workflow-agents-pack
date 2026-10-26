@@ -148,7 +148,8 @@ class Runner:
         passent `interrompue`.
         """
         self._clones = clones
-        self._sessions = Sessions(jobs)
+        # Une session qui se ferme laisse son instantané dans son clone (ADR 0014).
+        self._sessions = Sessions(jobs, clones=clones)
         self._sessions.interrompre()
         self._lanceur = lanceur
         self._depot = depot
@@ -371,7 +372,7 @@ class Runner:
         # environnement, hors de `session.json` que le cockpit lit.
         executeur = [
             "env", f"WAP_ENCHAINER={ENCHAINER}", f"WAP_SESSION={id_}", f"WAP_SESSION_JETON={jeton}",
-            sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), id_,
+            sys.executable, "-m", "wap_runtime.sessions", str(self._sessions.jobs), id_, str(self._clones),
         ]
         try:
             self._lanceur(nom_tmux(id_), executeur, dossier)
@@ -383,6 +384,19 @@ class Runner:
 
     def session(self, id_: str) -> dict | None:
         return self._sessions.lire(id_)
+
+    def codespace_de(self, id_: str):
+        """Le codespace de la session `id_` : le clone en direct si elle est ouverte, son instantané
+        (`Relecture`) sinon ; `CodespaceErreur` si la session est inconnue."""
+        from wap_runtime.codespace import CodespaceErreur, Direct
+        from wap_runtime.instantane import Relecture
+
+        session = self._sessions.lire(id_)
+        if session is None:
+            raise CodespaceErreur(f"session {id_} inconnue")
+        if session["etat"] == OUVERTE:
+            return Direct(self.clone_de(id_)[1], session["repo"])
+        return Relecture(session, self._clones / session["repo"], self._sessions.jobs / id_)
 
     def clone_de(self, id_: str) -> tuple[dict, Path]:
         """La session ouverte `id_` et son clone, pour le codespace en direct ; `CodespaceErreur`
@@ -804,25 +818,22 @@ def creer_app_runner(runner: Runner):
         except RunnerErreur as erreur:
             return JSONResponse({"detail": str(erreur)}, status_code=422)
 
+    # Session ouverte : le clone en direct ; close : son instantané (source `instantane`).
     @app.get("/sessions/{id_}/codespace")
     def codespace(id_: str) -> dict:
-        session, dossier = _codespace(id_)
-        return codespace_.identite(dossier, session["repo"])
+        return _lire(_codespace(id_).identite)
 
     @app.get("/sessions/{id_}/codespace/arbre")
     def arbre(id_: str, chemin: str = "") -> dict:
-        _, dossier = _codespace(id_)
-        return {"chemin": chemin, "entrees": _lire(codespace_.arbre, dossier, chemin)}
+        return {"chemin": chemin, "entrees": _lire(_codespace(id_).arbre, chemin)}
 
     @app.get("/sessions/{id_}/codespace/fichier")
     def fichier(id_: str, chemin: str) -> dict:
-        _, dossier = _codespace(id_)
-        return _lire(codespace_.fichier, dossier, chemin)
+        return _lire(_codespace(id_).fichier, chemin)
 
     @app.get("/sessions/{id_}/codespace/diff")
     def diff(id_: str, chemin: str) -> dict:
-        _, dossier = _codespace(id_)
-        return _lire(codespace_.diff, dossier, chemin)
+        return _lire(_codespace(id_).diff, chemin)
 
     @app.websocket("/sessions/{id_}/codespace/evenements")
     async def evenements(websocket: WebSocket, id_: str) -> None:
@@ -836,8 +847,8 @@ def creer_app_runner(runner: Runner):
         await websocket.accept()
         await codespace_.pousser_evenements(websocket, dossier)
 
-    def _codespace(id_: str) -> tuple[dict, Path]:
-        return _lire(runner.clone_de, id_)
+    def _codespace(id_: str):
+        return _lire(runner.codespace_de, id_)
 
     def _lire(lecture, *args):
         """Une lecture du codespace ; son refus devient la réponse HTTP (400, 404)."""

@@ -179,7 +179,9 @@ def test_session_inconnue_404(client):
 def test_session_close_pas_de_codespace_en_direct(client, session, jobs):
     Sessions(jobs).clore(session["id"], 0)
 
-    assert codespace(client, session).status_code == 404
+    # Son instantané à la place (`test_instantane`) ; ici, il n’y en a pas.
+    assert codespace(client, session).json()["source"] == "instantane"
+    assert codespace(client, session, "/arbre").status_code == 404
 
 
 def test_clone_absent_404(client, jobs):

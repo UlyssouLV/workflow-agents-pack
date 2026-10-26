@@ -197,7 +197,13 @@ function Contenu({
       <div role="tabpanel" id="panneau-codespace" aria-labelledby="onglet-codespace" hidden={onglet !== "codespace"}>
         {codespaceVu && (
           <Suspense fallback={<p className="etat-terminal">Chargement du codespace…</p>}>
-            <Codespace id={session.id} visible={onglet === "codespace"} />
+            {/* Remonté à la fermeture : la vue passe du clone en direct à l’instantané. */}
+            <Codespace
+              key={String(session.etat === "ouverte")}
+              id={session.id}
+              visible={onglet === "codespace"}
+              enDirect={session.etat === "ouverte"}
+            />
           </Suspense>
         )}
       </div>

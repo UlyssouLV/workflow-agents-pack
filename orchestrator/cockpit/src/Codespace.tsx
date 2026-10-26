@@ -4,12 +4,14 @@ import type {
   ArbreCodespace,
   DiffCodespace,
   EntreeCodespace,
+  EtatInstantane,
   EvenementCodespace,
   FichierCodespace,
   IdentiteCodespace,
   StatutGit,
 } from "./api";
 import { lireCodespace, urlEvenementsCodespace } from "./api";
+import { dateHeure } from "./commun";
 import { monaco } from "./monaco";
 
 /** Un dossier chargé (ses entrées), ou le refus du runtime. */
@@ -35,8 +37,11 @@ export const POLLING_CODESPACE_MS = 10_000;
  *
  * En direct, comme VS Code : tant qu’elle est `visible`, la vue s’abonne aux dossiers dépliés et
  * au fichier ouvert, et les relit à chaque changement poussé par le runner ; sans surveillance,
- * elle se relit toutes les `POLLING_CODESPACE_MS`. */
-export function Codespace({ id, visible = true }: { id: string; visible?: boolean }) {
+ * elle se relit toutes les `POLLING_CODESPACE_MS`.
+ *
+ * Session close (`enDirect` faux) : la même vue, lue dans l’instantané de fin de session, sans
+ * surveillance ; un bandeau daté, et les entrées ignorées et `.git/` grisées « non conservé ». */
+export function Codespace({ id, visible = true, enDirect = true }: { id: string; visible?: boolean; enDirect?: boolean }) {
   const [identite, setIdentite] = useState<IdentiteCodespace | { erreur: string } | null>(null);
   const [dossiers, setDossiers] = useState<Record<string, Dossier>>({});
   const [deplies, setDeplies] = useState<ReadonlySet<string>>(new Set());
@@ -133,7 +138,7 @@ export function Codespace({ id, visible = true }: { id: string; visible?: boolea
   const socket = useRef<WebSocket | null>(null);
   const dejaVisible = useRef(false);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !enDirect) return;
     const tout = { dossiers: [], fichier: true, entete: true };
     // De retour sur l’onglet : rien n’a été surveillé entre-temps.
     if (dejaVisible.current) relire(tout);
@@ -157,7 +162,7 @@ export function Codespace({ id, visible = true }: { id: string; visible?: boolea
       socket.current = null;
       clearInterval(polling);
     };
-  }, [id, visible]);
+  }, [id, visible, enDirect]);
 
   const cle = JSON.stringify(abonnement);
   useEffect(() => {
@@ -176,48 +181,67 @@ export function Codespace({ id, visible = true }: { id: string; visible?: boolea
   };
 
   const diffActif = actif !== null && enDiff.has(actif);
+  const instantane = identite !== null && !("erreur" in identite) && identite.source === "instantane" ? identite.instantane : null;
 
   return (
     <div className="codespace">
+      {instantane?.etat === "present" && (
+        <p role="status" className="bandeau-instantane">
+          Instantané de fin de session — {dateHeure(instantane.pris_le)}
+        </p>
+      )}
       <EnteteCodespace identite={identite} />
-      <div className="codespace-corps">
-        <ul role="tree" aria-label="Fichiers du codespace" className="arbre">
-          <Entrees chemin="" dossiers={dossiers} deplies={deplies} basculer={basculer} ouvrir={ouvrir} />
-        </ul>
-        <section aria-label="Fichier" className="codespace-fichier">
-          {ouverts.length > 0 && (
-            <div role="tablist" aria-label="Fichiers ouverts" className="onglets-fichiers">
-              {ouverts.map((chemin) => (
-                <span key={chemin} className="onglet-fichier">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={chemin === actif}
-                    title={chemin}
-                    onClick={() => activer(chemin)}
-                  >
-                    {nomDe(chemin)}
-                  </button>
-                  <button type="button" aria-label={`Fermer ${nomDe(chemin)}`} onClick={() => fermer(chemin)}>
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {actif !== null && statuts[actif] && (
-            <button type="button" className="bouton-diff" aria-pressed={diffActif} onClick={() => basculerDiff(actif)}>
-              Diff avec HEAD
-            </button>
-          )}
-          {actif !== null && (diffActif ? <EtatDiff diff={diffs[actif]} /> : <EtatFichier fichier={fichiers[actif]} />)}
-          {/* Gardé monté d’un fichier à l’autre : seul le modèle change. */}
-          {actif !== null && <EditeurMonaco fichier={diffActif ? null : texte(fichiers[actif])} />}
-          {diffActif && <EditeurDiff diff={versions(diffs[actif])} />}
-        </section>
-      </div>
+      {instantane && instantane.etat !== "present" ? (
+        <p role="status" className="etat-terminal">
+          {sansInstantane(instantane)}
+        </p>
+      ) : (
+        <div className="codespace-corps">
+          <ul role="tree" aria-label="Fichiers du codespace" className="arbre">
+            <Entrees chemin="" dossiers={dossiers} deplies={deplies} basculer={basculer} ouvrir={ouvrir} />
+          </ul>
+          <section aria-label="Fichier" className="codespace-fichier">
+            {ouverts.length > 0 && (
+              <div role="tablist" aria-label="Fichiers ouverts" className="onglets-fichiers">
+                {ouverts.map((chemin) => (
+                  <span key={chemin} className="onglet-fichier">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={chemin === actif}
+                      title={chemin}
+                      onClick={() => activer(chemin)}
+                    >
+                      {nomDe(chemin)}
+                    </button>
+                    <button type="button" aria-label={`Fermer ${nomDe(chemin)}`} onClick={() => fermer(chemin)}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {actif !== null && statuts[actif] && (
+              <button type="button" className="bouton-diff" aria-pressed={diffActif} onClick={() => basculerDiff(actif)}>
+                Diff avec HEAD
+              </button>
+            )}
+            {actif !== null && (diffActif ? <EtatDiff diff={diffs[actif]} /> : <EtatFichier fichier={fichiers[actif]} />)}
+            {/* Gardé monté d’un fichier à l’autre : seul le modèle change. */}
+            {actif !== null && <EditeurMonaco fichier={diffActif ? null : texte(fichiers[actif])} />}
+            {diffActif && <EditeurDiff diff={versions(diffs[actif])} />}
+          </section>
+        </div>
+      )}
     </div>
   );
+}
+
+/** Pourquoi une session close n’a pas d’instantané à montrer. */
+function sansInstantane(instantane: Exclude<EtatInstantane, { etat: "present" }>): string {
+  if (instantane.etat === "absent") return "Pas d’instantané (session antérieure à la 0.8.0)";
+  if (instantane.etat === "perdu") return "Instantané perdu : le clone a été supprimé ou recloné depuis";
+  return `Instantané non pris : ${instantane.erreur}`;
 }
 
 function EnteteCodespace({ identite }: { identite: IdentiteCodespace | { erreur: string } | null }) {
@@ -267,10 +291,16 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
         aria-label={entree.nom}
         aria-expanded={entree.type === "dossier" ? deplie : undefined}
         className={
-          [entree.ignore && "ignore", entree.statut && `statut-${entree.statut}`].filter(Boolean).join(" ") || undefined
+          [entree.ignore && "ignore", entree.non_conserve && "non-conserve", entree.statut && `statut-${entree.statut}`]
+            .filter(Boolean)
+            .join(" ") || undefined
         }
       >
-        {entree.type === "lien" ? (
+        {entree.non_conserve ? (
+          <>
+            <span>{entree.nom}</span> <span className="raison">non conservé</span>
+          </>
+        ) : entree.type === "lien" ? (
           <>
             <span>{entree.nom}</span> <span className="raison">lien hors du clone</span>
           </>

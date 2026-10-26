@@ -49,6 +49,27 @@ class CheminRefuse(CodespaceErreur):
     code = 400
 
 
+@dataclass(frozen=True)
+class Direct:
+    """Le codespace d’une session ouverte : son clone, lu en direct (même interface que
+    `wap_runtime.instantane.Relecture`)."""
+
+    clone: Path
+    repo: str
+
+    def identite(self) -> dict:
+        return identite(self.clone, self.repo)
+
+    def arbre(self, chemin: str) -> list[dict]:
+        return arbre(self.clone, chemin)
+
+    def fichier(self, chemin: str) -> dict:
+        return fichier(self.clone, chemin)
+
+    def diff(self, chemin: str) -> dict:
+        return diff(self.clone, chemin)
+
+
 def identite(clone: Path, repo: str) -> dict:
     """Repo, branche (`None` si HEAD détaché) et HEAD court (`None` sans commit)."""
     return {

@@ -203,3 +203,13 @@ code {
 .editeur[hidden] {
   display: none;
 }
+.arbre .non-conserve {
+  color: #8c959f;
+  font-style: italic;
+}
+.bandeau-instantane {
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+}

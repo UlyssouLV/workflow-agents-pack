@@ -337,15 +337,23 @@ function urlWebsocket(id: string, suite: string): string {
   return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}${suite}`;
 }
 
-/** `GET /api/sessions/{id}/codespace` : l’identité du clone de la session (`direct` : lu en direct). */
-export interface IdentiteCodespace {
+/** `GET /api/sessions/{id}/codespace` : l’identité du clone de la session (`direct` : lu en direct ;
+ * `instantane` : session close, lue dans son instantané, branche et HEAD de l’époque). */
+export type IdentiteCodespace = {
   repo: string;
   /** `null` : HEAD détaché. */
   branche: string | null;
   /** HEAD court ; `null` sur un clone sans commit. */
   head: string | null;
-  source: "direct";
-}
+} & ({ source: "direct" } | { source: "instantane"; instantane: EtatInstantane });
+
+/** L’instantané d’une session close : lisible (`present`), jamais pris (`absent`, session antérieure
+ * à la 0.8.0), `perdu` (ref absente du clone), ou son `erreur` de prise. */
+export type EtatInstantane =
+  | { etat: "present"; pris_le: string }
+  | { etat: "perdu"; pris_le: string }
+  | { etat: "absent" }
+  | { etat: "erreur"; pris_le: string; erreur: string };
 
 /** Statut Git d’une entrée ; un dossier prend le plus fort de ce qu’il contient. */
 export type StatutGit = "modifie" | "ajoute" | "non_suivi";
@@ -360,6 +368,8 @@ export interface EntreeCodespace {
   ignore: boolean;
   /** `null` : inchangé (ou ignoré). */
   statut: StatutGit | null;
+  /** Instantané : entrée présente à la fin (ignorée, `.git/`) mais dont le contenu n’est pas gardé. */
+  non_conserve?: boolean;
 }
 
 /** `GET /api/sessions/{id}/codespace/arbre?chemin=` : les entrées d’un dossier, chargé à son ouverture. */
