@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
 import {
@@ -15,9 +15,15 @@ import { TerminalEnDirect } from "./TerminalEnDirect";
 
 export { RAFRAICHISSEMENT_SESSION_MS } from "./rafraichi";
 
+// Monaco pèse plusieurs Mo : chargé à la première ouverture de l’onglet seulement.
+const Codespace = lazy(() => import("./Codespace").then((m) => ({ default: m.Codespace })));
+
 /** Clé du `sessionStorage` de l’onglet : la page qui bascule vers la suivante y laisse d’où elle
  * vient et si elle avait la main ; la page de la suivante la lit au chargement. */
 const ENCHAINEMENT = "wap:enchainement";
+
+/** Onglets de la page : `/sessions/<id>` (Terminal) et `/sessions/<id>/codespace`. */
+export type Onglet = "terminal" | "codespace";
 
 interface Enchainement {
   depuis: string;
@@ -50,9 +56,9 @@ function ecrireEnchainement(enchainement: Enchainement | null) {
 }
 
 /** `/sessions/<id>` : état et durée d’une session `/implement`, son terminal tant qu’elle est
- * ouverte, sa relecture ensuite. Ouverte sur cette page puis `enchaînée`, elle bascule vers la
- * suivante. */
-export function VueSession({ id }: { id: string }) {
+ * ouverte, sa relecture ensuite ; à côté, l’onglet Codespace (`/sessions/<id>/codespace`).
+ * Ouverte sur cette page puis `enchaînée`, elle bascule vers la suivante. */
+export function VueSession({ id, onglet = "terminal" }: { id: string; onglet?: Onglet }) {
   const { donnees, erreur } = useRafraichi<Session>(
     `/api/sessions/${encodeURIComponent(id)}`,
     RAFRAICHISSEMENT_SESSION_MS,
@@ -66,13 +72,25 @@ export function VueSession({ id }: { id: string }) {
       <Entete />
       {erreur && <p className="erreur">{erreur}</p>}
       {donnees && (
-        <Contenu session={donnees} arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null} />
+        <Contenu
+          session={donnees}
+          arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null}
+          ongletInitial={onglet}
+        />
       )}
     </main>
   );
 }
 
-function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchainement | null }) {
+function Contenu({
+  session: lue,
+  arrivee,
+  ongletInitial,
+}: {
+  session: Session;
+  arrivee: Enchainement | null;
+  ongletInitial: Onglet;
+}) {
   // Rendue par **Terminer** : plus récente que la dernière lecture.
   const [close, setClose] = useState<Session | null>(null);
   const [refus, setRefus] = useState<string | null>(null);
@@ -83,6 +101,12 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
   // Vue ouverte sur cette page (pas une relecture), et dernier rôle annoncé à l’onglet.
   const vueOuverte = useRef(false);
   const main = useRef(false);
+  const [onglet, choisir] = useOnglet(session.id, ongletInitial);
+  // Monté à la première ouverture de l’onglet, puis gardé (comme le terminal).
+  const [codespaceVu, setCodespaceVu] = useState(ongletInitial === "codespace");
+  useEffect(() => {
+    if (onglet === "codespace") setCodespaceVu(true);
+  }, [onglet]);
 
   useEffect(() => {
     if (session.etat === "ouverte") vueOuverte.current = true;
@@ -129,7 +153,7 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
         <dt>Durée</dt>
         <dd>{duree(session.debut, session.fin)}</dd>
       </dl>
-      {session.etat === "ouverte" ? (
+      {session.etat === "ouverte" && (
         <>
           <p>
             <button type="button" onClick={terminer}>
@@ -141,17 +165,70 @@ function Contenu({ session: lue, arrivee }: { session: Session; arrivee: Enchain
               {refus}
             </p>
           )}
+        </>
+      )}
+      <div role="tablist" aria-label="Vues de la session" className="onglets">
+        {(["terminal", "codespace"] as const).map((o) => (
+          <button
+            key={o}
+            type="button"
+            role="tab"
+            id={`onglet-${o}`}
+            aria-controls={`panneau-${o}`}
+            aria-selected={onglet === o}
+            onClick={() => choisir(o)}
+          >
+            {o === "terminal" ? "Terminal" : "Codespace"}
+          </button>
+        ))}
+      </div>
+      {/* Caché, pas démonté : le websocket reste ouvert et l’onglet garde la Main. */}
+      <div role="tabpanel" id="panneau-terminal" aria-labelledby="onglet-terminal" hidden={onglet !== "terminal"}>
+        {session.etat === "ouverte" ? (
           <TerminalEnDirect
             id={session.id}
             reprendre={arrivee?.main ?? false}
             surRole={(ecriture) => (main.current = ecriture)}
           />
-        </>
-      ) : (
-        <RelectureTerminal id={session.id} />
-      )}
+        ) : (
+          <RelectureTerminal id={session.id} />
+        )}
+      </div>
+      <div role="tabpanel" id="panneau-codespace" aria-labelledby="onglet-codespace" hidden={onglet !== "codespace"}>
+        {codespaceVu && (
+          <Suspense fallback={<p className="etat-terminal">Chargement du codespace…</p>}>
+            <Codespace id={session.id} />
+          </Suspense>
+        )}
+      </div>
     </>
   );
+}
+
+/** L’onglet affiché, suivi dans l’URL sans recharger la page (le terminal reste connecté). */
+function useOnglet(id: string, initial: Onglet): [Onglet, (onglet: Onglet) => void] {
+  const [onglet, setOnglet] = useState(initial);
+  const premier = useRef(true);
+
+  useEffect(() => {
+    const revenir = () => setOnglet(window.location.pathname.replace(/\/$/, "").endsWith("/codespace") ? "codespace" : "terminal");
+    window.addEventListener("popstate", revenir);
+    return () => window.removeEventListener("popstate", revenir);
+  }, []);
+
+  useEffect(() => {
+    // Caché, le terminal n’a pas pu suivre la taille de la fenêtre : il s’y ajuste au retour.
+    if (!premier.current && onglet === "terminal") window.dispatchEvent(new Event("resize"));
+    premier.current = false;
+  }, [onglet]);
+
+  const choisir = (suivant: Onglet) => {
+    if (suivant === onglet) return;
+    const base = `/sessions/${encodeURIComponent(id)}`;
+    window.history.pushState(null, "", suivant === "codespace" ? `${base}/codespace` : base);
+    setOnglet(suivant);
+  };
+  return [onglet, choisir];
 }
 
 function precision(session: Session): string | null {

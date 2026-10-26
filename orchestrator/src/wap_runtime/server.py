@@ -335,6 +335,31 @@ def creer_app(
             raise HTTPException(404, f"aucun enregistrement pour la session {id_}")
         return FileResponse(chemin, media_type="application/x-asciicast")
 
+    def _codespace(id_: str, suite: str, chemin: str | None = None) -> JSONResponse:
+        """Lecture du codespace relayée au runner, seul lecteur des clones (ADR 0014)."""
+        if sessions.lire(id_) is None:
+            raise HTTPException(404, f"session {id_} inconnue")
+        try:
+            statut, corps = client_runner.lire_codespace(id_, suite, chemin)
+        except RunnerErreur as erreur:
+            raise HTTPException(502, str(erreur)) from erreur
+        return JSONResponse(corps, status_code=statut)
+
+    @app.get("/api/sessions/{id_}/codespace")
+    def codespace(id_: str) -> JSONResponse:
+        """Identité du codespace : repo, branche, HEAD court, source."""
+        return _codespace(id_, "")
+
+    @app.get("/api/sessions/{id_}/codespace/arbre")
+    def codespace_arbre(id_: str, chemin: str = "") -> JSONResponse:
+        """Entrées d’un dossier du clone, chargé à son ouverture."""
+        return _codespace(id_, "/arbre", chemin)
+
+    @app.get("/api/sessions/{id_}/codespace/fichier")
+    def codespace_fichier(id_: str, chemin: str) -> JSONResponse:
+        """Contenu d’un fichier du clone, ou « non affiché »."""
+        return _codespace(id_, "/fichier", chemin)
+
     @app.post("/api/sessions", status_code=201, response_model=None)
     def lancer(demande: Lancement, requete: Request) -> dict | JSONResponse:
         _verifier_origine(requete)
@@ -463,6 +488,10 @@ def _servir_front(app: FastAPI, front: Path) -> None:
 
     @app.get("/sessions/{id_}", include_in_schema=False)
     def session(id_: str) -> FileResponse:
+        return FileResponse(index)
+
+    @app.get("/sessions/{id_}/codespace", include_in_schema=False)
+    def codespace(id_: str) -> FileResponse:
         return FileResponse(index)
 
     if (front / "assets").is_dir():

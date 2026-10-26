@@ -384,6 +384,19 @@ class Runner:
     def session(self, id_: str) -> dict | None:
         return self._sessions.lire(id_)
 
+    def clone_de(self, id_: str) -> tuple[dict, Path]:
+        """La session ouverte `id_` et son clone, pour le codespace en direct ; `CodespaceErreur`
+        si la session est inconnue, close ou sans clone."""
+        from wap_runtime.codespace import CodespaceErreur
+
+        session = self._sessions.lire(id_)
+        if session is None or session["etat"] != OUVERTE:
+            raise CodespaceErreur(f"session {id_} inconnue ou close : pas de codespace en direct")
+        dossier = self._clones / session["repo"]
+        if not (dossier / ".git").is_dir():
+            raise CodespaceErreur(f"clone de {session['repo']} absent")
+        return session, dossier
+
     def terminer(self, id_: str) -> dict | None:
         """**Terminer** : arrête l’agent, rend la session close (`None` si inconnue).
 
@@ -613,6 +626,23 @@ class ClientRunner:
         if not reponse.is_success:
             raise RunnerErreur(f"le runner a répondu {reponse.status_code}")
 
+    def lire_codespace(self, id_: str, suite: str, chemin: str | None = None) -> tuple[int, dict]:
+        """`GET /sessions/{id}/codespace{suite}` : le statut et le corps du runner, tels quels.
+
+        `RunnerErreur` si le runner est injoignable ou rend autre chose que du JSON."""
+        import httpx
+
+        if not ID_SESSION.fullmatch(id_) or suite not in ("", "/arbre", "/fichier"):
+            raise RunnerErreur(f"session {id_} inconnue")
+        params = {} if chemin is None else {"chemin": chemin}
+        try:
+            reponse = self._http.get(f"/sessions/{quote(id_, safe='')}/codespace{suite}", params=params)
+            return reponse.status_code, reponse.json()
+        except httpx.HTTPError as erreur:
+            raise RunnerErreur(f"runner injoignable ({erreur})") from erreur
+        except ValueError as erreur:
+            raise RunnerErreur(f"le runner a répondu {reponse.status_code}") from erreur
+
     def url_terminal(self, id_: str) -> str:
         """Websocket du terminal de la session, sur le réseau Compose."""
         if not ID_SESSION.fullmatch(id_):
@@ -662,6 +692,7 @@ def creer_app_runner(runner: Runner):
     from pydantic import BaseModel
 
     from wap_runtime import __version__
+    from wap_runtime import codespace as codespace_
     from wap_runtime.terminal import Ecrivains, relayer
 
     class Lancement(BaseModel):
@@ -771,6 +802,31 @@ def creer_app_runner(runner: Runner):
             return JSONResponse({"detail": str(refus)}, status_code=403)
         except RunnerErreur as erreur:
             return JSONResponse({"detail": str(erreur)}, status_code=422)
+
+    @app.get("/sessions/{id_}/codespace")
+    def codespace(id_: str) -> dict:
+        session, dossier = _codespace(id_)
+        return codespace_.identite(dossier, session["repo"])
+
+    @app.get("/sessions/{id_}/codespace/arbre")
+    def arbre(id_: str, chemin: str = "") -> dict:
+        _, dossier = _codespace(id_)
+        return {"chemin": chemin, "entrees": _lire(codespace_.arbre, dossier, chemin)}
+
+    @app.get("/sessions/{id_}/codespace/fichier")
+    def fichier(id_: str, chemin: str) -> dict:
+        _, dossier = _codespace(id_)
+        return _lire(codespace_.fichier, dossier, chemin)
+
+    def _codespace(id_: str) -> tuple[dict, Path]:
+        return _lire(runner.clone_de, id_)
+
+    def _lire(lecture, *args):
+        """Une lecture du codespace ; son refus devient la réponse HTTP (400, 404)."""
+        try:
+            return lecture(*args)
+        except codespace_.CodespaceErreur as erreur:
+            raise HTTPException(erreur.code, str(erreur)) from erreur
 
     ecrivains = Ecrivains()
 

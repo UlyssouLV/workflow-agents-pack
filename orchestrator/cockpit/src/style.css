@@ -99,3 +99,83 @@ code {
   border: 1px solid #54aeff;
   padding: 0.6rem 0.8rem;
 }
+.onglets {
+  border-bottom: 1px solid #d0d7de;
+  margin: 1rem 0 0.5rem;
+}
+.onglets [role="tab"],
+.onglets-fichiers [role="tab"] {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  padding: 0.3rem 0.8rem;
+}
+.onglets [aria-selected="true"],
+.onglets-fichiers [aria-selected="true"] {
+  border-bottom-color: #fd8c73;
+  font-weight: 600;
+}
+.identite-codespace {
+  margin-top: 0;
+}
+.codespace-corps {
+  display: flex;
+  gap: 0.5rem;
+  height: 70vh;
+}
+.arbre,
+.arbre [role="group"] {
+  list-style: none;
+  margin: 0;
+  padding-left: 0.9rem;
+}
+.arbre {
+  border-right: 1px solid #d0d7de;
+  flex: 0 0 18rem;
+  font-size: 0.85rem;
+  overflow: auto;
+  padding-left: 0;
+}
+.arbre button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.05rem 0;
+  text-align: left;
+}
+.arbre button.dossier::before {
+  content: "▸ ";
+}
+.arbre [aria-expanded="true"] > button.dossier::before {
+  content: "▾ ";
+}
+.arbre .ignore {
+  color: #8c959f;
+}
+.arbre .ignore button {
+  color: inherit;
+}
+.codespace-fichier {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.onglets-fichiers {
+  border-bottom: 1px solid #d0d7de;
+  font-size: 0.85rem;
+}
+.onglet-fichier > button:last-child {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.editeur {
+  flex: 1;
+  min-height: 0;
+}
+.editeur[hidden] {
+  display: none;
+}

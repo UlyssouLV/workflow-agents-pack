@@ -327,3 +327,45 @@ export function urlTerminal(id: string): string {
   const { protocol, host } = window.location;
   return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
 }
+
+/** `GET /api/sessions/{id}/codespace` : l’identité du clone de la session (`direct` : lu en direct). */
+export interface IdentiteCodespace {
+  repo: string;
+  /** `null` : HEAD détaché. */
+  branche: string | null;
+  /** HEAD court ; `null` sur un clone sans commit. */
+  head: string | null;
+  source: "direct";
+}
+
+/** Une entrée d’un dossier du clone. `lien` : symlink qui sort du clone, jamais suivi. */
+export interface EntreeCodespace {
+  nom: string;
+  type: "dossier" | "fichier" | "lien";
+  /** Taille d’un fichier, en octets ; `null` sinon. */
+  taille: number | null;
+  /** Ignoré par `.gitignore`. */
+  ignore: boolean;
+}
+
+/** `GET /api/sessions/{id}/codespace/arbre?chemin=` : les entrées d’un dossier, chargé à son ouverture. */
+export interface ArbreCodespace {
+  chemin: string;
+  entrees: EntreeCodespace[];
+}
+
+/** `GET /api/sessions/{id}/codespace/fichier?chemin=` : `contenu` nul et `non_affiche` si binaire
+ * ou plus de 1 Mo. */
+export interface FichierCodespace {
+  chemin: string;
+  taille: number;
+  contenu: string | null;
+  non_affiche?: "binaire" | "trop_gros";
+}
+
+/** Lecture du codespace de la session `id` ; `chemin` est relatif au clone. */
+export function lireCodespace<T>(id: string, suite: "" | "/arbre" | "/fichier", chemin?: string): Promise<T> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
+  const requete = chemin === undefined ? "" : `?chemin=${encodeURIComponent(chemin)}`;
+  return lire<T>(`/api/sessions/${encodeURIComponent(id)}/codespace${suite}${requete}`);
+}
