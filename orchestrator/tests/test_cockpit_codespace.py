@@ -67,7 +67,20 @@ def test_arbre_et_fichier_relayes(api, session):
     assert fichier.json()["contenu"] == "print('bonjour')\n"
 
 
-@pytest.mark.parametrize("suite, chemin, code", [("/arbre", "..", 400), ("/fichier", "/etc/passwd", 400), ("/fichier", "absent", 404)])
+def test_statuts_et_diff_relayes(api, session, clone):
+    (clone / "src" / "app.py").write_text("print('au revoir')\n")
+
+    arbre = api.get(f"/api/sessions/{session['id']}/codespace/arbre", params={"chemin": ""})
+    diff = api.get(f"/api/sessions/{session['id']}/codespace/diff", params={"chemin": "src/app.py"})
+
+    assert {e["nom"]: e["statut"] for e in arbre.json()["entrees"]}["src"] == "modifie"
+    assert diff.json() == {"chemin": "src/app.py", "head": "print('bonjour')\n", "courant": "print('au revoir')\n"}
+
+
+@pytest.mark.parametrize("suite, chemin, code", [
+    ("/arbre", "..", 400), ("/fichier", "/etc/passwd", 400), ("/fichier", "absent", 404),
+    ("/diff", "../..", 400), ("/diff", "absent", 404),
+])
 def test_refus_du_runner_relayes_avec_leur_message(api, session, suite, chemin, code):
     reponse = api.get(f"/api/sessions/{session['id']}/codespace{suite}", params={"chemin": chemin})
 
@@ -79,7 +92,7 @@ def test_session_inconnue_404(api):
     assert api.get("/api/sessions/20261017-090000-abcdef/codespace").status_code == 404
 
 
-@pytest.mark.parametrize("suite", ["", "/arbre", "/fichier?chemin=README.md"])
+@pytest.mark.parametrize("suite", ["", "/arbre", "/fichier?chemin=README.md", "/diff?chemin=README.md"])
 def test_routes_refusees_sans_authentification_cockpit(tmp_path, jobs, adresse_runner, session, suite):
     client = TestClient(app(tmp_path, jobs, adresse_runner))
 

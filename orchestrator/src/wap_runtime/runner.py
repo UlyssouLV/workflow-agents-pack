@@ -632,7 +632,7 @@ class ClientRunner:
         `RunnerErreur` si le runner est injoignable ou rend autre chose que du JSON."""
         import httpx
 
-        if not ID_SESSION.fullmatch(id_) or suite not in ("", "/arbre", "/fichier"):
+        if not ID_SESSION.fullmatch(id_) or suite not in ("", "/arbre", "/fichier", "/diff"):
             raise RunnerErreur(f"session {id_} inconnue")
         params = {} if chemin is None else {"chemin": chemin}
         try:
@@ -817,6 +817,11 @@ def creer_app_runner(runner: Runner):
     def fichier(id_: str, chemin: str) -> dict:
         _, dossier = _codespace(id_)
         return _lire(codespace_.fichier, dossier, chemin)
+
+    @app.get("/sessions/{id_}/codespace/diff")
+    def diff(id_: str, chemin: str) -> dict:
+        _, dossier = _codespace(id_)
+        return _lire(codespace_.diff, dossier, chemin)
 
     def _codespace(id_: str) -> tuple[dict, Path]:
         return _lire(runner.clone_de, id_)

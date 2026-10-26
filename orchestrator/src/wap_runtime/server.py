@@ -360,6 +360,11 @@ def creer_app(
         """Contenu d’un fichier du clone, ou « non affiché »."""
         return _codespace(id_, "/fichier", chemin)
 
+    @app.get("/api/sessions/{id_}/codespace/diff")
+    def codespace_diff(id_: str, chemin: str) -> JSONResponse:
+        """Versions HEAD et courante d’un fichier du clone, pour l’éditeur de diff."""
+        return _codespace(id_, "/diff", chemin)
+
     @app.post("/api/sessions", status_code=201, response_model=None)
     def lancer(demande: Lancement, requete: Request) -> dict | JSONResponse:
         _verifier_origine(requete)

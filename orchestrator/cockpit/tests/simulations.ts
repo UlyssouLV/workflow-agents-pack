@@ -135,10 +135,31 @@ export class FauxEditeur {
   }
 }
 
+/** Éditeur de diff de `FauxMonaco` : HEAD (`original`) et courant (`modified`). */
+export class FauxEditeurDiff {
+  modele: { original: FauxModele; modified: FauxModele } | null = null;
+  libere = false;
+  constructor(readonly options: Record<string, unknown>) {}
+
+  setModel(modele: { original: FauxModele; modified: FauxModele } | null) {
+    this.modele = modele;
+  }
+
+  dispose() {
+    this.libere = true;
+  }
+}
+
 /** Remplace `monaco` de `src/monaco.ts` (voir `setup.ts`) : jsdom ne fait pas tourner Monaco. */
 export const FauxMonaco = {
   editeurs: [] as FauxEditeur[],
+  editeursDiff: [] as FauxEditeurDiff[],
   editor: {
+    createDiffEditor(_conteneur: HTMLElement, options: Record<string, unknown>) {
+      const editeur = new FauxEditeurDiff(options);
+      FauxMonaco.editeursDiff.push(editeur);
+      return editeur;
+    },
     create(_conteneur: HTMLElement, options: Record<string, unknown>) {
       const editeur = new FauxEditeur(options);
       FauxMonaco.editeurs.push(editeur);
@@ -150,5 +171,6 @@ export const FauxMonaco = {
   },
   Uri: {
     file: (chemin: string) => ({ path: chemin.startsWith("/") ? chemin : `/${chemin}` }),
+    from: ({ scheme, path }: { scheme: string; path: string }) => ({ scheme, path }),
   },
 };

@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { ArbreCodespace, EntreeCodespace, FichierCodespace, IdentiteCodespace } from "./api";
+import type {
+  ArbreCodespace,
+  DiffCodespace,
+  EntreeCodespace,
+  FichierCodespace,
+  IdentiteCodespace,
+  StatutGit,
+} from "./api";
 import { lireCodespace } from "./api";
 import { monaco } from "./monaco";
 
@@ -7,9 +14,20 @@ import { monaco } from "./monaco";
 type Dossier = EntreeCodespace[] | { erreur: string };
 /** Un fichier lu, ou le refus du runtime. */
 type Fichier = FichierCodespace | { erreur: string };
+/** Un diff lu, ou le refus du runtime. */
+type Diff = DiffCodespace | { erreur: string };
+
+/** Marqueur d’un fichier dans l’arbre, comme VS Code : lettre et libellé. */
+const MARQUEURS: Record<StatutGit, [string, string]> = {
+  modifie: ["M", "Modifié"],
+  ajoute: ["A", "Ajouté"],
+  non_suivi: ["U", "Non suivi"],
+};
+
 
 /** Vue du codespace d’une session (ADR 0014), en lecture seule : l’identité du clone, son
- * arborescence chargée dossier par dossier, et les fichiers ouverts en onglets dans Monaco. */
+ * arborescence chargée dossier par dossier avec les marqueurs Git, et les fichiers ouverts en
+ * onglets dans Monaco ; un fichier changé s’ouvre aussi en diff avec HEAD. */
 export function Codespace({ id }: { id: string }) {
   const [identite, setIdentite] = useState<IdentiteCodespace | { erreur: string } | null>(null);
   const [dossiers, setDossiers] = useState<Record<string, Dossier>>({});
@@ -17,6 +35,11 @@ export function Codespace({ id }: { id: string }) {
   const [ouverts, setOuverts] = useState<string[]>([]);
   const [actif, setActif] = useState<string | null>(null);
   const [fichiers, setFichiers] = useState<Record<string, Fichier>>({});
+  /** Statut Git de chaque fichier ouvert, tel que l’arbre le montrait à son ouverture. */
+  const [statuts, setStatuts] = useState<Record<string, StatutGit | null>>({});
+  const [enDiff, setEnDiff] = useState<ReadonlySet<string>>(new Set());
+  const [diffs, setDiffs] = useState<Record<string, Diff>>({});
+
 
   const charger = (chemin: string) =>
     lireCodespace<ArbreCodespace>(id, "/arbre", chemin).then(
@@ -41,7 +64,8 @@ export function Codespace({ id }: { id: string }) {
     if (!(chemin in dossiers)) charger(chemin);
   };
 
-  const ouvrir = (chemin: string) => {
+  const ouvrir = (chemin: string, statut: StatutGit | null) => {
+    setStatuts((s) => ({ ...s, [chemin]: statut }));
     setOuverts((o) => (o.includes(chemin) ? o : [...o, chemin]));
     setActif(chemin);
     lireCodespace<FichierCodespace>(id, "/fichier", chemin).then(
@@ -50,14 +74,30 @@ export function Codespace({ id }: { id: string }) {
     );
   };
 
+  const basculerDiff = (chemin: string) => {
+    const suivants = new Set(enDiff);
+    if (suivants.delete(chemin)) {
+      setEnDiff(suivants);
+      return;
+    }
+    setEnDiff(suivants.add(chemin));
+    lireCodespace<DiffCodespace>(id, "/diff", chemin).then(
+      (diff) => setDiffs((d) => ({ ...d, [chemin]: diff })),
+      (erreur: Error) => setDiffs((d) => ({ ...d, [chemin]: { erreur: erreur.message } })),
+    );
+  };
+
   const fermer = (chemin: string) => {
     const restants = ouverts.filter((o) => o !== chemin);
+    if (enDiff.has(chemin)) setEnDiff(new Set([...enDiff].filter((c) => c !== chemin)));
     setOuverts(restants);
     if (actif === chemin) {
       const rang = ouverts.indexOf(chemin);
       setActif(restants[Math.min(rang, restants.length - 1)] ?? null);
     }
   };
+
+  const diffActif = actif !== null && enDiff.has(actif);
 
   return (
     <div className="codespace">
@@ -87,9 +127,15 @@ export function Codespace({ id }: { id: string }) {
               ))}
             </div>
           )}
-          {actif !== null && <EtatFichier fichier={fichiers[actif]} />}
+          {actif !== null && statuts[actif] && (
+            <button type="button" className="bouton-diff" aria-pressed={diffActif} onClick={() => basculerDiff(actif)}>
+              Diff avec HEAD
+            </button>
+          )}
+          {actif !== null && (diffActif ? <EtatDiff diff={diffs[actif]} /> : <EtatFichier fichier={fichiers[actif]} />)}
           {/* Gardé monté d’un fichier à l’autre : seul le modèle change. */}
-          {actif !== null && <EditeurMonaco fichier={texte(fichiers[actif])} />}
+          {actif !== null && <EditeurMonaco fichier={diffActif ? null : texte(fichiers[actif])} />}
+          {diffActif && <EditeurDiff diff={versions(diffs[actif])} />}
         </section>
       </div>
     </div>
@@ -120,7 +166,7 @@ interface PropsEntrees {
   dossiers: Record<string, Dossier>;
   deplies: ReadonlySet<string>;
   basculer: (chemin: string) => void;
-  ouvrir: (chemin: string) => void;
+  ouvrir: (chemin: string, statut: StatutGit | null) => void;
 }
 
 /** Les entrées du dossier `chemin`, une fois chargé ; un dossier déplié montre les siennes. */
@@ -142,7 +188,9 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
         role="treeitem"
         aria-label={entree.nom}
         aria-expanded={entree.type === "dossier" ? deplie : undefined}
-        className={entree.ignore ? "ignore" : undefined}
+        className={
+          [entree.ignore && "ignore", entree.statut && `statut-${entree.statut}`].filter(Boolean).join(" ") || undefined
+        }
       >
         {entree.type === "lien" ? (
           <>
@@ -152,11 +200,12 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
           <button
             type="button"
             className={entree.type}
-            onClick={() => (entree.type === "dossier" ? basculer(complet) : ouvrir(complet))}
+            onClick={() => (entree.type === "dossier" ? basculer(complet) : ouvrir(complet, entree.statut))}
           >
             {entree.nom}
           </button>
         )}
+        {entree.statut && <Marqueur statut={entree.statut} dossier={entree.type === "dossier"} />}
         {deplie && (
           <ul role="group">
             <Entrees chemin={complet} dossiers={dossiers} deplies={deplies} basculer={basculer} ouvrir={ouvrir} />
@@ -165,6 +214,16 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
       </li>
     );
   });
+}
+
+/** Lettre d’un fichier changé ; point d’un dossier qui contient des changements. */
+function Marqueur({ statut, dossier }: { statut: StatutGit; dossier: boolean }) {
+  const [lettre, libelle] = dossier ? ["●", "Contient des changements"] : MARQUEURS[statut];
+  return (
+    <span className="marqueur" title={libelle}>
+      {lettre}
+    </span>
+  );
 }
 
 /** Le fichier à montrer dans l’éditeur, s’il est lu et affichable. */
@@ -184,6 +243,77 @@ function EtatFichier({ fichier }: { fichier: Fichier | undefined }) {
       </p>
     );
   return null;
+}
+
+/** Les deux versions à montrer dans l’éditeur de diff, si le diff est lu et affichable ; côté HEAD
+ * vide pour un fichier absent de HEAD. */
+function versions(diff: Diff | undefined): { chemin: string; head: string; courant: string } | null {
+  if (diff === undefined || "erreur" in diff || diff.courant === null) return null;
+  return { chemin: diff.chemin, head: diff.head ?? "", courant: diff.courant };
+}
+
+/** Ce qui remplace l’éditeur de diff : lecture en cours, refus, ou « non affiché ». */
+function EtatDiff({ diff }: { diff: Diff | undefined }) {
+  if (diff === undefined) return <p className="etat-terminal">Lecture du diff…</p>;
+  if ("erreur" in diff) return <p className="erreur">{diff.erreur}</p>;
+  if (diff.courant === null)
+    return (
+      <p className="etat-terminal">
+        {`${diff.non_affiche === "trop_gros" ? "Fichier de plus de 1 Mo" : "Fichier binaire"} : diff non affiché`}
+      </p>
+    );
+  return null;
+}
+
+/** Éditeur de diff Monaco en lecture seule, HEAD à gauche et version courante à droite. */
+function EditeurDiff({ diff }: { diff: { chemin: string; head: string; courant: string } | null }) {
+  const conteneur = useRef<HTMLDivElement>(null);
+  const editeur = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+
+  useEffect(() => {
+    editeur.current = monaco.editor.createDiffEditor(conteneur.current!, {
+      readOnly: true,
+      originalEditable: false,
+      renderSideBySide: true,
+      automaticLayout: true,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+    });
+    return () => {
+      editeur.current?.dispose();
+      editeur.current = null;
+    };
+  }, []);
+
+  const chemin = diff?.chemin;
+  const head = diff?.head;
+  const courant = diff?.courant;
+  useEffect(() => {
+    if (chemin === undefined || head === undefined || courant === undefined) {
+      editeur.current?.setModel(null);
+      return;
+    }
+    // Schémas propres au diff : pas de conflit avec le modèle `file:` de l’éditeur de fichier.
+    const original = monaco.editor.createModel(
+      head,
+      undefined,
+      monaco.Uri.from({ scheme: "head", path: `/${chemin}` }),
+    );
+    const modified = monaco.editor.createModel(
+      courant,
+      undefined,
+      monaco.Uri.from({ scheme: "courant", path: `/${chemin}` }),
+    );
+    editeur.current?.setModel({ original, modified });
+    return () => {
+      // Monaco refuse qu’un modèle soit libéré avant d’être détaché de l’éditeur de diff.
+      editeur.current?.setModel(null);
+      original.dispose();
+      modified.dispose();
+    };
+  }, [chemin, head, courant]);
+
+  return <div className="editeur" ref={conteneur} hidden={diff === null} />;
 }
 
 /** Monaco en lecture seule, caché sans fichier à montrer ; le langage (coloration) se déduit du

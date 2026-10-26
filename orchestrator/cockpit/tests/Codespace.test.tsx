@@ -9,7 +9,7 @@ const ID = "20261017-090000-abcdef";
 const API = `/api/sessions/${ID}`;
 
 function entree(nom: string, e: Partial<EntreeCodespace> = {}): EntreeCodespace {
-  return { nom, type: "fichier", taille: 10, ignore: false, ...e };
+  return { nom, type: "fichier", taille: 10, ignore: false, statut: null, ...e };
 }
 
 const RACINE = [
@@ -224,5 +224,146 @@ describe("codespace en direct", () => {
     await screen.findByRole("tab", { name: "Codespace" });
 
     expect(fetch.mock.calls.map(([c]) => c).filter((c) => c.includes("/codespace"))).toEqual([]);
+  });
+});
+
+describe("Git dans le codespace", () => {
+  const RACINE_GIT = [
+    entree("node_modules", { type: "dossier", taille: null, ignore: true }),
+    entree("src", { type: "dossier", taille: null, statut: "modifie" }),
+    entree("docs", { type: "dossier", taille: null, statut: "non_suivi" }),
+    entree("ajout.py", { statut: "ajoute" }),
+    entree("notes.txt", { statut: "non_suivi" }),
+    entree("README.md", { taille: 4, statut: "modifie" }),
+    entree("LICENSE"),
+  ];
+
+  function apiGit(routes: Record<string, unknown> = {}) {
+    return api({
+      [`${API}/codespace/arbre?chemin=`]: { chemin: "", entrees: RACINE_GIT },
+      [`${API}/codespace/fichier?chemin=README.md`]: {
+        chemin: "README.md",
+        taille: 13,
+        contenu: "# r modifié\n",
+      },
+      [`${API}/codespace/fichier?chemin=ajout.py`]: {
+        chemin: "ajout.py",
+        taille: 6,
+        contenu: "a = 1\n",
+      },
+      [`${API}/codespace/fichier?chemin=LICENSE`]: {
+        chemin: "LICENSE",
+        taille: 3,
+        contenu: "MIT",
+      },
+      [`${API}/codespace/diff?chemin=README.md`]: {
+        chemin: "README.md",
+        head: "# r\n",
+        courant: "# r modifié\n",
+      },
+      [`${API}/codespace/diff?chemin=ajout.py`]: {
+        chemin: "ajout.py",
+        head: null,
+        courant: "a = 1\n",
+      },
+      ...routes,
+    });
+  }
+
+  async function ouvrirFichier(nom: string) {
+    await ouvrirCodespace();
+    fireEvent.click(await within(arbre()).findByRole("button", { name: nom }));
+    await waitFor(() => expect(FauxMonaco.editeurs[0]?.modele).not.toBeNull());
+  }
+
+  it("marqueurs modifié / ajouté / non suivi sur les fichiers, ignorés grisés", async () => {
+    apiGit();
+    await ouvrirCodespace();
+    await within(arbre()).findAllByRole("treeitem");
+
+    expect(within(screen.getByRole("treeitem", { name: "README.md" })).getByTitle("Modifié")).toHaveTextContent("M");
+    expect(within(screen.getByRole("treeitem", { name: "ajout.py" })).getByTitle("Ajouté")).toHaveTextContent("A");
+    expect(within(screen.getByRole("treeitem", { name: "notes.txt" })).getByTitle("Non suivi")).toHaveTextContent("U");
+    expect(screen.getByRole("treeitem", { name: "README.md" })).toHaveClass("statut-modifie");
+    expect(screen.getByRole("treeitem", { name: "LICENSE" })).not.toHaveClass("statut-modifie");
+    expect(within(screen.getByRole("treeitem", { name: "LICENSE" })).queryByTitle(/./)).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "node_modules" })).toHaveClass("ignore");
+  });
+
+  it("un dossier qui contient des changements est marqué sans être déplié", async () => {
+    const fetch = apiGit();
+    await ouvrirCodespace();
+
+    const src = await screen.findByRole("treeitem", { name: "src" });
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    expect(src).toHaveClass("statut-modifie");
+    expect(within(src).getByTitle("Contient des changements")).toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: "docs" })).toHaveClass("statut-non_suivi");
+    expect(fetch.mock.calls.map(([c]) => c)).not.toContain(`${API}/codespace/arbre?chemin=src`);
+  });
+
+  it("diff d’un fichier modifié : HEAD et courant côte à côte, en lecture seule", async () => {
+    apiGit();
+    await ouvrirFichier("README.md");
+
+    fireEvent.click(screen.getByRole("button", { name: "Diff avec HEAD" }));
+
+    await waitFor(() => expect(FauxMonaco.editeursDiff).toHaveLength(1));
+    const [diff] = FauxMonaco.editeursDiff;
+    expect(diff.options).toMatchObject({
+      readOnly: true,
+      originalEditable: false,
+      renderSideBySide: true,
+    });
+    await waitFor(() => expect(diff.modele?.original.getValue()).toBe("# r\n"));
+    expect(diff.modele?.modified.getValue()).toBe("# r modifié\n");
+    expect(diff.modele?.modified.uri.path).toBe("/README.md");
+    expect(screen.getByRole("button", { name: "Diff avec HEAD" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Diff avec HEAD" }));
+
+    expect(diff.libere).toBe(true);
+    expect(FauxMonaco.editeurs[0].modele?.getValue()).toBe("# r modifié\n");
+  });
+
+  it("diff d’un fichier ajouté ou non suivi : côté HEAD vide", async () => {
+    apiGit();
+    await ouvrirFichier("ajout.py");
+
+    fireEvent.click(screen.getByRole("button", { name: "Diff avec HEAD" }));
+
+    await waitFor(() => expect(FauxMonaco.editeursDiff[0]?.modele?.modified.getValue()).toBe("a = 1\n"));
+    expect(FauxMonaco.editeursDiff[0].modele?.original.getValue()).toBe("");
+  });
+
+  it("pas de diff pour un fichier inchangé", async () => {
+    apiGit();
+    await ouvrirFichier("LICENSE");
+
+    expect(screen.queryByRole("button", { name: "Diff avec HEAD" })).toBeNull();
+  });
+
+  it("diff non affiché (binaire) ou refusé : son message", async () => {
+    apiGit({
+      [`${API}/codespace/diff?chemin=README.md`]: {
+        chemin: "README.md",
+        head: null,
+        courant: null,
+        non_affiche: "binaire",
+      },
+      [`${API}/codespace/diff?chemin=ajout.py`]: new Response(JSON.stringify({ detail: "ajout.py absent du clone" }), {
+        status: 404,
+      }),
+    });
+    await ouvrirFichier("README.md");
+    fireEvent.click(screen.getByRole("button", { name: "Diff avec HEAD" }));
+
+    expect(await screen.findByText("Fichier binaire : diff non affiché")).toBeInTheDocument();
+    expect(FauxMonaco.editeursDiff.map((e) => e.modele)).toEqual([null]);
+
+    fireEvent.click(within(arbre()).getByRole("button", { name: "ajout.py" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Diff avec HEAD" }));
+
+    expect(await screen.findByText("ajout.py absent du clone")).toBeInTheDocument();
   });
 });

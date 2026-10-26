@@ -135,7 +135,7 @@ def test_fichier_de_plus_d_un_mo_non_affiche(client, session, clone):
 
 @pytest.mark.parametrize("chemin", ["..", "../..", "src/../../r", "/etc/passwd", "src/../../../jobs"])
 def test_chemin_qui_sort_du_clone_refuse(client, session, chemin):
-    for suite in ("/arbre", "/fichier"):
+    for suite in ("/arbre", "/fichier", "/diff"):
         reponse = codespace(client, session, suite, chemin=chemin)
 
         assert reponse.status_code == 400, (suite, chemin)
@@ -170,7 +170,7 @@ def test_un_dossier_n_est_pas_un_fichier_et_inversement(client, session):
 
 
 def test_session_inconnue_404(client):
-    for suite in ("", "/arbre", "/fichier"):
+    for suite in ("", "/arbre", "/fichier", "/diff"):
         reponse = client.get(f"/sessions/20261017-090000-abcdef/codespace{suite}", params={"chemin": "README.md"})
 
         assert reponse.status_code == 404
@@ -197,3 +197,84 @@ def test_clone_sans_commit_identite_sans_head(client, jobs, tmp_path):
     reponse = codespace(client, vide)
 
     assert reponse.json() == {"repo": "o/vide", "branche": "main", "head": None, "source": "direct"}
+
+
+def test_statuts_git_des_entrees(client, session, clone):
+    (clone / "README.md").write_text("# r modifié\n")
+    (clone / "src" / "ajout.py").write_text("a = 1\n")
+    git(clone, "add", "src/ajout.py")
+    (clone / "notes.txt").write_text("brouillon\n")
+
+    racine = entrees(client, session)
+    src = entrees(client, session, "src")
+
+    assert racine["README.md"]["statut"] == "modifie"
+    assert racine["notes.txt"]["statut"] == "non_suivi"
+    assert src["ajout.py"]["statut"] == "ajoute"
+    assert src["app.py"]["statut"] is None
+    assert racine[".gitignore"]["statut"] is None
+    assert (racine[".env"]["statut"], racine[".env"]["ignore"]) == (None, True)
+
+
+def test_un_dossier_qui_contient_des_changements_est_marque(client, session, clone):
+    (clone / "src" / "app.py").write_text("print('modifié')\n")
+    (clone / "src" / "profond").mkdir()
+    (clone / "src" / "profond" / "neuf.py").write_text("")
+    (clone / "docs" / "guide").mkdir(parents=True)
+    (clone / "docs" / "guide" / "neuf.md").write_text("")
+
+    racine = entrees(client, session)
+
+    assert racine["src"]["statut"] == "modifie"
+    assert racine["docs"]["statut"] == "non_suivi"
+    assert racine["node_modules"]["statut"] is None
+    assert racine[".git"]["statut"] is None
+    assert entrees(client, session, "src")["profond"]["statut"] == "non_suivi"
+
+
+def test_les_entrees_d_un_dossier_non_suivi_ou_ignore_en_heritent(client, session, clone):
+    (clone / "docs" / "guide").mkdir(parents=True)
+    (clone / "docs" / "guide" / "neuf.md").write_text("")
+
+    assert entrees(client, session, "docs/guide")["neuf.md"]["statut"] == "non_suivi"
+    assert entrees(client, session, "node_modules")["paquet"]["ignore"] is True
+    assert entrees(client, session, ".git")["HEAD"]["ignore"] is False
+
+
+def test_diff_d_un_fichier_modifie_head_et_courant(client, session, clone):
+    (clone / "src" / "app.py").write_text("print('au revoir')\n")
+
+    reponse = codespace(client, session, "/diff", chemin="src/app.py")
+
+    assert reponse.status_code == 200
+    assert reponse.json() == {
+        "chemin": "src/app.py", "head": "print('bonjour')\n", "courant": "print('au revoir')\n",
+    }
+
+
+@pytest.mark.parametrize("indexe", [True, False], ids=["ajoute", "non_suivi"])
+def test_diff_d_un_fichier_absent_de_head_cote_head_vide(client, session, clone, indexe):
+    (clone / "neuf.py").write_text("x = 1\n")
+    if indexe:
+        git(clone, "add", "neuf.py")
+
+    reponse = codespace(client, session, "/diff", chemin="neuf.py")
+
+    assert reponse.json() == {"chemin": "neuf.py", "head": None, "courant": "x = 1\n"}
+
+
+def test_diff_d_un_fichier_binaire_non_affiche(client, session, clone):
+    (clone / "README.md").write_bytes(b"\x89PNG\x00")
+
+    reponse = codespace(client, session, "/diff", chemin="README.md")
+
+    assert reponse.json() == {"chemin": "README.md", "head": None, "courant": None, "non_affiche": "binaire"}
+
+
+def test_diff_garde_des_chemins(client, session, clone, tmp_path):
+    (tmp_path / "secret.txt").write_text("secret")
+    (clone / "fuite").symlink_to(tmp_path / "secret.txt")
+
+    for chemin in ("..", "/etc/passwd", "src/../../../jobs", "fuite", "src"):
+        assert codespace(client, session, "/diff", chemin=chemin).status_code == 400, chemin
+    assert codespace(client, session, "/diff", chemin="absent.py").status_code == 404

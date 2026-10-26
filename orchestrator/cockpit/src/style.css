@@ -157,6 +157,30 @@ code {
 .arbre .ignore button {
   color: inherit;
 }
+.arbre .marqueur {
+  float: right;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding-right: 0.4rem;
+}
+.arbre .statut-modifie > button,
+.arbre .statut-modifie > .marqueur {
+  color: #9a6700;
+}
+.arbre .statut-ajoute > button,
+.arbre .statut-ajoute > .marqueur,
+.arbre .statut-non_suivi > button,
+.arbre .statut-non_suivi > .marqueur {
+  color: #1a7f37;
+}
+.bouton-diff {
+  align-self: flex-end;
+  font-size: 0.8rem;
+  margin: 0.25rem 0;
+}
+.bouton-diff[aria-pressed="true"] {
+  font-weight: 600;
+}
 .codespace-fichier {
   display: flex;
   flex: 1;

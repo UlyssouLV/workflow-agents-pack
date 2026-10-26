@@ -11,6 +11,7 @@ beforeEach(() => {
   FauxTerminal.instances = [];
   FauxWebSocket.instances = [];
   FauxMonaco.editeurs = [];
+  FauxMonaco.editeursDiff = [];
   sessionStorage.clear();
   vi.stubGlobal("WebSocket", FauxWebSocket);
 });

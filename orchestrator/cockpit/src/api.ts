@@ -338,6 +338,9 @@ export interface IdentiteCodespace {
   source: "direct";
 }
 
+/** Statut Git d’une entrée ; un dossier prend le plus fort de ce qu’il contient. */
+export type StatutGit = "modifie" | "ajoute" | "non_suivi";
+
 /** Une entrée d’un dossier du clone. `lien` : symlink qui sort du clone, jamais suivi. */
 export interface EntreeCodespace {
   nom: string;
@@ -346,6 +349,8 @@ export interface EntreeCodespace {
   taille: number | null;
   /** Ignoré par `.gitignore`. */
   ignore: boolean;
+  /** `null` : inchangé (ou ignoré). */
+  statut: StatutGit | null;
 }
 
 /** `GET /api/sessions/{id}/codespace/arbre?chemin=` : les entrées d’un dossier, chargé à son ouverture. */
@@ -363,8 +368,21 @@ export interface FichierCodespace {
   non_affiche?: "binaire" | "trop_gros";
 }
 
+/** `GET /api/sessions/{id}/codespace/diff?chemin=` : versions HEAD et courante d’un fichier. `head`
+ * nul : absent de HEAD (ajouté, non suivi). Binaire ou plus de 1 Mo : les deux nuls et `non_affiche`. */
+export interface DiffCodespace {
+  chemin: string;
+  head: string | null;
+  courant: string | null;
+  non_affiche?: "binaire" | "trop_gros";
+}
+
 /** Lecture du codespace de la session `id` ; `chemin` est relatif au clone. */
-export function lireCodespace<T>(id: string, suite: "" | "/arbre" | "/fichier", chemin?: string): Promise<T> {
+export function lireCodespace<T>(
+  id: string,
+  suite: "" | "/arbre" | "/fichier" | "/diff",
+  chemin?: string,
+): Promise<T> {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const requete = chemin === undefined ? "" : `?chemin=${encodeURIComponent(chemin)}`;
   return lire<T>(`/api/sessions/${encodeURIComponent(id)}/codespace${suite}${requete}`);
