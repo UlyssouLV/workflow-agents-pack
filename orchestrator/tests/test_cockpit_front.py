@@ -26,7 +26,7 @@ def client(tmp_path, front):
 
 
 @pytest.mark.parametrize(
-    "chemin", ["/", "/repos/o/r", "/repos/mon-org/mon.repo", "/sessions", "/sessions/20261017-090000-abcdef"]
+    "chemin", ["/", "/repos/o/r", "/repos/mon-org/mon.repo", "/sessions", "/sessions/20261017-090000-abcdef", "/sessions/20261017-090000-abcdef/codespace"]
 )
 def test_les_routes_du_front_rendent_index_html(tmp_path, front, chemin):
     reponse = client(tmp_path, front).get(chemin)

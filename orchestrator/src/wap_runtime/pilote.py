@@ -18,12 +18,12 @@ from wap_runtime.runner import (
     SessionQuiTravaille,
     email_noreply,
 )
-from wap_runtime.sessions import ATTEND, ECHOUEE, INTERROMPUE, Sessions
+from wap_runtime.sessions import ARRETEE, ATTEND, ECHOUEE, INTERROMPUE, Sessions
 
 # Stops exposés sur liste/détail (`pilote_stop`) tant que la condition dure.
 STOP_ATTEND, STOP_HUMAIN, STOP_AUCUN = "attend", "humain_requis", "aucun_eligible"
 STOP_ECHEC = "echec_lancement"
-_STOPS_SESSION = {ECHOUEE: "echouee", INTERROMPUE: "interrompue"}
+_STOPS_SESSION = {ECHOUEE: "echouee", ARRETEE: "arretee", INTERROMPUE: "interrompue"}
 
 
 def stop_du_pilote(

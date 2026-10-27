@@ -159,6 +159,7 @@ export function BadgeSession({ session }: { session: LienSession }) {
 export const LIBELLES_ETAT_SESSION: Record<EtatSession, string> = {
   ouverte: "Ouverte",
   terminée: "Terminée",
+  arrêtée: "Arrêtée",
   échouée: "Échouée",
   interrompue: "Interrompue",
   enchaînée: "Enchaînée",

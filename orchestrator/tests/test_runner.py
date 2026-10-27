@@ -774,7 +774,7 @@ def test_suivante_acceptee_enchaine_sur_le_meme_agent_et_la_meme_branche(chaine,
     assert dossier == clone
     assert f"WAP_SESSION={suivante['id']}" in commande
     assert chaine.jeton() != chaine.jeton(0)
-    assert commande[-2:] == [str(instance / "jobs"), suivante["id"]]
+    assert commande[-3:] == [str(instance / "jobs"), suivante["id"], str(instance / "clones")]
     assert not any(option in " ".join(commande) for option in ("--continue", "--resume"))
 
 

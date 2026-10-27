@@ -130,7 +130,7 @@ def test_terminer_arrete_l_agent_et_rend_la_session_close(api, session):
 
         assert reponse.status_code == 200
         close = reponse.json()
-        assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
+        assert (close["etat"], close["code_sortie"]) == ("arrêtée", 129)
         assert close["url"] == f"/sessions/{session['id']}"
         jusqu_a_la_fermeture(ws)
 

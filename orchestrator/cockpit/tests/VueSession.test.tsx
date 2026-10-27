@@ -68,6 +68,7 @@ describe("page de session", () => {
   it.each([
     [0, "terminée", "Terminée"],
     [1, "échouée", "Échouée (code 1)"],
+    [129, "arrêtée", "Arrêtée"],
     [null, "interrompue", "Interrompue (runner redémarré)"],
   ] as const)("session close (code %i) : état et durée jusqu’à la fin", async (code, etat, libelle) => {
     rendre(session({ etat, code_sortie: code, fin: "2026-10-17T10:01:00+00:00" }));

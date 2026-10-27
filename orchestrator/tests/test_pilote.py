@@ -289,6 +289,17 @@ def test_tour_ne_lance_pas_apres_une_session_echouee(registry, github, jobs, run
     assert runner.demandes == []
 
 
+def test_tour_ne_lance_pas_apres_une_session_arretee(registry, github, jobs, runner):
+    sessions = Sessions(jobs)
+    arretee = sessions.creer(SLUG, None, "claude", "claude", branche="v0.5.0")["id"]
+    sessions.demander_arret(arretee)
+    sessions.clore(arretee, 129)
+
+    assert tourner(**monde(registry, github, jobs, runner)) is None
+    assert runner.demandes == []
+    assert api(registry, github, jobs, runner).get(f"/api/repos/{SLUG}").json()["pilote_stop"] == "arretee"
+
+
 def test_tour_ne_lance_pas_apres_une_session_interrompue(registry, github, jobs, runner):
     Sessions(jobs).creer(SLUG, None, "claude", "claude", branche="v0.5.0")
     Sessions(jobs).interrompre()

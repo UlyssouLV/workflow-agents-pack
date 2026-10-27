@@ -5,7 +5,7 @@ import { VueSession } from "./VueSession";
 import { VueSessions } from "./VueSessions";
 
 const DETAIL = /^\/repos\/([^/]+)\/([^/]+)\/?$/;
-const SESSION = /^\/sessions\/([^/]+)\/?$/;
+const SESSION = /^\/sessions\/([^/]+)(\/codespace)?\/?$/;
 
 /** Routes servies toutes par `index.html` (le runtime) ; les liens rechargent la page. */
 export function App({ chemin }: { chemin: string }) {
@@ -17,7 +17,7 @@ export function App({ chemin }: { chemin: string }) {
   }
   const session = SESSION.exec(chemin);
   if (session) {
-    return <VueSession id={decodeURIComponent(session[1])} />;
+    return <VueSession id={decodeURIComponent(session[1])} onglet={session[2] ? "codespace" : "terminal"} />;
   }
   const detail = DETAIL.exec(chemin);
   if (detail) {

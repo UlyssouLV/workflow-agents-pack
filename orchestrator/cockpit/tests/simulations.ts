@@ -71,6 +71,7 @@ export class FauxWebSocket {
   readyState = FauxWebSocket.CONNECTING;
   binaryType = "blob";
   envoyes: unknown[] = [];
+  onopen: ((evenement: Event) => void) | null = null;
   onmessage: ((evenement: MessageEvent) => void) | null = null;
   onclose: ((evenement: CloseEvent) => void) | null = null;
 
@@ -92,6 +93,17 @@ export class FauxWebSocket {
     this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ role }) }));
   }
 
+  /** Côté test : le runtime accepte (websocket du codespace, qui attend l’ouverture). */
+  accepter() {
+    this.readyState = FauxWebSocket.OPEN;
+    this.onopen?.(new Event("open"));
+  }
+
+  /** Côté test : un message JSON du runtime. */
+  message(corps: unknown) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(corps) }));
+  }
+
   sortie(texte: string) {
     this.onmessage?.(new MessageEvent("message", { data: new TextEncoder().encode(texte).buffer }));
   }
@@ -102,3 +114,75 @@ export class FauxWebSocket {
     this.onclose?.(new CloseEvent("close"));
   }
 }
+
+/** Modèle de `FauxMonaco` : le contenu et l’URI d’où Monaco déduit le langage. */
+export class FauxModele {
+  libere = false;
+  constructor(
+    readonly valeur: string,
+    readonly uri: { path: string },
+  ) {}
+
+  getValue() {
+    return this.valeur;
+  }
+
+  dispose() {
+    this.libere = true;
+  }
+}
+
+/** Éditeur de `FauxMonaco`. */
+export class FauxEditeur {
+  modele: FauxModele | null = null;
+  libere = false;
+  constructor(readonly options: Record<string, unknown>) {}
+
+  setModel(modele: FauxModele | null) {
+    this.modele = modele;
+  }
+
+  dispose() {
+    this.libere = true;
+  }
+}
+
+/** Éditeur de diff de `FauxMonaco` : HEAD (`original`) et courant (`modified`). */
+export class FauxEditeurDiff {
+  modele: { original: FauxModele; modified: FauxModele } | null = null;
+  libere = false;
+  constructor(readonly options: Record<string, unknown>) {}
+
+  setModel(modele: { original: FauxModele; modified: FauxModele } | null) {
+    this.modele = modele;
+  }
+
+  dispose() {
+    this.libere = true;
+  }
+}
+
+/** Remplace `monaco` de `src/monaco.ts` (voir `setup.ts`) : jsdom ne fait pas tourner Monaco. */
+export const FauxMonaco = {
+  editeurs: [] as FauxEditeur[],
+  editeursDiff: [] as FauxEditeurDiff[],
+  editor: {
+    createDiffEditor(_conteneur: HTMLElement, options: Record<string, unknown>) {
+      const editeur = new FauxEditeurDiff(options);
+      FauxMonaco.editeursDiff.push(editeur);
+      return editeur;
+    },
+    create(_conteneur: HTMLElement, options: Record<string, unknown>) {
+      const editeur = new FauxEditeur(options);
+      FauxMonaco.editeurs.push(editeur);
+      return editeur;
+    },
+    createModel(valeur: string, _langage: string | undefined, uri: { path: string }) {
+      return new FauxModele(valeur, uri);
+    },
+  },
+  Uri: {
+    file: (chemin: string) => ({ path: chemin.startsWith("/") ? chemin : `/${chemin}` }),
+    from: ({ scheme, path }: { scheme: string; path: string }) => ({ scheme, path }),
+  },
+};

@@ -5,6 +5,7 @@ export const LIBELLES_STOP: Record<NonNullable<Repo["pilote_stop"]>, string> = {
   attend: "Réponse attendue",
   humain_requis: "Intervention humaine requise",
   echouee: "Session échouée",
+  arretee: "Session arrêtée",
   interrompue: "Session interrompue",
   aucun_eligible: "Aucun ticket éligible",
   echec_lancement: "Échec de lancement",

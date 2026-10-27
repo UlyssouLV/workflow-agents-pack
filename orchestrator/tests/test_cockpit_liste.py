@@ -62,7 +62,7 @@ def test_health_rend_le_statut_et_la_version(registry, github, horloge):
 
     assert reponse.status_code == 200
     assert reponse.json() == {"status": "ok", "version": version("wap-runtime")}
-    assert version("wap-runtime") == "0.7.1"
+    assert version("wap-runtime") == "0.8.0"
 
 
 def test_une_entree_par_repo_lie_dans_l_ordre_du_registry(registry, github, horloge):

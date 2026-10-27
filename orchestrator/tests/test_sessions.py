@@ -323,6 +323,26 @@ def test_sighup_arrete_l_agent_et_l_executeur_clot_la_session(sessions, tmp_path
     assert (close["etat"], close["code_sortie"]) == ("échouée", 129)
 
 
+@pytest.mark.parametrize("code", [129, 0])
+def test_une_session_dont_l_arret_est_demande_se_clot_arretee(sessions, code):
+    """**Terminer** demande l’arrêt avant de couper le terminal : un arrêt humain, pas un échec."""
+    session = creer(sessions)
+
+    sessions.demander_arret(session["id"])
+    close = sessions.clore(session["id"], code)
+
+    assert (close["etat"], close["code_sortie"]) == ("arrêtée", code)
+
+
+def test_demander_l_arret_d_une_session_close_ne_change_rien(sessions):
+    session = creer(sessions)
+    close = sessions.clore(session["id"], 1)
+
+    sessions.demander_arret(session["id"])
+
+    assert sessions.lire(session["id"]) == close
+
+
 def test_l_executeur_enregistre_le_terminal_de_l_agent(sessions, tmp_path, faux_claude):
     """L’agent écrit dans un vrai terminal ; ce qu’il affiche va aussi dans `terminal.cast`."""
     session = creer(sessions)
@@ -389,3 +409,24 @@ def test_sessions_d_un_repo_de_la_plus_recente_a_la_plus_ancienne(sessions, horl
     seconde = creer(sessions, repo="O/R")
 
     assert [s["id"] for s in sessions.du_repo("o/r")] == [seconde["id"], premiere["id"]]
+
+
+def test_l_executeur_laisse_l_instantane_du_clone_a_la_fermeture(tmp_path, faux_claude):
+    clones = tmp_path / "clones"
+    clone = clones / "o" / "r"
+    clone.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(clone), "init", "--quiet", "-b", "main"], check=True)
+    session = creer(Sessions(tmp_path / "jobs"))
+    faux_claude(f"import pathlib; pathlib.Path({str(clone / 'neuf.py')!r}).write_text('x = 1\\n')")
+
+    subprocess.run(
+        [*executeur(tmp_path, session), str(clones)], stdin=subprocess.DEVNULL, capture_output=True, check=True
+    )
+
+    instantane = json.loads((tmp_path / "jobs" / session["id"] / "instantane.json").read_text())
+    fichiers = subprocess.run(
+        ["git", "-C", str(clone), "ls-tree", "--name-only", instantane["sha"]],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert fichiers == ["neuf.py"]
+    assert Sessions(tmp_path / "jobs").lire(session["id"])["etat"] == "terminée"

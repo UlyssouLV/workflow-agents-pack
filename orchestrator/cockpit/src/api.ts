@@ -58,7 +58,7 @@ export interface LienSession {
 
 /** `interrompue` : le runner a redémarré pendant la session. `enchaînée` : close par l’ouverture
  * de sa `suivante`, à la demande de son agent (ADR 0006). */
-export type EtatSession = "ouverte" | "terminée" | "échouée" | "interrompue" | "enchaînée";
+export type EtatSession = "ouverte" | "terminée" | "arrêtée" | "échouée" | "interrompue" | "enchaînée";
 
 /** `GET /api/sessions/{id}` : `jobs/<id>/session.json`, écrit par le runner. */
 export interface Session {
@@ -109,6 +109,7 @@ export interface Repo<V = VersionResume> {
     | "attend"
     | "humain_requis"
     | "echouee"
+    | "arretee"
     | "interrompue"
     | "aucun_eligible"
     | "echec_lancement"
@@ -323,7 +324,100 @@ export async function terminerSession(id: string): Promise<Session> {
 
 /** Websocket du terminal en direct, sur le cockpit servi (le runtime vérifie son `Origin`). */
 export function urlTerminal(id: string): string {
+  return urlWebsocket(id, "/terminal");
+}
+
+/** Websocket des changements du codespace en direct (`EvenementCodespace`). */
+export function urlEvenementsCodespace(id: string): string {
+  return urlWebsocket(id, "/codespace/evenements");
+}
+
+function urlWebsocket(id: string, suite: string): string {
   if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
   const { protocol, host } = window.location;
-  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}/terminal`;
+  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}/api/sessions/${encodeURIComponent(id)}${suite}`;
 }
+
+/** `GET /api/sessions/{id}/codespace` : l’identité du clone de la session (`direct` : lu en direct ;
+ * `instantane` : session close, lue dans son instantané, branche et HEAD de l’époque). */
+export type IdentiteCodespace = {
+  repo: string;
+  /** `null` : HEAD détaché. */
+  branche: string | null;
+  /** HEAD court ; `null` sur un clone sans commit. */
+  head: string | null;
+} & ({ source: "direct" } | { source: "instantane"; instantane: EtatInstantane });
+
+/** L’instantané d’une session close : lisible (`present`), jamais pris (`absent`, session antérieure
+ * à la 0.8.0), `perdu` (ref absente du clone), ou son `erreur` de prise. */
+export type EtatInstantane =
+  | { etat: "present"; pris_le: string }
+  | { etat: "perdu"; pris_le: string }
+  | { etat: "absent" }
+  | { etat: "erreur"; pris_le: string; erreur: string };
+
+/** Statut Git d’une entrée ; un dossier prend le plus fort de ce qu’il contient. */
+export type StatutGit = "modifie" | "ajoute" | "non_suivi";
+
+/** Une entrée d’un dossier du clone. `lien` : symlink qui sort du clone, jamais suivi. */
+export interface EntreeCodespace {
+  nom: string;
+  type: "dossier" | "fichier" | "lien";
+  /** Taille d’un fichier, en octets ; `null` sinon. */
+  taille: number | null;
+  /** Ignoré par `.gitignore`. */
+  ignore: boolean;
+  /** `null` : inchangé (ou ignoré). */
+  statut: StatutGit | null;
+  /** Instantané : entrée présente à la fin (ignorée, `.git/`) mais dont le contenu n’est pas gardé. */
+  non_conserve?: boolean;
+}
+
+/** `GET /api/sessions/{id}/codespace/arbre?chemin=` : les entrées d’un dossier, chargé à son ouverture. */
+export interface ArbreCodespace {
+  chemin: string;
+  entrees: EntreeCodespace[];
+}
+
+/** `GET /api/sessions/{id}/codespace/fichier?chemin=` : `contenu` nul et `non_affiche` si binaire
+ * ou plus de 1 Mo. */
+export interface FichierCodespace {
+  chemin: string;
+  taille: number;
+  contenu: string | null;
+  non_affiche?: "binaire" | "trop_gros";
+}
+
+/** `GET /api/sessions/{id}/codespace/diff?chemin=` : versions HEAD et courante d’un fichier. `head`
+ * nul : absent de HEAD (ajouté, non suivi). Binaire ou plus de 1 Mo : les deux nuls et `non_affiche`. */
+export interface DiffCodespace {
+  chemin: string;
+  head: string | null;
+  courant: string | null;
+  non_affiche?: "binaire" | "trop_gros";
+}
+
+/** Lecture du codespace de la session `id` ; `chemin` est relatif au clone. */
+export function lireCodespace<T>(
+  id: string,
+  suite: "" | "/arbre" | "/fichier" | "/diff",
+  chemin?: string,
+): Promise<T> {
+  if (!ID_SESSION.test(id)) throw new ErreurApi(`session invalide : ${id}`);
+  const requete = chemin === undefined ? "" : `?chemin=${encodeURIComponent(chemin)}`;
+  return lire<T>(`/api/sessions/${encodeURIComponent(id)}/codespace${suite}${requete}`);
+}
+
+/** Envoyé sur le websocket des changements : ce que la vue montre (remplace le précédent). */
+export interface AbonnementCodespace {
+  /** Dossiers dépliés et visibles ; `""` : la racine. */
+  dossiers: string[];
+  /** Fichier ouvert (onglet actif). */
+  fichier: string | null;
+}
+
+/** Reçu sur le websocket des changements : une rafale regroupée (dossiers abonnés à relire,
+ * fichier ouvert changé, HEAD ou ref courante changé), ou la surveillance du disque impossible. */
+export type EvenementCodespace =
+  | { dossiers: string[]; fichier: boolean; entete: boolean }
+  | { surveillance: "indisponible" };

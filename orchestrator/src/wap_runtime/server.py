@@ -1,7 +1,8 @@
 """Service HTTP du runtime (FastAPI) : `GET /health`, l’API du cockpit sous `/api/` et son front.
 
 Le terminal en direct d’une session (websocket `/api/sessions/{id}/terminal`) est relayé jusqu’au
-runner (`wap_runtime.terminal`).
+runner (`wap_runtime.terminal`), comme les changements de son codespace
+(`/api/sessions/{id}/codespace/evenements`, `wap_runtime.codespace`).
 """
 
 import os
@@ -335,6 +336,36 @@ def creer_app(
             raise HTTPException(404, f"aucun enregistrement pour la session {id_}")
         return FileResponse(chemin, media_type="application/x-asciicast")
 
+    def _codespace(id_: str, suite: str, chemin: str | None = None) -> JSONResponse:
+        """Lecture du codespace relayée au runner, seul lecteur des clones (ADR 0014)."""
+        if sessions.lire(id_) is None:
+            raise HTTPException(404, f"session {id_} inconnue")
+        try:
+            statut, corps = client_runner.lire_codespace(id_, suite, chemin)
+        except RunnerErreur as erreur:
+            raise HTTPException(502, str(erreur)) from erreur
+        return JSONResponse(corps, status_code=statut)
+
+    @app.get("/api/sessions/{id_}/codespace")
+    def codespace(id_: str) -> JSONResponse:
+        """Identité du codespace : repo, branche, HEAD court, source."""
+        return _codespace(id_, "")
+
+    @app.get("/api/sessions/{id_}/codespace/arbre")
+    def codespace_arbre(id_: str, chemin: str = "") -> JSONResponse:
+        """Entrées d’un dossier du clone, chargé à son ouverture."""
+        return _codespace(id_, "/arbre", chemin)
+
+    @app.get("/api/sessions/{id_}/codespace/fichier")
+    def codespace_fichier(id_: str, chemin: str) -> JSONResponse:
+        """Contenu d’un fichier du clone, ou « non affiché »."""
+        return _codespace(id_, "/fichier", chemin)
+
+    @app.get("/api/sessions/{id_}/codespace/diff")
+    def codespace_diff(id_: str, chemin: str) -> JSONResponse:
+        """Versions HEAD et courante d’un fichier du clone, pour l’éditeur de diff."""
+        return _codespace(id_, "/diff", chemin)
+
     @app.post("/api/sessions", status_code=201, response_model=None)
     def lancer(demande: Lancement, requete: Request) -> dict | JSONResponse:
         _verifier_origine(requete)
@@ -390,6 +421,16 @@ def creer_app(
 
     @app.websocket("/api/sessions/{id_}/terminal")
     async def terminal(websocket: WebSocket, id_: str) -> None:
+        await _relayer_websocket(websocket, id_, "/terminal")
+
+    @app.websocket("/api/sessions/{id_}/codespace/evenements")
+    async def codespace_evenements(websocket: WebSocket, id_: str) -> None:
+        """Les changements du codespace en direct (dossiers dépliés, fichier ouvert, en-tête)."""
+        await _relayer_websocket(websocket, id_, "/codespace/evenements")
+
+    async def _relayer_websocket(websocket: WebSocket, id_: str, suite: str) -> None:
+        """Relaie un websocket d’une session ouverte jusqu’au runner, derrière l’authentification
+        du cockpit et la vérification d’origine."""
         from websockets.asyncio.client import connect
         from websockets.exceptions import WebSocketException
 
@@ -406,7 +447,7 @@ def creer_app(
             await websocket.close()
             return
         try:
-            amont = await connect(client_runner.url_terminal(id_), max_size=None)
+            amont = await connect(client_runner.url_websocket(id_, suite), max_size=None)
         except (OSError, TimeoutError, WebSocketException):
             await websocket.close()
             return
@@ -463,6 +504,10 @@ def _servir_front(app: FastAPI, front: Path) -> None:
 
     @app.get("/sessions/{id_}", include_in_schema=False)
     def session(id_: str) -> FileResponse:
+        return FileResponse(index)
+
+    @app.get("/sessions/{id_}/codespace", include_in_schema=False)
+    def codespace(id_: str) -> FileResponse:
         return FileResponse(index)
 
     if (front / "assets").is_dir():
