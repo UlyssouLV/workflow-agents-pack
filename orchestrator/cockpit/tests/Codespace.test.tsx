@@ -344,6 +344,19 @@ describe("Git dans le codespace", () => {
     expect(screen.queryByRole("button", { name: "Diff avec HEAD" })).toBeNull();
   });
 
+  it("un fichier ouvert puis modifié par l’agent a son diff, sans le rouvrir", async () => {
+    let racine = RACINE_GIT;
+    apiGit({ [`${API}/codespace/arbre?chemin=`]: () => ({ chemin: "", entrees: racine }) });
+    await ouvrirFichier("LICENSE");
+    const ws = await surveillance();
+    expect(screen.queryByRole("button", { name: "Diff avec HEAD" })).toBeNull();
+
+    racine = RACINE_GIT.map((e) => (e.nom === "LICENSE" ? { ...e, statut: "modifie" as const } : e));
+    act(() => ws.message({ dossiers: [""], fichier: true, entete: false }));
+
+    expect(await screen.findByRole("button", { name: "Diff avec HEAD" })).toBeInTheDocument();
+  });
+
   it("diff non affiché (binaire) ou refusé : son message", async () => {
     apiGit({
       [`${API}/codespace/diff?chemin=README.md`]: {

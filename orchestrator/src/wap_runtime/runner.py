@@ -395,7 +395,7 @@ class Runner:
         if session is None:
             raise CodespaceErreur(f"session {id_} inconnue")
         if session["etat"] == OUVERTE:
-            return Direct(self.clone_de(id_)[1], session["repo"])
+            return Direct(self._clone_present(session), session["repo"])
         return Relecture(session, self._clones / session["repo"], self._sessions.jobs / id_)
 
     def clone_de(self, id_: str) -> tuple[dict, Path]:
@@ -406,10 +406,16 @@ class Runner:
         session = self._sessions.lire(id_)
         if session is None or session["etat"] != OUVERTE:
             raise CodespaceErreur(f"session {id_} inconnue ou close : pas de codespace en direct")
+        return session, self._clone_present(session)
+
+    def _clone_present(self, session: dict) -> Path:
+        """Le clone de `session` ; `CodespaceErreur` s’il est absent."""
+        from wap_runtime.codespace import CodespaceErreur
+
         dossier = self._clones / session["repo"]
         if not (dossier / ".git").is_dir():
             raise CodespaceErreur(f"clone de {session['repo']} absent")
-        return session, dossier
+        return dossier
 
     def terminer(self, id_: str) -> dict | None:
         """**Terminer** : arrête l’agent, rend la session close (`None` si inconnue).

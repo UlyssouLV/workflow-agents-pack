@@ -8,11 +8,13 @@ de la session sur son ticket en l’enregistrant (`wap_runtime.enregistrement`),
 puis clôt la session selon son code de sortie (avec son instantané si `<clones>` est donné).
 """
 
+import fcntl
 import json
 import re
 import secrets
 import signal
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -31,6 +33,8 @@ INCONNUE, TRAVAILLE, ATTEND = "inconnue", "travaille", "attend"
 # Code de sortie d’un agent arrêté par **Terminer** (SIGHUP), comme le rend un shell.
 CODE_ARRETEE = 128 + signal.SIGHUP
 ID_SESSION = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+# Verrou de `jobs/<id>/` : l’exécuteur (tmux) et le runner (**Terminer**) peuvent la clore ensemble.
+VERROU = ".session.lock"
 
 
 def publique(session: dict) -> dict:
@@ -153,21 +157,24 @@ class Sessions:
     def demander_arret(self, id_: str) -> None:
         """**Terminer**, avant de couper le terminal : la clôture qui suit rend la session `arrêtée`,
         quel que soit le code de sortie de l’agent. Une session close ne change pas."""
-        if (lue := self.lire(id_)) is not None and lue["etat"] == OUVERTE:
-            self._ecrire({**lue, "arret_demande": True})
+        with self._verrou(id_):
+            if (lue := self.lire(id_)) is not None and lue["etat"] == OUVERTE:
+                self._ecrire({**lue, "arret_demande": True})
 
     def clore(self, id_: str, code: int) -> dict:
-        """Une session déjà close garde son état final."""
-        if (lue := self.lire(id_))["etat"] != OUVERTE:
-            return lue
-        fin = self._figer(lue)
-        if lue.get("arret_demande"):
-            etat = ARRETEE
-        else:
-            etat = TERMINEE if code == 0 else ECHOUEE
-        session = {**lue, "fin": fin.isoformat(), "etat": etat, "code_sortie": code}
-        self._ecrire(session)
-        return session
+        """Une session déjà close garde son état final ; une clôture en cours (l’instantané se prend)
+        est attendue, puis rendue."""
+        with self._verrou(id_):
+            if (lue := self.lire(id_))["etat"] != OUVERTE:
+                return lue
+            fin = self._figer(lue)
+            if lue.get("arret_demande"):
+                etat = ARRETEE
+            else:
+                etat = TERMINEE if code == 0 else ECHOUEE
+            session = {**lue, "fin": fin.isoformat(), "etat": etat, "code_sortie": code}
+            self._ecrire(session)
+            return session
 
     def enregistrer_etat(
         self,
@@ -181,29 +188,33 @@ class Sessions:
         `activite` à `None` : ne change que le skill (outil `Skill` des hooks).
         Le premier `prompt` devient le titre.
         """
-        session = self.lire(id_)
-        if session is None or session["etat"] != OUVERTE:
-            raise ValueError(f"session {id_} close ou inconnue")
         if activite is not None and activite not in (TRAVAILLE, ATTEND):
             raise ValueError(f"activité inconnue : {activite}")
-        maj = {**session}
-        if activite is not None:
-            maj["activite"] = activite
-        if skill:
-            maj["skill"] = skill
-        if prompt and session["titre"] is None:
-            maj["titre"] = prompt
-        self._ecrire(maj)
-        return maj
+        if not ID_SESSION.fullmatch(id_) or not (self.jobs / id_).is_dir():
+            raise ValueError(f"session {id_} close ou inconnue")
+        with self._verrou(id_):
+            session = self.lire(id_)
+            if session is None or session["etat"] != OUVERTE:
+                raise ValueError(f"session {id_} close ou inconnue")
+            maj = {**session}
+            if activite is not None:
+                maj["activite"] = activite
+            if skill:
+                maj["skill"] = skill
+            if prompt and session["titre"] is None:
+                maj["titre"] = prompt
+            self._ecrire(maj)
+            return maj
 
     def enchainer(self, id_: str, suivante: str) -> dict:
         """La session ouverte `id_` passe `enchaînée` vers `suivante` ; l’exécuteur, en la clôturant
         ensuite, lui laisse cet état."""
-        lue = self.lire(id_)
-        fin = self._figer(lue)
-        session = {**lue, "fin": fin.isoformat(), "etat": ENCHAINEE, "suivante": suivante}
-        self._ecrire(session)
-        return session
+        with self._verrou(id_):
+            lue = self.lire(id_)
+            fin = self._figer(lue)
+            session = {**lue, "fin": fin.isoformat(), "etat": ENCHAINEE, "suivante": suivante}
+            self._ecrire(session)
+            return session
 
     def interrompre(self) -> list[dict]:
         """Au démarrage du runner : les sessions restées ouvertes n’ont plus d’agent (runner
@@ -211,11 +222,20 @@ class Sessions:
         interrompues = []
         for session in self.toutes():
             if session["etat"] == OUVERTE:
-                fin = self._figer(session)
-                session = {**session, "fin": fin.isoformat(), "etat": INTERROMPUE}
-                self._ecrire(session)
+                with self._verrou(session["id"]):
+                    fin = self._figer(session)
+                    session = {**session, "fin": fin.isoformat(), "etat": INTERROMPUE}
+                    self._ecrire(session)
                 interrompues.append(session)
         return interrompues
+
+    @contextmanager
+    def _verrou(self, id_: str):
+        """Une lecture-écriture de `session.json` à la fois, entre processus : sans lui, **Terminer**
+        clôt en parallèle de l’exécuteur (deux instantanés), ou un hook réécrit une session close."""
+        with open(self.jobs / id_ / VERROU, "a") as verrou:
+            fcntl.flock(verrou, fcntl.LOCK_EX)
+            yield
 
     def _figer(self, session: dict) -> datetime:
         """L’instantané de la session qui se ferme, avant son état final : une session close a

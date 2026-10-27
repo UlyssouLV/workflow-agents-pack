@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from wap_runtime.codespace import (
     AJOUTE,
@@ -24,11 +24,15 @@ from wap_runtime.codespace import (
     LIEN,
     MODIFIE,
     NON_SUIVI,
-    STATUTS,
     TAILLE_MAX,
     CheminRefuse,
     CodespaceErreur,
-    _texte,
+    chemin_relatif,
+    fichier_lu,
+    git_ou_none,
+    marquer,
+    texte,
+    trier,
 )
 from wap_runtime.fichiers import remplacer
 
@@ -66,7 +70,7 @@ def prendre(clone: Path, dossier_session: Path, id_: str, pris_le: datetime) -> 
 def _figer(clone: Path, id_: str) -> dict:
     if not (clone / ".git").is_dir():
         raise _Echec(f"clone absent : {clone.name}")
-    head = _git_ou_none(clone, "rev-parse", "--verify", "--quiet", "HEAD")
+    head = git_ou_none(clone, "rev-parse", "--verify", "--quiet", "HEAD")
     with tempfile.TemporaryDirectory() as provisoire:
         index = Path(provisoire) / "index"
         # Repart de l’index réel : un fichier suivi bien qu’ignoré reste dans l’instantané.
@@ -74,16 +78,16 @@ def _figer(clone: Path, id_: str) -> dict:
             shutil.copyfile(clone / ".git" / "index", index)
         env = {"GIT_INDEX_FILE": str(index)}
         _git(clone, env, "add", "--all")
-        arbre = _git(clone, env, "write-tree")
+        arbre = _git(clone, env, "write-tree").strip()
     parent = [] if head is None else ["-p", head]
-    sha = _git(clone, AUTEUR, "commit-tree", arbre, *parent, "-m", f"instantané session {id_}")
+    sha = _git(clone, AUTEUR, "commit-tree", arbre, *parent, "-m", f"instantané session {id_}").strip()
     _git(clone, {}, "update-ref", ref(id_), sha)
     ignores = _git(clone, {}, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
     non_suivis = _git(clone, {}, "ls-files", "--others", "--exclude-standard", "--directory", "-z")
     return {
         "sha": sha,
         "head": head,
-        "branche": _git_ou_none(clone, "symbolic-ref", "--short", "--quiet", "HEAD"),
+        "branche": git_ou_none(clone, "symbolic-ref", "--short", "--quiet", "HEAD"),
         "ignores": _par_dossier(filter(None, ignores.split("\0"))),
         "non_suivis": sorted(filter(None, non_suivis.split("\0"))),
     }
@@ -117,7 +121,7 @@ class Relecture:
             return ABSENT, "pas d’instantané (session antérieure à la 0.8.0)"
         if "erreur" in self._lu:
             return ERREUR, f"instantané non pris : {self._lu['erreur']}"
-        present = (self._clone / ".git").is_dir() and _git_ou_none(
+        present = (self._clone / ".git").is_dir() and git_ou_none(
             self._clone, "rev-parse", "--verify", "--quiet", f"{ref(self._session['id'])}^{{commit}}"
         ) == self._lu["sha"]
         return (PRESENT, None) if present else (PERDU, "instantané perdu")
@@ -165,29 +169,26 @@ class Relecture:
             entrees.append(_non_conserve(nom.rstrip("/"), nom.endswith("/"), ignore=True))
         if relatif == "":
             entrees.append(_non_conserve(".git", True, ignore=False))
-        return sorted(entrees, key=lambda e: (e["type"] != DOSSIER, e["nom"].casefold(), e["nom"]))
+        return trier(entrees)
 
     def fichier(self, chemin: str) -> dict:
         relatif = self._blob(chemin)
         taille = int(self._git("cat-file", "-s", f"{self._sha}:{relatif}").strip())
-        lu = {"chemin": chemin, "taille": taille}
-        octets = self._contenu(self._sha, relatif) if taille <= TAILLE_MAX else None
-        contenu, non_affiche = _texte(octets, taille)
-        return {**lu, "contenu": contenu} if non_affiche is None else {**lu, "contenu": None, "non_affiche": non_affiche}
+        return fichier_lu(chemin, taille, self._contenu(self._sha, relatif) if taille <= TAILLE_MAX else None)
 
     def diff(self, chemin: str) -> dict:
         """Versions du HEAD de l’époque et de l’instantané ; mêmes règles que le diff en direct."""
         relatif = self._blob(chemin)
         lu = {"chemin": chemin, "head": None, "courant": None}
         courant = self._contenu(self._sha, relatif)
-        courant, non_affiche = _texte(courant if len(courant) <= TAILLE_MAX else None, len(courant))
+        courant, non_affiche = texte(courant if len(courant) <= TAILLE_MAX else None, len(courant))
         if non_affiche is not None:
             return {**lu, "non_affiche": non_affiche}
         head = self._lu["head"]
         avant = None if head is None else self._contenu(head, relatif, absent_ok=True)
         if avant is None:
             return {**lu, "courant": courant}
-        avant, non_affiche = _texte(avant if len(avant) <= TAILLE_MAX else None, len(avant))
+        avant, non_affiche = texte(avant if len(avant) <= TAILLE_MAX else None, len(avant))
         if non_affiche is not None:
             return {**lu, "non_affiche": non_affiche}
         return {**lu, "head": avant, "courant": courant}
@@ -200,9 +201,7 @@ class Relecture:
 
     def _chemin(self, chemin: str) -> str:
         """Le chemin normalisé, relatif à la racine de l’instantané (`""` : la racine)."""
-        relatif = PurePosixPath(chemin)
-        if "\0" in chemin or relatif.is_absolute() or ".." in relatif.parts:
-            raise CheminRefuse(f"chemin refusé : {chemin}")
+        relatif = chemin_relatif(chemin)
         self._sha  # Sans instantané lisible : sa raison, avant tout le reste.
         return "" if str(relatif) == "." else str(relatif)
 
@@ -256,10 +255,8 @@ class Relecture:
                 statut = NON_SUIVI
             else:
                 statut = AJOUTE
-            if entree is not None and (
-                entree["statut"] is None or STATUTS.index(statut) < STATUTS.index(entree["statut"])
-            ):
-                entree["statut"] = statut
+            if entree is not None:
+                marquer(entree, statut)
 
     def _git(self, *args: str) -> str:
         sortie = subprocess.run(
@@ -289,11 +286,4 @@ def _git(clone: Path, env: dict, *args: str) -> str:
     if sortie.returncode != 0:
         detail = sortie.stderr.strip().splitlines()
         raise _Echec(f"git {args[0]} a échoué" + (f" : {detail[-1]}" if detail else ""))
-    return sortie.stdout.strip() if args[0] != "ls-files" else sortie.stdout
-
-
-def _git_ou_none(clone: Path, *args: str) -> str | None:
-    try:
-        return _git(clone, {}, *args) or None
-    except _Echec:
-        return None
+    return sortie.stdout

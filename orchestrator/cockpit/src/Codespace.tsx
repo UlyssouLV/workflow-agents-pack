@@ -48,8 +48,6 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
   const [ouverts, setOuverts] = useState<string[]>([]);
   const [actif, setActif] = useState<string | null>(null);
   const [fichiers, setFichiers] = useState<Record<string, Fichier>>({});
-  /** Statut Git de chaque fichier ouvert, tel que l’arbre le montrait à son ouverture. */
-  const [statuts, setStatuts] = useState<Record<string, StatutGit | null>>({});
   const [enDiff, setEnDiff] = useState<ReadonlySet<string>>(new Set());
   const [diffs, setDiffs] = useState<Record<string, Diff>>({});
 
@@ -92,8 +90,7 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
     for (const dossier of dossiersVisibles(suivants)) if (contient(chemin, dossier)) charger(dossier);
   };
 
-  const ouvrir = (chemin: string, statut: StatutGit | null) => {
-    setStatuts((s) => ({ ...s, [chemin]: statut }));
+  const ouvrir = (chemin: string) => {
     setOuverts((o) => (o.includes(chemin) ? o : [...o, chemin]));
     setActif(chemin);
     lireFichier(chemin);
@@ -132,6 +129,9 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
     if (courant.fichier !== null && (evenement.fichier || evenement.entete)) {
       lireFichier(courant.fichier);
       if (diff) lireDiff(courant.fichier);
+      // Son statut Git (le bouton de diff) vient de son dossier, même replié depuis.
+      const parent = parentDe(courant.fichier);
+      if (!courant.dossiers.includes(parent)) charger(parent);
     }
   };
 
@@ -181,6 +181,8 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
   };
 
   const diffActif = actif !== null && enDiff.has(actif);
+  // Relu avec son dossier : un fichier changé depuis son ouverture a son diff.
+  const statutActif = actif === null ? null : statutDe(dossiers, actif);
   const instantane = identite !== null && !("erreur" in identite) && identite.source === "instantane" ? identite.instantane : null;
 
   return (
@@ -221,7 +223,7 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
                 ))}
               </div>
             )}
-            {actif !== null && statuts[actif] && (
+            {actif !== null && (statutActif || diffActif) && (
               <button type="button" className="bouton-diff" aria-pressed={diffActif} onClick={() => basculerDiff(actif)}>
                 Diff avec HEAD
               </button>
@@ -272,7 +274,7 @@ interface PropsEntrees {
   dossiers: Record<string, Dossier>;
   deplies: ReadonlySet<string>;
   basculer: (chemin: string) => void;
-  ouvrir: (chemin: string, statut: StatutGit | null) => void;
+  ouvrir: (chemin: string) => void;
 }
 
 /** Les entrées du dossier `chemin`, une fois chargé ; un dossier déplié montre les siennes. */
@@ -312,7 +314,7 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
           <button
             type="button"
             className={entree.type}
-            onClick={() => (entree.type === "dossier" ? basculer(complet) : ouvrir(complet, entree.statut))}
+            onClick={() => (entree.type === "dossier" ? basculer(complet) : ouvrir(complet))}
           >
             {entree.nom}
           </button>
@@ -472,6 +474,17 @@ function dossiersVisibles(deplies: ReadonlySet<string>): string[] {
 /** `dossier` est `chemin` ou l’un de ses sous-dossiers. */
 function contient(chemin: string, dossier: string): boolean {
   return dossier === chemin || dossier.startsWith(`${chemin}/`);
+}
+
+/** Le statut Git du fichier `chemin`, tel que son dossier chargé le montre. */
+function statutDe(dossiers: Record<string, Dossier>, chemin: string): StatutGit | null {
+  const dossier = dossiers[parentDe(chemin)];
+  if (dossier === undefined || "erreur" in dossier) return null;
+  return dossier.find((e) => e.nom === nomDe(chemin))?.statut ?? null;
+}
+
+function parentDe(chemin: string): string {
+  return chemin.slice(0, Math.max(chemin.lastIndexOf("/"), 0));
 }
 
 function nomDe(chemin: string): string {

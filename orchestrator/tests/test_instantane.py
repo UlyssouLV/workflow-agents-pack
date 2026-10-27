@@ -8,6 +8,8 @@ dans `jobs/` sans lancer d’agent.
 import hashlib
 import json
 import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -127,6 +129,34 @@ def test_instantane_pris_a_l_arret(sessions, session, clone, jobs):
     sessions.demander_arret(session["id"])
     close = sessions.clore(session["id"], 129)
 
+    assert close["etat"] == "arrêtée"
+    assert instantane(jobs, session)["sha"] == git(clone, "rev-parse", f"refs/wap/sessions/{session['id']}")
+
+
+def test_terminer_pendant_une_prise_lente_attend_la_cloture_en_cours(sessions, session, clone, jobs, monkeypatch):
+    """**Terminer** clôt après son délai pendant que l’exécuteur prend encore l’instantané : une seule
+    prise, et la session garde l’état de la première clôture."""
+    from wap_runtime import instantane as module
+
+    prendre, prises, commencee = module.prendre, [], threading.Event()
+
+    def lente(*args):
+        prises.append(args)
+        commencee.set()
+        time.sleep(0.3)
+        return prendre(*args)
+
+    monkeypatch.setattr(module, "prendre", lente)
+    sessions.demander_arret(session["id"])
+    executeur = threading.Thread(target=sessions.clore, args=(session["id"], 129))
+    executeur.start()
+    commencee.wait(5)
+
+    close = sessions.clore(session["id"], 129)
+    executeur.join()
+
+    assert len(prises) == 1
+    assert close == Sessions(jobs).lire(session["id"])
     assert close["etat"] == "arrêtée"
     assert instantane(jobs, session)["sha"] == git(clone, "rev-parse", f"refs/wap/sessions/{session['id']}")
 

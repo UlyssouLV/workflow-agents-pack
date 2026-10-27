@@ -74,8 +74,8 @@ def identite(clone: Path, repo: str) -> dict:
     """Repo, branche (`None` si HEAD détaché) et HEAD court (`None` sans commit)."""
     return {
         "repo": repo,
-        "branche": _git_ou_none(clone, "symbolic-ref", "--short", "--quiet", "HEAD"),
-        "head": _git_ou_none(clone, "rev-parse", "--short", "--quiet", "--verify", "HEAD"),
+        "branche": git_ou_none(clone, "symbolic-ref", "--short", "--quiet", "HEAD"),
+        "head": git_ou_none(clone, "rev-parse", "--short", "--quiet", "--verify", "HEAD"),
         "source": "direct",
     }
 
@@ -90,16 +90,14 @@ def arbre(clone: Path, chemin: str) -> list[dict]:
         raise CheminRefuse(f"{chemin} n’est pas un dossier")
     entrees = [_entree(racine, element) for element in os.scandir(dossier)]
     _marquer(racine, dossier, entrees)
-    return sorted(entrees, key=lambda e: (e["type"] != DOSSIER, e["nom"].casefold(), e["nom"]))
+    return trier(entrees)
 
 
 def fichier(clone: Path, chemin: str) -> dict:
     """Contenu texte, ou `contenu` nul et `non_affiche` (`binaire`, `trop_gros`)."""
     _, cible = _fichier(clone, chemin)
     taille = cible.stat().st_size
-    lu = {"chemin": chemin, "taille": taille}
-    contenu, non_affiche = _texte(cible.read_bytes() if taille <= TAILLE_MAX else None, taille)
-    return {**lu, "contenu": contenu} if non_affiche is None else {**lu, "contenu": None, "non_affiche": non_affiche}
+    return fichier_lu(chemin, taille, cible.read_bytes() if taille <= TAILLE_MAX else None)
 
 
 def diff(clone: Path, chemin: str) -> dict:
@@ -109,7 +107,7 @@ def diff(clone: Path, chemin: str) -> dict:
     racine, cible = _fichier(clone, chemin)
     lu = {"chemin": chemin, "head": None, "courant": None}
     taille = cible.stat().st_size
-    courant, non_affiche = _texte(cible.read_bytes() if taille <= TAILLE_MAX else None, taille)
+    courant, non_affiche = texte(cible.read_bytes() if taille <= TAILLE_MAX else None, taille)
     if non_affiche is not None:
         return {**lu, "non_affiche": non_affiche}
     relatif = cible.relative_to(racine).as_posix()
@@ -121,7 +119,7 @@ def diff(clone: Path, chemin: str) -> dict:
     )
     if blob.returncode != 0:
         return {**lu, "courant": courant}
-    head, non_affiche = _texte(blob.stdout if len(blob.stdout) <= TAILLE_MAX else None, len(blob.stdout))
+    head, non_affiche = texte(blob.stdout if len(blob.stdout) <= TAILLE_MAX else None, len(blob.stdout))
     if non_affiche is not None:
         return {**lu, "non_affiche": non_affiche}
     return {**lu, "head": head, "courant": courant}
@@ -134,7 +132,33 @@ def _fichier(clone: Path, chemin: str) -> tuple[Path, Path]:
     return racine, cible
 
 
-def _texte(octets: bytes | None, taille: int) -> tuple[str | None, str | None]:
+def trier(entrees: list[dict]) -> list[dict]:
+    """Dossiers d’abord, puis par nom."""
+    return sorted(entrees, key=lambda e: (e["type"] != DOSSIER, e["nom"].casefold(), e["nom"]))
+
+
+def fichier_lu(chemin: str, taille: int, octets: bytes | None) -> dict:
+    """La réponse de `fichier` : `contenu` texte, ou nul avec `non_affiche`."""
+    contenu, non_affiche = texte(octets, taille)
+    lu = {"chemin": chemin, "taille": taille, "contenu": contenu}
+    return lu if non_affiche is None else {**lu, "non_affiche": non_affiche}
+
+
+def chemin_relatif(chemin: str) -> PurePosixPath:
+    """`chemin` tel que reçu ; `CheminRefuse` s’il est absolu, remonte (`..`) ou contient un octet nul."""
+    relatif = PurePosixPath(chemin)
+    if "\0" in chemin or relatif.is_absolute() or ".." in relatif.parts:
+        raise CheminRefuse(f"chemin refusé : {chemin}")
+    return relatif
+
+
+def marquer(entree: dict, statut: str) -> None:
+    """Donne `statut` à `entree`, s’il est plus fort que le sien."""
+    if entree["statut"] is None or STATUTS.index(statut) < STATUTS.index(entree["statut"]):
+        entree["statut"] = statut
+
+
+def texte(octets: bytes | None, taille: int) -> tuple[str | None, str | None]:
     """`(contenu, None)`, ou `(None, raison)` : `trop_gros` (`octets` nul, non lus) ou `binaire`."""
     if octets is None or taille > TAILLE_MAX:
         return None, "trop_gros"
@@ -147,9 +171,7 @@ def _texte(octets: bytes | None, taille: int) -> tuple[str | None, str | None]:
 def _resoudre(clone: Path, chemin: str) -> tuple[Path, Path]:
     """`(racine, cible)` réelles ; `CheminRefuse` hors du clone, `CodespaceErreur` si absente."""
     racine = clone.resolve()
-    relatif = PurePosixPath(chemin)
-    if "\0" in chemin or relatif.is_absolute() or ".." in relatif.parts:
-        raise CheminRefuse(f"chemin refusé : {chemin}")
+    relatif = chemin_relatif(chemin)
     cible = Path(os.path.realpath(racine / relatif))
     if not cible.is_relative_to(racine):
         raise CheminRefuse(f"chemin refusé : {chemin}")
@@ -165,13 +187,7 @@ def _entree(racine: Path, element: os.DirEntry) -> dict:
         type_ = LIEN
     else:
         type_ = DOSSIER if reel.is_dir() else FICHIER
-    return {
-        "nom": element.name,
-        "type": type_,
-        "taille": reel.stat().st_size if type_ == FICHIER else None,
-        # Pour `git status`, relatif au dossier réel : un symlink interne y est suivi.
-        "_nom_git": element.name,
-    }
+    return {"nom": element.name, "type": type_, "taille": reel.stat().st_size if type_ == FICHIER else None}
 
 
 def _marquer(racine: Path, dossier: Path, entrees: list[dict]) -> None:
@@ -182,7 +198,7 @@ def _marquer(racine: Path, dossier: Path, entrees: list[dict]) -> None:
     par_nom = {}
     for entree in entrees:
         entree.update(statut=None, ignore=False)
-        par_nom[entree.pop("_nom_git")] = entree
+        par_nom[entree["nom"]] = entree
     relatif = dossier.relative_to(racine).as_posix()
     if not entrees or relatif.split("/")[0] == ".git":
         return
@@ -208,8 +224,8 @@ def _marquer(racine: Path, dossier: Path, entrees: list[dict]) -> None:
         for entree in touchees:
             if statut == IGNORE:
                 entree["ignore"] = True
-            elif entree["statut"] is None or STATUTS.index(statut) < STATUTS.index(entree["statut"]):
-                entree["statut"] = statut
+            else:
+                marquer(entree, statut)
     for entree in entrees:
         if entree["ignore"]:
             entree["statut"] = None
@@ -233,9 +249,12 @@ def _statuts(porcelaine: str):
         yield chemin.rstrip("/"), statut
 
 
-def _git_ou_none(clone: Path, *args: str) -> str | None:
+def git_ou_none(clone: Path, *args: str) -> str | None:
+    """La sortie de Git, sans blancs autour ; `None` si elle est vide ou si Git échoue."""
     sortie = subprocess.run(
-        ["git", "-C", str(clone), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL
+        ["git", "-C", str(clone), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        # Lire sans réécrire l’index (rafraîchissement opportuniste).
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
     )
     return sortie.stdout.strip() or None if sortie.returncode == 0 else None
 
@@ -296,7 +315,7 @@ class Veille:
         chemins = {*self.dossiers, git}
         if self.fichier is not None:
             chemins.add(self.fichier.parent)
-        if (branche := _git_ou_none(self.racine, "symbolic-ref", "--quiet", "HEAD")) is not None:
+        if (branche := git_ou_none(self.racine, "symbolic-ref", "--quiet", "HEAD")) is not None:
             ref = Path(os.path.realpath(git / branche)).parent
             if ref.is_relative_to(git) and ref.is_dir():
                 chemins.add(ref)
