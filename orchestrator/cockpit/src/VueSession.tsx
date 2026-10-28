@@ -2,13 +2,13 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
 import {
-  Entete,
   LIBELLES_ETAT_SESSION,
   LiensChaine,
   libelleActivite,
   libelleModele,
   lienSession,
 } from "./commun";
+import { ContenuPage, Coque } from "./Coque";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
@@ -68,17 +68,18 @@ export function VueSession({ id, onglet = "terminal" }: { id: string; onglet?: O
   useEffect(() => ecrireEnchainement(null), []);
 
   return (
-    <main>
-      <Entete />
-      {erreur && <p className="erreur">{erreur}</p>}
-      {donnees && (
-        <Contenu
-          session={donnees}
-          arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null}
-          ongletInitial={onglet}
-        />
-      )}
-    </main>
+    <Coque courant="sessions">
+      <ContenuPage>
+        {erreur && <p className="erreur">{erreur}</p>}
+        {donnees && (
+          <Contenu
+            session={donnees}
+            arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null}
+            ongletInitial={onglet}
+          />
+        )}
+      </ContenuPage>
+    </Coque>
   );
 }
 

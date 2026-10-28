@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { VueDetail } from "../src/VueDetail";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { CLAUDE, CONNECTE, CURSOR_CONNECTE, MODELES, QUESTION, detail, session, simulerApi } from "./donnees";
+import { CLAUDE, CONNECTE, CURSOR_CONNECTE, MODELES, QUESTION, detail, liste, session, simulerApi } from "./donnees";
 
 function rendre(routes: Record<string, unknown>) {
   const fetch = simulerApi({ "/api/auth": CONNECTE, ...routes });
@@ -101,8 +101,8 @@ describe("vue détail", () => {
     expect(await screen.findByText(/o\/r absent du registry/)).toBeInTheDocument();
   });
 
-  it("affiche le bandeau d’auth sans token", async () => {
-    rendre({ "/api/auth": { etat: "sans_token", compte: null }, "/api/repos/o/r": detail() });
+  it("affiche le bandeau d’auth sans token dans la navigation", async () => {
+    rendre({ "/api/repos": liste({ auth: { etat: "sans_token", compte: null } }), "/api/repos/o/r": detail() });
 
     const bandeau = await screen.findByRole("alert");
     expect(bandeau).toHaveTextContent("sudo wap-runtime auth");

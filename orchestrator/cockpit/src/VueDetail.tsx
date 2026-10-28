@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
   Agent,
-  Auth,
   Bug,
   ChoixClone,
   CloneSale,
@@ -17,8 +16,6 @@ import { ErreurApi, ID_SESSION, enregistrerPilote, lancerSession, lire } from ".
 import {
   BadgeHumain,
   BadgeSession,
-  BandeauAuth,
-  Entete,
   LIBELLES_ETAT_SESSION,
   LibelleEtape,
   LiensChaine,
@@ -27,6 +24,7 @@ import {
   libelleModele,
   nomAffiche,
 } from "./commun";
+import { ContenuPage, Coque } from "./Coque";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 
 const LIBELLES_CI: Record<EtatCi, string> = {
@@ -40,17 +38,16 @@ const LIBELLES_CI: Record<EtatCi, string> = {
 export function VueDetail({ owner, name }: { owner: string; name: string }) {
   const chemin = `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
   const { donnees, erreur } = useRafraichi<Detail>(chemin);
-  const auth = useRafraichi<Auth>("/api/auth");
   const toutes = useRafraichi<SessionsDuRepo>("/api/sessions", RAFRAICHISSEMENT_SESSION_MS);
 
   return (
-    <main>
-      <Entete />
-      {auth.donnees && <BandeauAuth auth={auth.donnees} />}
-      {erreur && <p className="erreur">{erreur}</p>}
-      {donnees && <Contenu detail={donnees} sessions={toutes.donnees?.sessions ?? []} />}
-      <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
-    </main>
+    <Coque courant="repos">
+      <ContenuPage>
+        {erreur && <p className="erreur">{erreur}</p>}
+        {donnees && <Contenu detail={donnees} sessions={toutes.donnees?.sessions ?? []} />}
+        <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
+      </ContenuPage>
+    </Coque>
   );
 }
 

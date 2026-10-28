@@ -1,0 +1,126 @@
+/* Identité HéphaïstOS, direction Atelier (maquette docs/specs/v0.8.1-maquette-cockpit.html), ADR 0015.
+ * Toutes les couleurs, rayons et polices vivent dans les variables de `:root` ; Tailwind les lit par
+ * `@theme inline`. Thème sombre uniquement. */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --fond: #111113;
+  --surface: #17171a;
+  --surface-2: #1e1e22;
+  --surface-3: #26262b;
+  --filet: #2b2b31;
+  --texte: #ededef;
+  --attenue: #8e8e97;
+  --faible: #5e5e66;
+  --principal: #f4f4f5;
+  --principal-texte: #111113;
+  /* Code couleur des états, le même partout. */
+  --attention: #ff8b3d;
+  --attention-texte: #160800;
+  --agent: #5b9cf5;
+  --pilote: #a094f0;
+  --succes: #4cc38a;
+  --echec: #ec5d57;
+  --neutre: #6e6e78;
+  --voile: #000000;
+  --terminal: #0b0b0d;
+  --rayon: 10px;
+  --police: "Geist", system-ui, sans-serif;
+  --police-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+}
+
+@theme inline {
+  --color-background: var(--fond);
+  --color-foreground: var(--texte);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--texte);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--texte);
+  --color-primary: var(--principal);
+  --color-primary-foreground: var(--principal-texte);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--texte);
+  --color-muted: var(--surface-3);
+  --color-muted-foreground: var(--attenue);
+  --color-faint: var(--faible);
+  --color-accent: var(--surface-3);
+  --color-accent-foreground: var(--texte);
+  --color-destructive: var(--echec);
+  --color-border: var(--filet);
+  --color-input: var(--filet);
+  --color-ring: var(--attention);
+  --color-sidebar: var(--surface);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-terminal: var(--terminal);
+  --color-voile: var(--voile);
+  --color-attention: var(--attention);
+  --color-attention-foreground: var(--attention-texte);
+  --color-agent: var(--agent);
+  --color-pilote: var(--pilote);
+  --color-succes: var(--succes);
+  --color-echec: var(--echec);
+  --color-neutre: var(--neutre);
+  --radius-sm: calc(var(--rayon) - 4px);
+  --radius-md: calc(var(--rayon) - 2px);
+  --radius-lg: var(--rayon);
+  --radius-xl: calc(var(--rayon) + 4px);
+  --font-sans: var(--police);
+  --font-mono: var(--police-mono);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-sm antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  code {
+    @apply font-mono text-[0.92em];
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-semibold tracking-tight text-balance;
+  }
+  a {
+    @apply text-foreground underline-offset-4 hover:underline;
+  }
+}
+
+/* Pastilles animées (« travaille », « réponse attendue ») et panneaux : rien ne bouge sous reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

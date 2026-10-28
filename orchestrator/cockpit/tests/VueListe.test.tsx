@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VueListe } from "../src/VueListe";
 import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
-import { CLAUDE, CURSOR, PAS_DE_VERSION, QUESTION, liste, repo, session, simulerApi, version } from "./donnees";
+import { PAS_DE_VERSION, QUESTION, liste, repo, simulerApi, version } from "./donnees";
 
 async function lignes() {
   const tableau = await screen.findByRole("table");
@@ -10,46 +10,6 @@ async function lignes() {
 }
 
 describe("vue liste", () => {
-  it("compte les réponses attendues dans l’en-tête et le titre d’onglet", async () => {
-    simulerApi({
-      "/api/repos": liste(),
-      "/api/sessions": {
-        sessions: [
-          session({ activite: "attend", etat: "ouverte" }),
-          session({
-            id: "20261017-100000-bbbbbb",
-            activite: "attend",
-            etat: "ouverte",
-            repo: "o/autre",
-          }),
-          session({ activite: "travaille", etat: "ouverte", id: "20261017-110000-cccccc" }),
-          session({ activite: "attend", etat: "terminée", id: "20261017-080000-dddddd" }),
-        ],
-      },
-    });
-
-    render(<VueListe />);
-
-    expect(await screen.findByRole("link", { name: "2 réponse(s) attendue(s)" })).toHaveAttribute(
-      "href",
-      "/sessions",
-    );
-    // Le titre est posé par un effet après le rendu du lien : on l’attend.
-    await waitFor(() => expect(document.title).toBe("(2) Cockpit wap-runtime"));
-  });
-
-  it("ne change pas le titre d’onglet sans réponse attendue", async () => {
-    simulerApi({
-      "/api/repos": liste(),
-      "/api/sessions": { sessions: [session({ activite: "travaille" })] },
-    });
-
-    render(<VueListe />);
-
-    await screen.findByRole("link", { name: "0 réponse(s) attendue(s)" });
-    expect(document.title).toBe("Cockpit wap-runtime");
-  });
-
   it("montre une ligne par repo : nom, version ouverte, X/Y, étape, heure de lecture", async () => {
     simulerApi({ "/api/repos": liste() });
 
@@ -260,19 +220,6 @@ describe("vue liste", () => {
     expect(ok).not.toHaveTextContent("introuvable");
   });
 
-  it.each([
-    ["sans_token", /non connecté/i],
-    ["token_refuse", /token refusé/i],
-  ] as const)("affiche le bandeau d’auth quand l’état est %s", async (etat, motif) => {
-    simulerApi({ "/api/repos": liste({ auth: { etat, compte: null } }) });
-
-    render(<VueListe />);
-
-    const bandeau = await screen.findByRole("alert");
-    expect(bandeau).toHaveTextContent(motif);
-    expect(bandeau).toHaveTextContent("sudo wap-runtime auth");
-  });
-
   it("n’affiche pas de bandeau d’auth quand l’instance est connectée", async () => {
     simulerApi({ "/api/repos": liste() });
 
@@ -317,39 +264,6 @@ describe("vue liste", () => {
       avant,
     );
     expect(await screen.findByRole("link", { name: "o/nouveau" })).toBeInTheDocument();
-  });
-
-  describe("encart Agents", () => {
-    async function encart() {
-      return within(await screen.findByRole("region", { name: "Agents" }));
-    }
-
-    it("dit quel agent est connecté, et la commande à lancer pour l’autre", async () => {
-      simulerApi({ "/api/repos": liste() });
-
-      render(<VueListe />);
-
-      const agents = await encart();
-      const [claude, cursor] = agents.getAllByRole("listitem");
-      expect(claude).toHaveTextContent("Claude Code : Connecté");
-      expect(claude).not.toHaveTextContent("sudo");
-      expect(cursor).toHaveTextContent("Cursor : Non connecté");
-      expect(cursor).toHaveTextContent("… | sudo wap-runtime auth agent --with-token");
-    });
-
-    it("donne la commande de chaque agent non connecté", async () => {
-      simulerApi({
-        "/api/repos": liste({ agents: [{ ...CLAUDE, connecte: false }, { ...CURSOR, connecte: true }] }),
-      });
-
-      render(<VueListe />);
-
-      const [claude, cursor] = (await encart()).getAllByRole("listitem");
-      expect(claude).toHaveTextContent("Claude Code : Non connecté");
-      expect(claude).toHaveTextContent("sudo wap-runtime auth claude");
-      expect(cursor).toHaveTextContent("Cursor : Connecté");
-      expect(cursor).not.toHaveTextContent("sudo");
-    });
   });
 
   it.each([

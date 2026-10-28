@@ -3,13 +3,11 @@ import {
   BadgePause,
   BadgePilote,
   BadgeSession,
-  BandeauAuth,
-  EncartAgents,
-  Entete,
   LibelleEtape,
   heure,
   nomAffiche,
 } from "./commun";
+import { ContenuPage, Coque, EnTetePage } from "./Coque";
 import { useRafraichi } from "./rafraichi";
 
 /** `/` : une ligne par repo lié, ceux qui attendent quelqu’un en tête. */
@@ -17,20 +15,19 @@ export function VueListe() {
   const { donnees, erreur } = useRafraichi<Liste>("/api/repos");
 
   return (
-    <main>
-      <Entete />
-      <h1>Cockpit</h1>
-      {erreur && <p className="erreur">Lecture impossible : {erreur}</p>}
-      {donnees && <Contenu liste={donnees} />}
-    </main>
+    <Coque courant="repos">
+      <EnTetePage titre="Cockpit" />
+      <ContenuPage>
+        {erreur && <p className="erreur">Lecture impossible : {erreur}</p>}
+        {donnees && <Contenu liste={donnees} />}
+      </ContenuPage>
+    </Coque>
   );
 }
 
 function Contenu({ liste }: { liste: Liste }) {
   return (
     <>
-      <BandeauAuth auth={liste.auth} />
-      <EncartAgents agents={liste.agents} />
       {liste.erreur && <p className="erreur">Registry : {liste.erreur}</p>}
       {!liste.erreur && liste.repos.length === 0 && (
         <p>
