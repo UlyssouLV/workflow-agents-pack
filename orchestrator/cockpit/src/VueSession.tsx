@@ -1,14 +1,33 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { Session } from "./api";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  BotIcon,
+  CodeIcon,
+  GitBranchIcon,
+  LinkIcon,
+  SquareIcon,
+  SquareTerminalIcon,
+} from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import type { Agent, Session } from "./api";
 import { ID_SESSION, terminerSession } from "./api";
 import {
-  Entete,
-  LIBELLES_ETAT_SESSION,
-  LiensChaine,
-  libelleActivite,
-  libelleModele,
-  lienSession,
-} from "./commun";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog";
+import { Alert, AlertDescription } from "./components/ui/alert";
+import { Button, buttonVariants } from "./components/ui/button";
+import { Card } from "./components/ui/card";
+import { BadgeActivite, BadgeEtat, Erreur, LIBELLES_ETAT_SESSION, libelleModele, lienSession } from "./commun";
+import { ContenuPage, Coque, EnTetePage } from "./Coque";
+import { cn } from "./lib/utils";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { RelectureTerminal } from "./RelectureTerminal";
 import { TerminalEnDirect } from "./TerminalEnDirect";
@@ -63,31 +82,45 @@ export function VueSession({ id, onglet = "terminal" }: { id: string; onglet?: O
     `/api/sessions/${encodeURIComponent(id)}`,
     RAFRAICHISSEMENT_SESSION_MS,
   );
+  const agents = useRafraichi<{ agents: Agent[] }>("/api/agents");
   // Lu une fois : une relecture de la page n’est plus une arrivée par l’enchaînement.
   const [arrivee] = useState(lireEnchainement);
   useEffect(() => ecrireEnchainement(null), []);
 
   return (
-    <main>
-      <Entete />
-      {erreur && <p className="erreur">{erreur}</p>}
-      {donnees && (
+    <Coque courant="sessions">
+      {donnees ? (
         <Contenu
           session={donnees}
+          erreur={erreur}
+          nomAgent={(a) => agents.donnees?.agents.find((x) => x.id === a)?.nom ?? a}
           arrivee={arrivee?.depuis === donnees.precedente ? arrivee : null}
           ongletInitial={onglet}
         />
+      ) : (
+        erreur && (
+          <>
+            <EnTetePage ariane={<a href="/sessions">Sessions</a>} titre="Session" />
+            <ContenuPage>
+              <Erreur>{erreur}</Erreur>
+            </ContenuPage>
+          </>
+        )
       )}
-    </main>
+    </Coque>
   );
 }
 
 function Contenu({
   session: lue,
+  erreur,
+  nomAgent,
   arrivee,
   ongletInitial,
 }: {
   session: Session;
+  erreur: string | null;
+  nomAgent: (agent: Agent["id"]) => string;
   arrivee: Enchainement | null;
   ongletInitial: Onglet;
 }) {
@@ -95,7 +128,6 @@ function Contenu({
   const [close, setClose] = useState<Session | null>(null);
   const [refus, setRefus] = useState<string | null>(null);
   const session = close ?? lue;
-  const etat = LIBELLES_ETAT_SESSION[session.etat];
   const modele = libelleModele(session);
   const suivante = lienSession(session.suivante);
   // Vue ouverte sur cette page (pas une relecture), et dernier rôle annoncé à l’onglet.
@@ -116,98 +148,183 @@ function Contenu({
   }, [session.etat, session.id, suivante]);
 
   const terminer = () => {
-    if (!window.confirm("Terminer la session ? L’agent sera arrêté.")) return;
     setRefus(null);
     terminerSession(session.id).then(setClose, (erreur: Error) => setRefus(erreur.message));
   };
+  const titre = session.ticket != null ? `Session /implement #${session.ticket}` : `Session ${session.commande}`;
+  const ouverte = session.etat === "ouverte";
 
   return (
     <>
-      <h1>{session.ticket != null ? `Session /implement #${session.ticket}` : `Session ${session.commande}`}</h1>
-      {arrivee && (
-        <p role="status" className="enchainee">
-          Session enchaînée : /implement #{session.ticket}
-        </p>
-      )}
-      <p>
-        <a href={`/repos/${session.repo}`}>{session.repo}</a> · <code>{session.commande}</code>
-      </p>
-      {(session.precedente || session.suivante) && (
-        <p>
-          <LiensChaine session={session} libelles={["Session précédente", "Session suivante"]} />
-        </p>
-      )}
-      <dl>
-        <dt>Titre</dt>
-        <dd>{session.titre}</dd>
-        {modele && (
+      <EnTetePage
+        ariane={
           <>
-            <dt>Modèle</dt>
-            <dd>{modele}</dd>
+            <a href="/">Repos</a> / <a href={`/repos/${session.repo}`}>{session.repo}</a>
           </>
+        }
+        titre={titre}
+        actions={
+          ouverte ? (
+            <>
+              <BadgeActivite session={session} />
+              <ConfirmerTerminer terminer={terminer} />
+            </>
+          ) : (
+            <BadgeEtat etat={session.etat}>
+              {precision(session) ? `${LIBELLES_ETAT_SESSION[session.etat]} (${precision(session)})` : undefined}
+            </BadgeEtat>
+          )
+        }
+      />
+      <ContenuPage>
+        {erreur && <Erreur>{erreur}</Erreur>}
+        {refus && <Erreur>{refus}</Erreur>}
+        {arrivee && (
+          <Alert variant="agent" role="status">
+            <LinkIcon aria-hidden />
+            <AlertDescription className="text-foreground">
+              <p>Session enchaînée : /implement #{session.ticket}</p>
+            </AlertDescription>
+          </Alert>
         )}
-        <dt>Activité</dt>
-        <dd>{libelleActivite(session)}</dd>
-        <dt>État</dt>
-        <dd>{precision(session) ? `${etat} (${precision(session)})` : etat}</dd>
-        <dt>Durée</dt>
-        <dd>{duree(session.debut, session.fin)}</dd>
-      </dl>
-      {session.etat === "ouverte" && (
-        <>
-          <p>
-            <button type="button" onClick={terminer}>
-              Terminer
-            </button>
-          </p>
-          {refus && (
-            <p role="alert" className="erreur">
-              {refus}
-            </p>
-          )}
-        </>
-      )}
-      <div role="tablist" aria-label="Vues de la session" className="onglets">
-        {(["terminal", "codespace"] as const).map((o) => (
-          <button
-            key={o}
-            type="button"
-            role="tab"
-            id={`onglet-${o}`}
-            aria-controls={`panneau-${o}`}
-            aria-selected={onglet === o}
-            onClick={() => choisir(o)}
+        <Card role="region" aria-label="Session">
+          <dl className="flex flex-wrap gap-x-6 gap-y-3 px-4.5 py-3.5">
+            <Meta cle="Titre">{session.titre}</Meta>
+            <Meta cle="Agent">
+              <BotIcon aria-hidden className="size-4 text-muted-foreground" />
+              {nomAgent(session.agent)}
+            </Meta>
+            {modele && <Meta cle="Modèle">{modele}</Meta>}
+            {session.branche && (
+              <Meta cle="Branche" className="font-mono text-xs">
+                <GitBranchIcon aria-hidden className="size-4 text-muted-foreground" />
+                {session.branche}
+              </Meta>
+            )}
+            <Meta cle="Commande">
+              <code>{session.commande}</code>
+            </Meta>
+            <Meta cle="Durée" className="tabular-nums">
+              {duree(session.debut, session.fin)}
+            </Meta>
+          </dl>
+          <Chaine session={session} />
+        </Card>
+        <div className="grid min-w-0 gap-3">
+          <div role="tablist" aria-label="Vues de la session" className="flex gap-1 border-b">
+            {(["terminal", "codespace"] as const).map((o) => (
+              <button
+                key={o}
+                type="button"
+                role="tab"
+                id={`onglet-${o}`}
+                aria-controls={`panneau-${o}`}
+                aria-selected={onglet === o}
+                onClick={() => choisir(o)}
+                className="-mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3.5 py-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground aria-selected:border-attention aria-selected:text-foreground [&_svg]:size-4"
+              >
+                {o === "terminal" ? <SquareTerminalIcon aria-hidden /> : <CodeIcon aria-hidden />}
+                {o === "terminal" ? "Terminal" : "Codespace"}
+              </button>
+            ))}
+          </div>
+          {/* Caché, pas démonté : le websocket reste ouvert et l’onglet garde la Main. */}
+          <div
+            role="tabpanel"
+            id="panneau-terminal"
+            aria-labelledby="onglet-terminal"
+            hidden={onglet !== "terminal"}
+            className="min-w-0"
           >
-            {o === "terminal" ? "Terminal" : "Codespace"}
-          </button>
-        ))}
-      </div>
-      {/* Caché, pas démonté : le websocket reste ouvert et l’onglet garde la Main. */}
-      <div role="tabpanel" id="panneau-terminal" aria-labelledby="onglet-terminal" hidden={onglet !== "terminal"}>
-        {session.etat === "ouverte" ? (
-          <TerminalEnDirect
-            id={session.id}
-            reprendre={arrivee?.main ?? false}
-            surRole={(ecriture) => (main.current = ecriture)}
-          />
-        ) : (
-          <RelectureTerminal id={session.id} />
-        )}
-      </div>
-      <div role="tabpanel" id="panneau-codespace" aria-labelledby="onglet-codespace" hidden={onglet !== "codespace"}>
-        {codespaceVu && (
-          <Suspense fallback={<p className="etat-terminal">Chargement du codespace…</p>}>
-            {/* Remonté à la fermeture : la vue passe du clone en direct à l’instantané. */}
-            <Codespace
-              key={String(session.etat === "ouverte")}
-              id={session.id}
-              visible={onglet === "codespace"}
-              enDirect={session.etat === "ouverte"}
-            />
-          </Suspense>
-        )}
-      </div>
+            {ouverte ? (
+              <TerminalEnDirect
+                id={session.id}
+                reprendre={arrivee?.main ?? false}
+                surRole={(ecriture) => (main.current = ecriture)}
+              />
+            ) : (
+              <RelectureTerminal id={session.id} />
+            )}
+          </div>
+          <div
+            role="tabpanel"
+            id="panneau-codespace"
+            aria-labelledby="onglet-codespace"
+            hidden={onglet !== "codespace"}
+            className="min-w-0"
+          >
+            {codespaceVu && (
+              <Suspense fallback={<p className="text-muted-foreground">Chargement du codespace…</p>}>
+                {/* Remonté à la fermeture : la vue passe du clone en direct à l’instantané. */}
+                <Codespace key={String(ouverte)} id={session.id} visible={onglet === "codespace"} enDirect={ouverte} />
+              </Suspense>
+            )}
+          </div>
+        </div>
+      </ContenuPage>
     </>
+  );
+}
+
+/** **Terminer** de l’en-tête : arrête l’agent après confirmation (Annuler et Échap ne font rien). */
+function ConfirmerTerminer({ terminer }: { terminer: () => void }) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm">
+          <SquareIcon aria-hidden />
+          Terminer
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Terminer la session ?</AlertDialogTitle>
+          <AlertDialogDescription>
+            L’agent sera arrêté et la session passera à l’état <strong className="text-foreground">Arrêtée</strong>.
+            L’enregistrement et l’instantané restent consultables.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Annuler</AlertDialogCancel>
+          <AlertDialogAction className={buttonVariants({ variant: "destructive" })} onClick={terminer}>
+            <SquareIcon aria-hidden />
+            Terminer
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function Meta({ cle, className, children }: { cle: string; className?: string; children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 gap-0.5">
+      <dt className="text-[11px] tracking-[0.1em] text-faint uppercase">{cle}</dt>
+      <dd className={cn("flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]", className)}>{children}</dd>
+    </div>
+  );
+}
+
+/** Précédente et suivante d’une session enchaînée ; rien hors chaîne. */
+function Chaine({ session }: { session: Pick<Session, "precedente" | "suivante"> }) {
+  const [precedente, suivante] = [lienSession(session.precedente), lienSession(session.suivante)];
+  if (!precedente && !suivante) return null;
+  const lien = "inline-flex items-center gap-1 text-agent no-underline hover:underline [&_svg]:size-3.5";
+  return (
+    <p className="flex flex-wrap gap-x-4 gap-y-2 px-4.5 pb-3.5 text-[12.5px]">
+      {precedente && (
+        <a href={precedente} className={lien}>
+          <ArrowLeftIcon aria-hidden />
+          Session précédente
+        </a>
+      )}
+      {suivante && (
+        <a href={suivante} className={lien}>
+          Session suivante
+          <ArrowRightIcon aria-hidden />
+        </a>
+      )}
+    </p>
   );
 }
 

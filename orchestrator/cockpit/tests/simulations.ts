@@ -1,9 +1,11 @@
 // Faux xterm.js et faux websocket : jsdom n’a ni canvas ni runtime auquel se connecter.
 
+import type { ITerminalOptions } from "@xterm/xterm";
+
 /** Remplace `Terminal` de `@xterm/xterm` (voir `setup.ts`). */
 export class FauxTerminal {
   static instances: FauxTerminal[] = [];
-  options: { disableStdin?: boolean; cursorBlink?: boolean; cols?: number; rows?: number };
+  options: ITerminalOptions & { cols?: number; rows?: number };
   cols: number;
   rows: number;
   ecrit: (Uint8Array | string)[] = [];
@@ -166,7 +168,12 @@ export class FauxEditeurDiff {
 export const FauxMonaco = {
   editeurs: [] as FauxEditeur[],
   editeursDiff: [] as FauxEditeurDiff[],
+  themes: {} as Record<string, unknown>,
   editor: {
+    defineTheme(nom: string, theme: unknown) {
+      FauxMonaco.themes[nom] = theme;
+    },
+    remeasureFonts() {},
     createDiffEditor(_conteneur: HTMLElement, options: Record<string, unknown>) {
       const editeur = new FauxEditeurDiff(options);
       FauxMonaco.editeursDiff.push(editeur);

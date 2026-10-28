@@ -1,4 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  CameraIcon,
+  CameraOffIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  DiffIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  GitBranchIcon,
+  XIcon,
+} from "lucide-react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type {
   AbonnementCodespace,
   ArbreCodespace,
@@ -11,8 +23,13 @@ import type {
   StatutGit,
 } from "./api";
 import { lireCodespace, urlEvenementsCodespace } from "./api";
-import { dateHeure } from "./commun";
+import { dateHeure, Erreur } from "./commun";
+import { Alert, AlertDescription } from "./components/ui/alert";
+import { Badge, Pastille } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { cn } from "./lib/utils";
 import { monaco } from "./monaco";
+import { optionsMonaco, remesurerApresPolice, THEME_MONACO, themeMonaco } from "./themeMonaco";
 
 /** Un dossier chargé (ses entrées), ou le refus du runtime. */
 type Dossier = EntreeCodespace[] | { erreur: string };
@@ -26,6 +43,13 @@ const MARQUEURS: Record<StatutGit, [string, string]> = {
   modifie: ["M", "Modifié"],
   ajoute: ["A", "Ajouté"],
   non_suivi: ["U", "Non suivi"],
+};
+
+/** Couleur d’une entrée changée, comme son marqueur. */
+const COULEURS_STATUT: Record<StatutGit, string> = {
+  modifie: "text-git-modifie",
+  ajoute: "text-git-ajoute",
+  non_suivi: "text-git-ajoute",
 };
 
 /** Sans surveillance du disque (indisponible, websocket coupé) : la vue est relue à ce rythme. */
@@ -186,48 +210,90 @@ export function Codespace({ id, visible = true, enDirect = true }: { id: string;
   const instantane = identite !== null && !("erreur" in identite) && identite.source === "instantane" ? identite.instantane : null;
 
   return (
-    <div className="codespace">
+    <div className="grid min-w-0 gap-3">
       {instantane?.etat === "present" && (
-        <p role="status" className="bandeau-instantane">
-          Instantané de fin de session — {dateHeure(instantane.pris_le)}
-        </p>
+        <Alert variant="agent" role="status">
+          <CameraIcon aria-hidden />
+          <AlertDescription className="text-foreground">
+            <p>
+              <strong>Instantané de fin de session</strong> — {dateHeure(instantane.pris_le)}. Les fichiers ignorés
+              n’ont pas été conservés.
+            </p>
+          </AlertDescription>
+        </Alert>
       )}
-      <EnteteCodespace identite={identite} />
+      <EnteteCodespace identite={identite} enDirect={enDirect} />
       {instantane && instantane.etat !== "present" ? (
-        <p role="status" className="etat-terminal">
-          {sansInstantane(instantane)}
-        </p>
+        <Alert role="status">
+          <CameraOffIcon aria-hidden />
+          <AlertDescription>
+            <p>{sansInstantane(instantane)}</p>
+          </AlertDescription>
+        </Alert>
       ) : (
-        <div className="codespace-corps">
-          <ul role="tree" aria-label="Fichiers du codespace" className="arbre">
-            <Entrees chemin="" dossiers={dossiers} deplies={deplies} basculer={basculer} ouvrir={ouvrir} />
+        // Sur téléphone, l’arbre au-dessus de l’éditeur.
+        <div className="grid min-h-[520px] grid-rows-[180px_minmax(0,1fr)] overflow-hidden rounded-lg border bg-terminal min-[900px]:h-[min(62vh,560px)] min-[900px]:min-h-0 min-[900px]:grid-cols-[260px_minmax(0,1fr)] min-[900px]:grid-rows-1">
+          <ul
+            role="tree"
+            aria-label="Fichiers du codespace"
+            className="overflow-auto border-b bg-card py-2 font-mono text-[12.5px] min-[900px]:border-r min-[900px]:border-b-0"
+          >
+            <Entrees
+              chemin=""
+              profondeur={0}
+              dossiers={dossiers}
+              deplies={deplies}
+              actif={actif}
+              basculer={basculer}
+              ouvrir={ouvrir}
+            />
           </ul>
-          <section aria-label="Fichier" className="codespace-fichier">
+          <section aria-label="Fichier" className="flex min-h-0 min-w-0 flex-col">
             {ouverts.length > 0 && (
-              <div role="tablist" aria-label="Fichiers ouverts" className="onglets-fichiers">
-                {ouverts.map((chemin) => (
-                  <span key={chemin} className="onglet-fichier">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={chemin === actif}
-                      title={chemin}
-                      onClick={() => activer(chemin)}
+              <div className="flex items-stretch border-b bg-card">
+                <div role="tablist" aria-label="Fichiers ouverts" className="flex min-w-0 flex-1 overflow-x-auto">
+                  {ouverts.map((chemin) => (
+                    <span
+                      key={chemin}
+                      className="flex h-[34px] shrink-0 items-center gap-1.5 border-t-2 border-r border-t-transparent pr-1.5 pl-3 font-mono text-[12.5px] text-muted-foreground has-[[aria-selected=true]]:border-t-attention has-[[aria-selected=true]]:bg-terminal has-[[aria-selected=true]]:text-foreground"
                     >
-                      {nomDe(chemin)}
-                    </button>
-                    <button type="button" aria-label={`Fermer ${nomDe(chemin)}`} onClick={() => fermer(chemin)}>
-                      ×
-                    </button>
-                  </span>
-                ))}
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={chemin === actif}
+                        title={chemin}
+                        onClick={() => activer(chemin)}
+                        className="cursor-pointer"
+                      >
+                        {nomDe(chemin)}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Fermer ${nomDe(chemin)}`}
+                        onClick={() => fermer(chemin)}
+                        className="grid size-5.5 cursor-pointer place-items-center rounded-sm text-faint hover:bg-surface-3 hover:text-foreground"
+                      >
+                        <XIcon aria-hidden className="size-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                {actif !== null && (statutActif || diffActif) && (
+                  <div className="flex items-center px-2">
+                    <Button
+                      variant={diffActif ? "secondary" : "ghost"}
+                      size="sm"
+                      aria-pressed={diffActif}
+                      onClick={() => basculerDiff(actif)}
+                    >
+                      <DiffIcon aria-hidden />
+                      Diff avec HEAD
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
-            {actif !== null && (statutActif || diffActif) && (
-              <button type="button" className="bouton-diff" aria-pressed={diffActif} onClick={() => basculerDiff(actif)}>
-                Diff avec HEAD
-              </button>
-            )}
+            {actif === null && <p className="m-auto p-4 text-muted-foreground">Ouvrez un fichier dans l’arbre.</p>}
             {actif !== null && (diffActif ? <EtatDiff diff={diffs[actif]} /> : <EtatFichier fichier={fichiers[actif]} />)}
             {/* Gardé monté d’un fichier à l’autre : seul le modèle change. */}
             {actif !== null && <EditeurMonaco fichier={diffActif ? null : texte(fichiers[actif])} />}
@@ -246,83 +312,145 @@ function sansInstantane(instantane: Exclude<EtatInstantane, { etat: "present" }>
   return `Instantané non pris : ${instantane.erreur}`;
 }
 
-function EnteteCodespace({ identite }: { identite: IdentiteCodespace | { erreur: string } | null }) {
-  if (identite === null) return <p className="etat-terminal">Lecture du codespace…</p>;
-  if ("erreur" in identite) return <p className="erreur">{identite.erreur}</p>;
+function EnteteCodespace({
+  identite,
+  enDirect,
+}: {
+  identite: IdentiteCodespace | { erreur: string } | null;
+  enDirect: boolean;
+}) {
+  if (identite === null) return <p className="text-muted-foreground">Lecture du codespace…</p>;
+  if ("erreur" in identite) return <Erreur>{identite.erreur}</Erreur>;
   const { repo, branche, head } = identite;
   return (
-    <p role="group" aria-label="Identité du codespace" className="identite-codespace">
-      <strong>{repo}</strong> · branche{" "}
-      {branche ? (
-        <a
-          href={`https://github.com/${repo}/tree/${branche.split("/").map(encodeURIComponent).join("/")}`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {branche}
-        </a>
-      ) : (
-        "HEAD détaché"
-      )}{" "}
-      · {head ? <code>{head}</code> : "aucun commit"}
+    <p
+      role="group"
+      aria-label="Identité du codespace"
+      className="flex flex-wrap items-center gap-x-4.5 gap-y-2 text-[12.5px] text-muted-foreground [&_svg]:size-4"
+    >
+      <span className="inline-flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]">
+        <FolderIcon aria-hidden />
+        <strong className="font-medium text-foreground">{repo}</strong>
+      </span>
+      <span className="inline-flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]">
+        <GitBranchIcon aria-hidden />
+        {branche ? (
+          <a
+            href={`https://github.com/${repo}/tree/${branche.split("/").map(encodeURIComponent).join("/")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-agent no-underline hover:underline"
+          >
+            {branche}
+          </a>
+        ) : (
+          "HEAD détaché"
+        )}
+      </span>
+      <span>
+        HEAD {head ? <code className="font-medium text-foreground">{head}</code> : "aucun commit"}
+      </span>
+      {enDirect && (
+        <Badge variant="agent">
+          <Pastille vivant />
+          En direct
+        </Badge>
+      )}
     </p>
   );
 }
 
 interface PropsEntrees {
   chemin: string;
+  profondeur: number;
   dossiers: Record<string, Dossier>;
   deplies: ReadonlySet<string>;
+  actif: string | null;
   basculer: (chemin: string) => void;
   ouvrir: (chemin: string) => void;
 }
 
+/** Ligne de l’arbre : toute la largeur, décalée selon la profondeur. */
+const LIGNE = "flex items-center gap-1.5 py-0.75 pr-3 pl-[calc(0.75rem+var(--profondeur)*0.875rem)] whitespace-nowrap";
+
 /** Les entrées du dossier `chemin`, une fois chargé ; un dossier déplié montre les siennes. */
-function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) {
+function Entrees({ chemin, profondeur, dossiers, deplies, actif, basculer, ouvrir }: PropsEntrees) {
+  const decalage = { "--profondeur": profondeur } as CSSProperties;
   const dossier = dossiers[chemin];
-  if (dossier === undefined) return <li className="etat-terminal">Chargement…</li>;
+  if (dossier === undefined)
+    return (
+      <li className={cn(LIGNE, "text-muted-foreground")} style={decalage}>
+        Chargement…
+      </li>
+    );
   if ("erreur" in dossier)
     return (
-      <li role="alert" className="erreur">
+      <li role="alert" className={cn(LIGNE, "whitespace-normal text-echec")} style={decalage}>
         {dossier.erreur}
       </li>
     );
   return dossier.map((entree) => {
     const complet = chemin ? `${chemin}/${entree.nom}` : entree.nom;
+    const estDossier = entree.type === "dossier";
     const deplie = deplies.has(complet);
+    const Chevron = deplie ? ChevronDownIcon : ChevronRightIcon;
+    const Icone = estDossier ? (deplie ? FolderOpenIcon : FolderIcon) : FileIcon;
+    const nom = (
+      <>
+        {estDossier && !entree.non_conserve ? <Chevron aria-hidden /> : <span aria-hidden className="size-3.5 shrink-0" />}
+        <Icone aria-hidden className="opacity-80" />
+        <span className="truncate">{entree.nom}</span>
+      </>
+    );
     return (
       <li
         key={entree.nom}
         role="treeitem"
         aria-label={entree.nom}
-        aria-expanded={entree.type === "dossier" ? deplie : undefined}
-        className={
-          [entree.ignore && "ignore", entree.non_conserve && "non-conserve", entree.statut && `statut-${entree.statut}`]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
+        aria-expanded={estDossier ? deplie : undefined}
+        aria-selected={estDossier ? undefined : complet === actif}
       >
-        {entree.non_conserve ? (
-          <>
-            <span>{entree.nom}</span> <span className="raison">non conservé</span>
-          </>
-        ) : entree.type === "lien" ? (
-          <>
-            <span>{entree.nom}</span> <span className="raison">lien hors du clone</span>
-          </>
-        ) : (
-          <button
-            type="button"
-            className={entree.type}
-            onClick={() => (entree.type === "dossier" ? basculer(complet) : ouvrir(complet))}
-          >
-            {entree.nom}
-          </button>
-        )}
-        {entree.statut && <Marqueur statut={entree.statut} dossier={entree.type === "dossier"} />}
+        <div
+          title={entree.ignore ? "Ignoré par Git" : undefined}
+          className={cn(
+            LIGNE,
+            "hover:bg-surface-2 [&_svg]:size-3.5 [&_svg]:shrink-0",
+            complet === actif && "bg-surface-3",
+            entree.statut && COULEURS_STATUT[entree.statut],
+            entree.ignore && "text-faint",
+            entree.non_conserve && "text-faint italic",
+          )}
+          style={decalage}
+        >
+          {entree.non_conserve || entree.type === "lien" ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              {nom}
+              <span className="text-[11px] text-faint italic">
+                {entree.non_conserve ? "non conservé" : "lien hors du clone"}
+              </span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => (estDossier ? basculer(complet) : ouvrir(complet))}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+            >
+              {nom}
+            </button>
+          )}
+          {entree.statut && <Marqueur statut={entree.statut} dossier={estDossier} />}
+        </div>
         {deplie && (
           <ul role="group">
-            <Entrees chemin={complet} dossiers={dossiers} deplies={deplies} basculer={basculer} ouvrir={ouvrir} />
+            <Entrees
+              chemin={complet}
+              profondeur={profondeur + 1}
+              dossiers={dossiers}
+              deplies={deplies}
+              actif={actif}
+              basculer={basculer}
+              ouvrir={ouvrir}
+            />
           </ul>
         )}
       </li>
@@ -334,7 +462,7 @@ function Entrees({ chemin, dossiers, deplies, basculer, ouvrir }: PropsEntrees) 
 function Marqueur({ statut, dossier }: { statut: StatutGit; dossier: boolean }) {
   const [lettre, libelle] = dossier ? ["●", "Contient des changements"] : MARQUEURS[statut];
   return (
-    <span className="marqueur" title={libelle}>
+    <span className="ml-auto pl-2 text-[11px] font-semibold" title={libelle}>
       {lettre}
     </span>
   );
@@ -348,11 +476,11 @@ function texte(fichier: Fichier | undefined): { chemin: string; contenu: string 
 
 /** Ce qui remplace l’éditeur : lecture en cours, refus, ou « non affiché ». */
 function EtatFichier({ fichier }: { fichier: Fichier | undefined }) {
-  if (fichier === undefined) return <p className="etat-terminal">Lecture du fichier…</p>;
-  if ("erreur" in fichier) return <p className="erreur">{fichier.erreur}</p>;
+  if (fichier === undefined) return <p className="p-4 text-muted-foreground">Lecture du fichier…</p>;
+  if ("erreur" in fichier) return <p className="p-4 text-echec">{fichier.erreur}</p>;
   if (fichier.contenu === null)
     return (
-      <p className="etat-terminal">
+      <p className="p-4 text-muted-foreground">
         {`${fichier.non_affiche === "trop_gros" ? "Fichier de plus de 1 Mo" : "Fichier binaire"} : non affiché (${taille(fichier.taille)})`}
       </p>
     );
@@ -368,15 +496,23 @@ function versions(diff: Diff | undefined): { chemin: string; head: string; coura
 
 /** Ce qui remplace l’éditeur de diff : lecture en cours, refus, ou « non affiché ». */
 function EtatDiff({ diff }: { diff: Diff | undefined }) {
-  if (diff === undefined) return <p className="etat-terminal">Lecture du diff…</p>;
-  if ("erreur" in diff) return <p className="erreur">{diff.erreur}</p>;
+  if (diff === undefined) return <p className="p-4 text-muted-foreground">Lecture du diff…</p>;
+  if ("erreur" in diff) return <p className="p-4 text-echec">{diff.erreur}</p>;
   if (diff.courant === null)
     return (
-      <p className="etat-terminal">
+      <p className="p-4 text-muted-foreground">
         {`${diff.non_affiche === "trop_gros" ? "Fichier de plus de 1 Mo" : "Fichier binaire"} : diff non affiché`}
       </p>
     );
   return null;
+}
+
+/** Thème et police des éditeurs, tirés des variables de `:root` (index.css). */
+function preparerMonaco() {
+  monaco.editor.defineTheme(THEME_MONACO, themeMonaco());
+  const options = optionsMonaco();
+  remesurerApresPolice(options, () => monaco.editor.remeasureFonts());
+  return options;
 }
 
 /** Éditeur de diff Monaco en lecture seule, HEAD à gauche et version courante à droite. */
@@ -386,6 +522,7 @@ function EditeurDiff({ diff }: { diff: { chemin: string; head: string; courant: 
 
   useEffect(() => {
     editeur.current = monaco.editor.createDiffEditor(conteneur.current!, {
+      ...preparerMonaco(),
       readOnly: true,
       originalEditable: false,
       renderSideBySide: true,
@@ -427,7 +564,7 @@ function EditeurDiff({ diff }: { diff: { chemin: string; head: string; courant: 
     };
   }, [chemin, head, courant]);
 
-  return <div className="editeur" ref={conteneur} hidden={diff === null} />;
+  return <div className="min-h-0 flex-1" ref={conteneur} hidden={diff === null} />;
 }
 
 /** Monaco en lecture seule, caché sans fichier à montrer ; le langage (coloration) se déduit du
@@ -438,6 +575,7 @@ function EditeurMonaco({ fichier }: { fichier: { chemin: string; contenu: string
 
   useEffect(() => {
     editeur.current = monaco.editor.create(conteneur.current!, {
+      ...preparerMonaco(),
       readOnly: true,
       domReadOnly: true,
       automaticLayout: true,
@@ -459,7 +597,7 @@ function EditeurMonaco({ fichier }: { fichier: { chemin: string; contenu: string
     return () => modele.dispose();
   }, [chemin, contenu]);
 
-  return <div className="editeur" ref={conteneur} hidden={fichier === null} />;
+  return <div className="min-h-0 flex-1" ref={conteneur} hidden={fichier === null} />;
 }
 
 /** La racine et les dossiers dépliés dont tous les parents le sont : ceux que l’arbre montre. */

@@ -8,6 +8,8 @@
 
 **Cockpit** — l’interface web de l’orchestrateur qui montre l’état des repos métier et lance des sessions agents ; joignable en local, via tunnel SSH, ou (opt-in) derrière l’exposition web.
 
+**HéphaïstOS** — le nom du produit tel que le cockpit l’affiche (logo, titre d’onglet, page de connexion) depuis la 0.8.1. La CLI, le paquet et les images gardent le nom `wap-runtime`.
+
 **Identifiants cockpit** — le login et le mot de passe propres à une instance pour ouvrir le cockpit ; distincts de l’authentification GitHub et des agents (`wap-runtime auth`).
 
 **Exposition web** — mise à disposition du cockpit derrière le reverse proxy Caddy de l’instance (ports 80/443 sur la machine hôte), activable ou désactivable ; sans exposition, l’accès reste local ou par tunnel SSH.
