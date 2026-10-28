@@ -1,5 +1,5 @@
 /* Restes du style minimal (0.3.0) : chaque ticket de la 0.8.1 en retire ce qu’il refait (index.css, ADR 0015). */
-/* Tableaux pas encore passés sur `components/ui/table` (détail, Sessions). */
+/* Tableaux pas encore passés sur `components/ui/table` (Sessions). */
 table:not([data-slot="table"]) {
   border-collapse: collapse;
   margin: 0.5rem 0 1rem;
@@ -25,22 +25,6 @@ table:not([data-slot="table"]) :is(th, td) {
 }
 .etat-terminal {
   color: #59636e;
-}
-.clone-sale {
-  background: #fff1c2;
-  border: 1px solid #d4a72c;
-  margin: 0.5rem 0 1rem;
-  padding: 0.6rem 0.8rem;
-}
-.clone-sale h2 {
-  font-size: 1rem;
-  margin-top: 0;
-}
-.clone-sale pre {
-  background: #f6f8fa;
-  max-height: 40vh;
-  overflow: auto;
-  padding: 0.5rem;
 }
 .enchainee {
   background: #ddf4ff;

@@ -5,7 +5,7 @@ import { RAFRAICHISSEMENT_MS } from "../src/rafraichi";
 import { CLAUDE, CONNECTE, CURSOR_CONNECTE, MODELES, QUESTION, detail, liste, session, simulerApi } from "./donnees";
 
 function rendre(routes: Record<string, unknown>) {
-  const fetch = simulerApi({ "/api/auth": CONNECTE, ...routes });
+  const fetch = simulerApi({ "/api/auth": CONNECTE, "/api/repos/o/r/sessions": { sessions: [] }, ...routes });
   render(<VueDetail owner="o" name="r" />);
   return fetch;
 }
@@ -16,10 +16,29 @@ describe("vue détail", () => {
 
     const titre = await screen.findByRole("heading", { level: 1 });
     expect(titre).toHaveTextContent("o/r");
-    expect(screen.getByRole("link", { name: "github.com/o/r" })).toHaveAttribute("href", "https://github.com/o/r");
-    expect(screen.getByText("Question en attente", { selector: "strong" })).toBeInTheDocument();
-    expect(screen.getAllByText("Intervention humaine requise").length).toBeGreaterThan(0);
-    expect(screen.getByText(/09:00:00/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub" })).toHaveAttribute("href", "https://github.com/o/r");
+    const carte = screen.getByRole("region", { name: "Repo" });
+    expect(within(carte).getByRole("link", { name: "github.com/o/r" })).toHaveAttribute(
+      "href",
+      "https://github.com/o/r",
+    );
+    expect(carte).toHaveTextContent("Question en attente");
+    expect(carte).toHaveTextContent(/Lu à.*09:00:00/);
+  });
+
+  it("alerte quand une intervention humaine est requise, rien sinon", async () => {
+    rendre({ "/api/repos/o/r": detail({ etape: QUESTION, humain_requis: true }) });
+
+    const alerte = await screen.findByRole("status");
+    expect(alerte).toHaveTextContent("Intervention humaine requise");
+    expect(alerte).toHaveTextContent("Question en attente");
+  });
+
+  it("pas d’alerte humaine sans intervention requise", async () => {
+    rendre({ "/api/repos/o/r": detail() });
+
+    await screen.findByRole("region", { name: "Lancer une session" });
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("montre le parent, sa progression et ses enfants (état, labels, bloqué)", async () => {
@@ -33,11 +52,11 @@ describe("vue détail", () => {
     expect(version).toHaveTextContent("2/5");
     const enfants = within(within(version).getByRole("table", { name: "Enfants" })).getAllByRole("row").slice(1);
     expect(enfants[0]).toHaveTextContent("#20 Registry");
-    expect(enfants[0]).toHaveTextContent("fermé");
+    expect(enfants[0]).toHaveTextContent(/fermé/i);
     expect(enfants[1]).toHaveTextContent("#22 Front du cockpit");
-    expect(enfants[1]).toHaveTextContent("ouvert");
+    expect(enfants[1]).toHaveTextContent(/ouvert/i);
     expect(enfants[1]).toHaveTextContent("ready-for-agent");
-    expect(enfants[1]).toHaveTextContent("bloqué");
+    expect(enfants[1]).toHaveTextContent(/bloqué/i);
     expect(within(enfants[1]).getAllByRole("link")[0]).toHaveAttribute("href", "https://github.com/o/r/issues/22");
   });
 
@@ -45,7 +64,7 @@ describe("vue détail", () => {
     rendre({ "/api/repos/o/r": detail() });
 
     const version = await screen.findByRole("region", { name: /#17/ });
-    expect(version).toHaveTextContent("Signaux : Implement");
+    expect(within(version).getByRole("list", { name: "Signaux" })).toHaveTextContent("Implement");
   });
 
   it("montre la PR de version et ses checks", async () => {
@@ -56,7 +75,7 @@ describe("vue détail", () => {
       "href",
       "https://github.com/o/r/pull/18",
     );
-    expect(version).toHaveTextContent("brouillon");
+    expect(version).toHaveTextContent(/brouillon/i);
     expect(within(version).getByRole("link", { name: "pytest" })).toHaveAttribute(
       "href",
       "https://github.com/o/r/runs/1",
@@ -87,7 +106,7 @@ describe("vue détail", () => {
       "/api/repos/o/r": detail({ erreur: "accès refusé à o/r", etape: null, versions: [], bugs: [] }),
     });
 
-    expect(await screen.findByText(/accès refusé à o\/r/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("accès refusé à o/r");
   });
 
   it("affiche le message du runtime pour un repo absent du registry", async () => {
@@ -123,10 +142,10 @@ describe("vue détail", () => {
   });
 
   describe("pilote", () => {
-    it("montre le toggle et l’agent préféré persistés", async () => {
+    it("montre l’interrupteur et l’agent préféré persistés", async () => {
       rendre({ "/api/repos/o/r": detail({ pilote: true, agent: "cursor" }) });
 
-      expect(await screen.findByRole("checkbox", { name: "Pilote" })).toBeChecked();
+      expect(await screen.findByRole("switch", { name: "Pilote" })).toBeChecked();
       expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("cursor");
     });
 
@@ -135,7 +154,7 @@ describe("vue détail", () => {
         "/api/repos/o/r": detail({ pilote: false, agent: "claude" }),
         "PATCH /api/repos/o/r": { pilote: true, agent: "cursor" },
       });
-      const toggle = await screen.findByRole("checkbox", { name: "Pilote" });
+      const toggle = await screen.findByRole("switch", { name: "Pilote" });
 
       fireEvent.click(toggle);
 
@@ -150,6 +169,31 @@ describe("vue détail", () => {
         const patchs = fetch.mock.calls.filter(([, init]) => init?.method === "PATCH");
         expect(patchs.at(-1)?.[1]?.body).toEqual(JSON.stringify({ pilote: true, agent: "cursor" }));
       });
+    });
+
+    it("un toast confirme la préférence enregistrée", async () => {
+      rendre({
+        "/api/repos/o/r": detail({ pilote: false, agent: "claude" }),
+        "PATCH /api/repos/o/r": { pilote: true, agent: "claude", modele: null },
+      });
+
+      fireEvent.click(await screen.findByRole("switch", { name: "Pilote" }));
+
+      expect(await screen.findByText("Préférence enregistrée")).toBeInTheDocument();
+    });
+
+    it("un enregistrement refusé s’affiche en alerte, sans toast", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        "PATCH /api/repos/o/r": new Response(JSON.stringify({ detail: "registry en lecture seule" }), {
+          status: 409,
+        }),
+      });
+
+      fireEvent.click(await screen.findByRole("switch", { name: "Pilote" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("registry en lecture seule");
+      expect(screen.queryByText("Préférence enregistrée")).toBeNull();
     });
   });
 
@@ -302,7 +346,7 @@ describe("vue détail", () => {
         const assign = rendreSale([]);
         fireEvent.click(await boutonNouvelle());
 
-        const choix = await screen.findByRole("dialog", { name: /changements non commités/i });
+        const choix = await screen.findByRole("alertdialog", { name: /changements non commités/i });
         expect(choix).toHaveTextContent("travail-en-cours");
         expect(choix).toHaveTextContent("2 fichiers modifiés");
         expect(within(choix).getByRole("list", { name: "Fichiers modifiés" })).toHaveTextContent(
@@ -318,7 +362,7 @@ describe("vue détail", () => {
         const corps: unknown[] = [];
         const assign = rendreSale(corps);
         fireEvent.click(await boutonNouvelle());
-        const ecran = await screen.findByRole("dialog");
+        const ecran = await screen.findByRole("alertdialog");
 
         fireEvent.click(within(ecran).getByRole("button", { name: choix === "jeter" ? "Jeter" : "Reprendre" }));
 
@@ -333,11 +377,23 @@ describe("vue détail", () => {
         const corps: unknown[] = [];
         rendreSale(corps);
         fireEvent.click(await boutonNouvelle());
-        const ecran = await screen.findByRole("dialog");
+        const ecran = await screen.findByRole("alertdialog");
 
         fireEvent.click(within(ecran).getByRole("button", { name: "Annuler" }));
 
-        expect(screen.queryByRole("dialog")).toBeNull();
+        await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+        expect(corps).toHaveLength(1);
+      });
+
+      it("Échap ferme l’écran sans rien lancer", async () => {
+        const corps: unknown[] = [];
+        rendreSale(corps);
+        fireEvent.click(await boutonNouvelle());
+        const ecran = await screen.findByRole("alertdialog");
+
+        fireEvent.keyDown(ecran, { key: "Escape" });
+
+        await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
         expect(corps).toHaveLength(1);
       });
     });
@@ -349,7 +405,28 @@ describe("vue détail", () => {
       });
       fireEvent.click(await boutonNouvelle());
 
-      expect(await screen.findByText(/git fetch a échoué/)).toBeInTheDocument();
+      expect(await screen.findByRole("alert")).toHaveTextContent("Lancement refusé : git fetch a échoué");
+    });
+
+    it("un refus pour session ouverte donne le lien vers elle", async () => {
+      rendre({
+        "/api/repos/o/r": detail(),
+        "POST /api/sessions": new Response(
+          JSON.stringify({
+            detail: "une session est déjà ouverte",
+            session: { id: "20261017-100000-bbbbbb", url: "/sessions/20261017-100000-bbbbbb", repo: "o/autre" },
+          }),
+          { status: 409 },
+        ),
+      });
+      fireEvent.click(await boutonNouvelle());
+
+      const alerte = await screen.findByRole("alert");
+      expect(alerte).toHaveTextContent("Lancement refusé : une session est déjà ouverte");
+      expect(within(alerte).getByRole("link", { name: "voir la session ouverte" })).toHaveAttribute(
+        "href",
+        "/sessions/20261017-100000-bbbbbb",
+      );
     });
 
     it("montre la session ouverte de l’instance", async () => {
@@ -483,7 +560,7 @@ describe("vue détail", () => {
     it("affiche le select prérempli si agent Cursor et Cursor connecté", async () => {
       rendre({ "/api/repos/o/r": cursor(), "/api/modeles": MODELES });
 
-      expect(await screen.findByRole("combobox", { name: "Modèle" })).toHaveValue("composer-2");
+      expect(await screen.findByRole("combobox", { name: "Modèle préféré" })).toHaveValue("composer-2");
       expect(screen.getByRole("combobox", { name: "Modèle de la session" })).toHaveValue("composer-2");
     });
 
@@ -494,7 +571,7 @@ describe("vue détail", () => {
         "PATCH /api/repos/o/r": { pilote: false, agent: "cursor", modele: "grok-4.6" },
       });
 
-      fireEvent.change(await screen.findByRole("combobox", { name: "Modèle" }), {
+      fireEvent.change(await screen.findByRole("combobox", { name: "Modèle préféré" }), {
         target: { value: "grok-4.6" },
       });
 
