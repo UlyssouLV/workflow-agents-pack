@@ -1,17 +1,29 @@
+import { HandIcon, ZapIcon } from "lucide-react";
 import type { ActiviteSession, Etape, EtatSession, LienSession, Repo, Session } from "./api";
 import { ID_SESSION } from "./api";
+import { Badge, Pastille } from "./components/ui/badge";
 import { LIBELLES_STOP } from "./notifications";
 
 export function BadgeHumain() {
-  return <span className="badge">Intervention humaine requise</span>;
+  return (
+    <Badge variant="attention">
+      <HandIcon aria-hidden />
+      Intervention humaine requise
+    </Badge>
+  );
 }
 
 export function BadgePilote() {
-  return <span className="badge pilote">Pilote</span>;
+  return (
+    <Badge variant="pilote">
+      <ZapIcon aria-hidden />
+      Pilote
+    </Badge>
+  );
 }
 
 export function BadgePause({ stop }: { stop: NonNullable<Repo["pilote_stop"]> }) {
-  return <span className="badge pause">{LIBELLES_STOP[stop]}</span>;
+  return <Badge variant="pause">En pause · {LIBELLES_STOP[stop]}</Badge>;
 }
 
 export function LibelleEtape({ etape }: { etape: Etape | null }) {
@@ -55,11 +67,16 @@ export function libelleActivite(session: Pick<Session, "activite" | "skill">): s
   return session.activite === "attend" && session.skill ? `${base} — ${session.skill}` : base;
 }
 
+/** Orange quand l’agent attend, bleu sinon ; l’onde dit que la session vit. */
 export function BadgeSession({ session }: { session: LienSession }) {
+  const attend = session.activite === "attend";
   return (
-    <a className="badge session" href={session.url}>
-      {libelleBadgeSession(session.activite)}
-    </a>
+    <Badge variant={attend ? "attention" : "agent"} asChild>
+      <a href={session.url}>
+        <Pastille vivant={attend || session.activite === "travaille"} />
+        {libelleBadgeSession(session.activite)}
+      </a>
+    </Badge>
   );
 }
 

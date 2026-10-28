@@ -1,39 +1,17 @@
 /* Restes du style minimal (0.3.0) : chaque ticket de la 0.8.1 en retire ce qu’il refait (index.css, ADR 0015). */
-table {
+/* Tableaux pas encore passés sur `components/ui/table` (détail, Sessions). */
+table:not([data-slot="table"]) {
   border-collapse: collapse;
   margin: 0.5rem 0 1rem;
 }
-th,
-td {
+table:not([data-slot="table"]) :is(th, td) {
   border-bottom: 1px solid #d0d7de;
   padding: 0.4rem 0.8rem;
   text-align: left;
   vertical-align: top;
 }
-.badge {
-  background: #fff1c2;
-  border: 1px solid #d4a72c;
-  border-radius: 1rem;
-  font-size: 0.8rem;
-  padding: 0 0.5rem;
-  white-space: nowrap;
-}
 .erreur {
   color: #cf222e;
-}
-.badge.session {
-  background: #ddf4ff;
-  border-color: #54aeff;
-  color: inherit;
-  text-decoration: none;
-}
-.badge.pilote {
-  background: #dafbe1;
-  border-color: #26a148;
-}
-.badge.pause {
-  background: #fff1c2;
-  border-color: #d4a72c;
 }
 .raison {
   color: #59636e;

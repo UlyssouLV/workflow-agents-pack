@@ -9,7 +9,7 @@ describe("routes du cockpit", () => {
 
     render(<App chemin="/" />);
 
-    expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Repos" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
   });
 
