@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EntreeCodespace } from "../src/api";
 import { App } from "../src/App";
 import { POLLING_CODESPACE_MS } from "../src/Codespace";
+import { THEME_MONACO } from "../src/themeMonaco";
 import { session, simulerApi } from "./donnees";
 import { FauxMonaco, FauxTerminal, FauxWebSocket } from "./simulations";
 
@@ -120,6 +121,7 @@ describe("codespace en direct", () => {
     expect(lien).toHaveAttribute("href", "https://github.com/o/r/tree/v0.8.0-codespace");
     expect(lien).toHaveAttribute("target", "_blank");
     expect(lien).toHaveAttribute("rel", "noopener noreferrer");
+    expect(entete).toHaveTextContent("En direct");
   });
 
   it("arborescence : racine, .git et ignorés listés ; les ignorés grisés", async () => {
@@ -130,9 +132,9 @@ describe("codespace en direct", () => {
       e.getAttribute("aria-label"),
     );
     expect(noms).toEqual([".git", "node_modules", "src", ".env", "fuite", "README.md"]);
-    expect(screen.getByRole("treeitem", { name: "node_modules" })).toHaveClass("ignore");
-    expect(screen.getByRole("treeitem", { name: ".env" })).toHaveClass("ignore");
-    expect(screen.getByRole("treeitem", { name: "src" })).not.toHaveClass("ignore");
+    expect(within(screen.getByRole("treeitem", { name: "node_modules" })).getByTitle("Ignoré par Git")).toBeInTheDocument();
+    expect(within(screen.getByRole("treeitem", { name: ".env" })).getByTitle("Ignoré par Git")).toBeInTheDocument();
+    expect(within(screen.getByRole("treeitem", { name: "src" })).queryByTitle("Ignoré par Git")).toBeNull();
     expect(screen.getByRole("treeitem", { name: "fuite" })).toHaveTextContent("lien hors du clone");
   });
 
@@ -162,6 +164,18 @@ describe("codespace en direct", () => {
     expect(editeur.options).toMatchObject({ readOnly: true, domReadOnly: true });
     await waitFor(() => expect(editeur.modele?.getValue()).toBe("# r\n"));
     expect(editeur.modele?.uri.path).toBe("/README.md");
+    expect(editeur.options).toMatchObject({ theme: THEME_MONACO });
+    expect(FauxMonaco.themes[THEME_MONACO]).toMatchObject({ base: "vs-dark" });
+  });
+
+  it("le fichier ouvert est sélectionné dans l’arbre", async () => {
+    api();
+    await ouvrirCodespace();
+
+    fireEvent.click(await within(arbre()).findByRole("button", { name: "README.md" }));
+
+    expect(within(arbre()).getByRole("treeitem", { name: "README.md" })).toHaveAttribute("aria-selected", "true");
+    expect(within(arbre()).getByRole("treeitem", { name: ".env" })).toHaveAttribute("aria-selected", "false");
   });
 
   it("plusieurs fichiers en onglets : on passe de l’un à l’autre et on les ferme", async () => {
@@ -285,10 +299,8 @@ describe("Git dans le codespace", () => {
     expect(within(screen.getByRole("treeitem", { name: "README.md" })).getByTitle("Modifié")).toHaveTextContent("M");
     expect(within(screen.getByRole("treeitem", { name: "ajout.py" })).getByTitle("Ajouté")).toHaveTextContent("A");
     expect(within(screen.getByRole("treeitem", { name: "notes.txt" })).getByTitle("Non suivi")).toHaveTextContent("U");
-    expect(screen.getByRole("treeitem", { name: "README.md" })).toHaveClass("statut-modifie");
-    expect(screen.getByRole("treeitem", { name: "LICENSE" })).not.toHaveClass("statut-modifie");
     expect(within(screen.getByRole("treeitem", { name: "LICENSE" })).queryByTitle(/./)).toBeNull();
-    expect(screen.getByRole("treeitem", { name: "node_modules" })).toHaveClass("ignore");
+    expect(within(screen.getByRole("treeitem", { name: "node_modules" })).getByTitle("Ignoré par Git")).toBeInTheDocument();
   });
 
   it("un dossier qui contient des changements est marqué sans être déplié", async () => {
@@ -297,9 +309,8 @@ describe("Git dans le codespace", () => {
 
     const src = await screen.findByRole("treeitem", { name: "src" });
     expect(src).toHaveAttribute("aria-expanded", "false");
-    expect(src).toHaveClass("statut-modifie");
     expect(within(src).getByTitle("Contient des changements")).toBeInTheDocument();
-    expect(screen.getByRole("treeitem", { name: "docs" })).toHaveClass("statut-non_suivi");
+    expect(within(screen.getByRole("treeitem", { name: "docs" })).getByTitle("Contient des changements")).toBeInTheDocument();
     expect(fetch.mock.calls.map(([c]) => c)).not.toContain(`${API}/codespace/arbre?chemin=src`);
   });
 
@@ -315,6 +326,7 @@ describe("Git dans le codespace", () => {
       readOnly: true,
       originalEditable: false,
       renderSideBySide: true,
+      theme: THEME_MONACO,
     });
     await waitFor(() => expect(diff.modele?.original.getValue()).toBe("# r\n"));
     expect(diff.modele?.modified.getValue()).toBe("# r modifié\n");
@@ -552,6 +564,7 @@ describe("codespace d’une session close : l’instantané", () => {
     const entete = within(vue).getByRole("group", { name: "Identité du codespace" });
     expect(entete).toHaveTextContent("v0.8.0-codespace");
     expect(entete).toHaveTextContent("ea80c15");
+    expect(entete).not.toHaveTextContent("En direct");
     await within(arbre()).findByRole("treeitem", { name: "README.md" });
     expect(evenements()).toEqual([]);
   });
@@ -572,7 +585,6 @@ describe("codespace d’une session close : l’instantané", () => {
 
     for (const nom of [".git", "node_modules", ".env"]) {
       const item = await within(arbre()).findByRole("treeitem", { name: nom });
-      expect(item).toHaveClass("non-conserve");
       expect(item).toHaveTextContent("non conservé");
       expect(within(item).queryByRole("button")).toBeNull();
     }

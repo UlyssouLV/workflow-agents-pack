@@ -13,6 +13,7 @@ beforeEach(() => {
   FauxWebSocket.instances = [];
   FauxMonaco.editeurs = [];
   FauxMonaco.editeursDiff = [];
+  FauxMonaco.themes = {};
   sessionStorage.clear();
   vi.stubGlobal("WebSocket", FauxWebSocket);
 });

@@ -61,6 +61,12 @@
   --ansi-vif-magenta: #bbb2f5;
   --ansi-vif-cyan: #86d6e4;
   --ansi-vif-blanc: #ffffff;
+  /* Codespace : marqueurs Git de l’arbre, et Monaco (themeMonaco.ts) : taille du code, diff. */
+  --git-modifie: #e5b454;
+  --git-ajoute: var(--succes);
+  --code-taille: 12.5px;
+  --diff-ajout: #4cc38a24;
+  --diff-retrait: #ec5d5724;
   --rayon: 10px;
   --police: "Geist", system-ui, sans-serif;
   --police-mono: "Geist Mono", ui-monospace, Menlo, monospace;
@@ -99,6 +105,8 @@
   --color-succes: var(--succes);
   --color-echec: var(--echec);
   --color-neutre: var(--neutre);
+  --color-git-modifie: var(--git-modifie);
+  --color-git-ajoute: var(--git-ajoute);
   --radius-sm: calc(var(--rayon) - 4px);
   --radius-md: calc(var(--rayon) - 2px);
   --radius-lg: var(--rayon);

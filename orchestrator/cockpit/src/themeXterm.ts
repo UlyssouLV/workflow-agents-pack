@@ -25,7 +25,7 @@ const COULEURS: [keyof ITheme, string][] = [
   ["brightWhite", "--ansi-vif-blanc"],
 ];
 
-function lireVariable(nom: string): string {
+export function lireVariable(nom: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(nom).trim();
 }
 
