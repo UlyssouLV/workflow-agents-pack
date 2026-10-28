@@ -1,11 +1,10 @@
 import { ClockIcon, HandIcon, TriangleAlertIcon } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent } from "react";
 import type { Liste, Repo, VersionResume } from "./api";
-import { Alert, AlertDescription } from "./components/ui/alert";
 import { Badge } from "./components/ui/badge";
 import { Card } from "./components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
-import { BadgePause, BadgePilote, BadgeSession, heure, nomAffiche } from "./commun";
+import { BadgePause, BadgePilote, BadgeSession, Erreur, heure, nomAffiche } from "./commun";
 import { ContenuPage, Coque, EnTetePage } from "./Coque";
 import { cn } from "./lib/utils";
 import { useRafraichi } from "./rafraichi";
@@ -41,17 +40,6 @@ function ReluA({ repos }: { repos: Repo[] }) {
       <ClockIcon aria-hidden />
       Relu à {heure(dernier)}
     </span>
-  );
-}
-
-function Erreur({ children }: { children: ReactNode }) {
-  return (
-    <Alert variant="destructive">
-      <TriangleAlertIcon aria-hidden />
-      <AlertDescription className="text-foreground">
-        <p>{children}</p>
-      </AlertDescription>
-    </Alert>
   );
 }
 

@@ -1,15 +1,4 @@
 /* Restes du style minimal (0.3.0) : chaque ticket de la 0.8.1 en retire ce qu’il refait (index.css, ADR 0015). */
-/* Tableaux pas encore passés sur `components/ui/table` (Sessions). */
-table:not([data-slot="table"]) {
-  border-collapse: collapse;
-  margin: 0.5rem 0 1rem;
-}
-table:not([data-slot="table"]) :is(th, td) {
-  border-bottom: 1px solid #d0d7de;
-  padding: 0.4rem 0.8rem;
-  text-align: left;
-  vertical-align: top;
-}
 .erreur {
   color: #cf222e;
 }

@@ -43,6 +43,7 @@ import { Switch } from "./components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 import {
   BadgeSession,
+  Erreur,
   LIBELLES_ETAT_SESSION,
   LibelleEtape,
   LiensChaine,
@@ -109,17 +110,6 @@ export function VueDetail({ owner, name }: { owner: string; name: string }) {
         <Sessions chemin={`${chemin}/sessions`} agents={donnees?.agents ?? []} />
       </ContenuPage>
     </Coque>
-  );
-}
-
-function Erreur({ children }: { children: ReactNode }) {
-  return (
-    <Alert variant="destructive">
-      <TriangleAlertIcon aria-hidden />
-      <AlertDescription className="text-foreground">
-        <p>{children}</p>
-      </AlertDescription>
-    </Alert>
   );
 }
 

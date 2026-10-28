@@ -1,8 +1,22 @@
-import { HandIcon, ZapIcon } from "lucide-react";
+import { HandIcon, TriangleAlertIcon, ZapIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ActiviteSession, Etape, EtatSession, LienSession, Repo, Session } from "./api";
 import { ID_SESSION } from "./api";
+import { Alert, AlertDescription } from "./components/ui/alert";
 import { Badge, Pastille } from "./components/ui/badge";
 import { LIBELLES_STOP } from "./notifications";
+
+/** Lecture ou registry en échec, en tête de page ou de carte. */
+export function Erreur({ children }: { children: ReactNode }) {
+  return (
+    <Alert variant="destructive">
+      <TriangleAlertIcon aria-hidden />
+      <AlertDescription className="text-foreground">
+        <p>{children}</p>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 export function BadgeHumain() {
   return (
