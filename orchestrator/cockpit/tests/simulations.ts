@@ -1,9 +1,11 @@
 // Faux xterm.js et faux websocket : jsdom n’a ni canvas ni runtime auquel se connecter.
 
+import type { ITerminalOptions } from "@xterm/xterm";
+
 /** Remplace `Terminal` de `@xterm/xterm` (voir `setup.ts`). */
 export class FauxTerminal {
   static instances: FauxTerminal[] = [];
-  options: { disableStdin?: boolean; cursorBlink?: boolean; cols?: number; rows?: number };
+  options: ITerminalOptions & { cols?: number; rows?: number };
   cols: number;
   rows: number;
   ecrit: (Uint8Array | string)[] = [];

@@ -1,23 +1,14 @@
 import { ChevronRightIcon } from "lucide-react";
-import type { Agent, EtatSession, Session, SessionsDuRepo } from "./api";
-import { Badge, Pastille } from "./components/ui/badge";
+import type { Agent, Session, SessionsDuRepo } from "./api";
+import { Badge } from "./components/ui/badge";
 import { Card, CardHeader, CardTitle } from "./components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./components/ui/collapsible";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
-import { Erreur, LIBELLES_ETAT_SESSION, libelleActivite, libelleModele } from "./commun";
+import { BadgeActivite, BadgeEtat, Erreur, libelleModele } from "./commun";
 import { ContenuPage, Coque, EnTetePage } from "./Coque";
 import { cn } from "./lib/utils";
 import { RAFRAICHISSEMENT_SESSION_MS, useRafraichi } from "./rafraichi";
 import { type GroupeSessions, regrouperParRepo } from "./sessionsParRepo";
-
-const VARIANTES_ETAT: Record<EtatSession, "agent" | "succes" | "pilote" | "neutre" | "echec"> = {
-  ouverte: "agent",
-  terminée: "succes",
-  enchaînée: "pilote",
-  arrêtée: "neutre",
-  interrompue: "neutre",
-  échouée: "echec",
-};
 
 /** Ce que chaque ligne affiche hors des données de la session elle-même. */
 interface Colonnes {
@@ -166,24 +157,15 @@ function Ligne({ session, colonnes }: { session: Session; colonnes: Colonnes }) 
         {session.branche ?? "—"}
       </TableCell>
       <TableCell className={cn(CELLULE_CARTE, "max-md:col-start-2 max-md:row-start-1")}>
-        <Badge variant={VARIANTES_ETAT[session.etat]}>{LIBELLES_ETAT_SESSION[session.etat]}</Badge>
+        <BadgeEtat etat={session.etat} />
       </TableCell>
       <TableCell className={cn(CELLULE_CARTE, "max-md:col-span-full", session.etat !== "ouverte" && "max-md:hidden")}>
-        <Activite session={session} />
+        {session.etat === "ouverte" ? (
+          <BadgeActivite session={session} className="whitespace-normal" />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </TableCell>
     </TableRow>
-  );
-}
-
-/** Seulement pour une session ouverte : orange quand l’agent attend, bleu quand il travaille. */
-function Activite({ session }: { session: Session }) {
-  if (session.etat !== "ouverte") return <span className="text-muted-foreground">—</span>;
-  const vivant = session.activite !== "inconnue";
-  const variante = session.activite === "attend" ? "attention" : session.activite === "travaille" ? "agent" : "neutre";
-  return (
-    <Badge variant={variante} className="whitespace-normal">
-      <Pastille vivant={vivant} />
-      {libelleActivite(session)}
-    </Badge>
   );
 }

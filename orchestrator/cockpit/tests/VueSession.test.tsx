@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { RAFRAICHISSEMENT_SESSION_MS, VueSession } from "../src/VueSession";
-import { session, simulerApi } from "./donnees";
+import { CLAUDE, CURSOR, session, simulerApi } from "./donnees";
 import { RECONNEXION_MS } from "../src/TerminalEnDirect";
 import { FauxTerminal, FauxWebSocket } from "./simulations";
 
@@ -15,7 +15,7 @@ const CAST = [
 const CHEMIN = "/api/sessions/20261017-090000-abcdef";
 
 function rendre(s = session()) {
-  simulerApi({ [CHEMIN]: s });
+  simulerApi({ [CHEMIN]: s, "/api/agents": { agents: [CLAUDE, CURSOR] } });
   return render(<VueSession id="20261017-090000-abcdef" />);
 }
 
@@ -35,13 +35,23 @@ describe("page de session", () => {
     expect(screen.queryByText("Modèle")).toBeNull();
   });
 
-  it("montre le repo, le ticket, l’agent et la commande", async () => {
-    rendre();
+  it("montre le repo, le ticket, l’agent, la branche et la commande", async () => {
+    rendre(session({ titre: "Ouvre la version" }));
 
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Session /implement #23");
     expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
     expect(screen.getByRole("link", { name: "o/r" })).toHaveAttribute("href", "/repos/o/r");
-    expect(screen.getByText('claude "/implement #23"')).toBeInTheDocument();
+    const meta = screen.getByRole("region", { name: "Session" });
+    expect(within(meta).getByText("Claude Code")).toBeInTheDocument();
+    expect(within(meta).getByText("v0.3.0-registry")).toBeInTheDocument();
+    expect(within(meta).getByText('claude "/implement #23"')).toBeInTheDocument();
+  });
+
+  it("session d’avant 0.4.2 : pas de branche", async () => {
+    rendre(session({ branche: null }));
+
+    await screen.findByRole("region", { name: "Session" });
+    expect(screen.queryByText("Branche")).toBeNull();
   });
 
   it("session libre : le titre reprend la commande", async () => {
@@ -57,11 +67,11 @@ describe("page de session", () => {
     expect(screen.getByText("Réponse attendue — grilling")).toBeInTheDocument();
   });
 
-  it("session ouverte : état et durée depuis le début", async () => {
+  it("session ouverte : pastille d’activité et durée depuis le début", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date("2026-10-17T09:12:05Z") });
-    rendre();
+    rendre(session({ activite: "travaille" }));
 
-    expect(await screen.findByText("Ouverte")).toBeInTheDocument();
+    expect(await screen.findByText("Travaille")).toBeInTheDocument();
     expect(screen.getByText("12 min 5 s")).toBeInTheDocument();
   });
 
@@ -123,6 +133,7 @@ describe("terminal en direct", () => {
     expect(terminal.texte()).toBe("claude prêt");
     expect(terminal.options.disableStdin).toBe(false);
     expect(ws.envoyes).toEqual([{ taille: { colonnes: 120, lignes: 30 } }, { saisie: "/clear\r" }]);
+    expect(screen.getByText("Vous avez la main")).toBeInTheDocument();
     expect(screen.queryByText(/Lecture seule/)).not.toBeInTheDocument();
   });
 
@@ -132,7 +143,8 @@ describe("terminal en direct", () => {
     act(() => ws.sortie("écran"));
     terminal.taper("intrus\r");
 
-    expect(screen.getByText("Lecture seule : un autre onglet a la main.")).toBeInTheDocument();
+    expect(screen.getByText("Lecture seule")).toBeInTheDocument();
+    expect(screen.getByText("Un autre onglet a la main.")).toBeInTheDocument();
     expect(terminal.options.disableStdin).toBe(true);
     expect(terminal.texte()).toBe("écran");
     expect(ws.envoyes).toEqual([]);
@@ -157,7 +169,7 @@ describe("terminal en direct", () => {
     act(() => ws.role("lecture"));
     terminal.taper("perdu");
 
-    expect(screen.getByText("Lecture seule : un autre onglet a la main.")).toBeInTheDocument();
+    expect(screen.getByText("Lecture seule")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Prendre la main" })).toBeInTheDocument();
     expect(ws.envoyes).not.toContainEqual({ saisie: "perdu" });
   });
@@ -235,6 +247,23 @@ describe("terminal en direct", () => {
     expect(screen.queryByText(/Connexion|Lecture seule|déconnecté/)).not.toBeInTheDocument();
   });
 
+  it("terminal aux couleurs et à la police des variables, curseur fixe sous reduced-motion", async () => {
+    document.documentElement.style.setProperty("--terminal", "#010203");
+    document.documentElement.style.setProperty("--police-mono", '"Geist Mono", monospace');
+    vi.stubGlobal("matchMedia", (requete: string) => ({ matches: requete.includes("reduce") }));
+    try {
+      const { terminal } = await ouvrir();
+
+      expect(terminal.options).toMatchObject({
+        theme: { background: "#010203" },
+        fontFamily: '"Geist Mono", monospace',
+        cursorBlink: false,
+      });
+    } finally {
+      document.documentElement.removeAttribute("style");
+    }
+  });
+
   it.each(["terminée", "échouée"] as const)("session %s : ni terminal ni Terminer", async (etat) => {
     rendre(session({ etat, code_sortie: etat === "terminée" ? 0 : 1, fin: "2026-10-17T10:01:00+00:00" }));
 
@@ -244,27 +273,41 @@ describe("terminal en direct", () => {
     expect(FauxWebSocket.instances).toEqual([]);
   });
 
-  it("Terminer : confirmé, la session close remplace le terminal", async () => {
+  /** Clique **Terminer** dans l’en-tête et rend le dialogue de confirmation. */
+  async function demanderTerminer() {
+    fireEvent.click(await screen.findByRole("button", { name: "Terminer" }));
+    const dialogue = await screen.findByRole("alertdialog", { name: "Terminer la session ?" });
+    expect(dialogue).toHaveTextContent("L’agent sera arrêté");
+    return dialogue;
+  }
+
+  it("Terminer : confirmé dans le dialogue, la session close remplace le terminal", async () => {
     const close = session({ etat: "échouée", code_sortie: 129, fin: "2026-10-17T09:30:00+00:00" });
     const fetch = simulerApi({ [CHEMIN]: session(), [`POST ${CHEMIN}/terminer`]: close });
-    vi.stubGlobal("confirm", vi.fn(() => true));
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
     render(<VueSession id="20261017-090000-abcdef" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Terminer" }));
+    const dialogue = await demanderTerminer();
+    fireEvent.click(within(dialogue).getByRole("button", { name: "Terminer" }));
 
     expect(await screen.findByText("Échouée (code 129)")).toBeInTheDocument();
+    expect(confirm).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(`${CHEMIN}/terminer`, expect.objectContaining({ method: "POST" }));
     expect(screen.queryByRole("region", { name: "Terminal" })).not.toBeInTheDocument();
     expect(FauxWebSocket.instances[0].readyState).toBe(FauxWebSocket.CLOSED);
   });
 
-  it("Terminer annulé : rien n’est demandé", async () => {
+  it.each([
+    ["Annuler", (dialogue: HTMLElement) => fireEvent.click(within(dialogue).getByRole("button", { name: "Annuler" }))],
+    ["Échap", (dialogue: HTMLElement) => fireEvent.keyDown(dialogue, { key: "Escape" })],
+  ])("Terminer puis %s : rien n’est demandé", async (_, fermer) => {
     const fetch = simulerApi({ [CHEMIN]: session() });
-    vi.stubGlobal("confirm", vi.fn(() => false));
     render(<VueSession id="20261017-090000-abcdef" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Terminer" }));
+    fermer(await demanderTerminer());
 
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([]);
     expect(screen.getByRole("region", { name: "Terminal" })).toBeInTheDocument();
   });
@@ -274,10 +317,10 @@ describe("terminal en direct", () => {
       [CHEMIN]: session(),
       [`POST ${CHEMIN}/terminer`]: new Response(JSON.stringify({ detail: "runner injoignable" }), { status: 502 }),
     });
-    vi.stubGlobal("confirm", vi.fn(() => true));
     render(<VueSession id="20261017-090000-abcdef" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Terminer" }));
+    const dialogue = await demanderTerminer();
+    fireEvent.click(within(dialogue).getByRole("button", { name: "Terminer" }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("runner injoignable"));
   });
@@ -300,7 +343,8 @@ describe("relecture", () => {
       const relecture = await screen.findByRole("region", { name: "Relecture" });
       await waitFor(() => expect(FauxTerminal.instances[0]?.texte()).toBe("claude prêt\r\nau revoir"));
       const [terminal] = FauxTerminal.instances;
-      expect(terminal.options.disableStdin).toBe(true);
+      expect(terminal.options).toMatchObject({ disableStdin: true, cursorBlink: false });
+      expect(terminal.options).toHaveProperty("theme");
       expect([terminal.cols, terminal.rows]).toEqual([100, 20]);
       expect(FauxWebSocket.instances).toEqual([]);
       expect(await within(relecture).findByRole("button", { name: "Rejouer" })).toBeInTheDocument();

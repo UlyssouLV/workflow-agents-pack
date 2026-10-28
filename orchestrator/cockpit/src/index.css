@@ -42,6 +42,25 @@
   --neutre: #6e6e78;
   --voile: #000000;
   --terminal: #0b0b0d;
+  /* Terminal xterm (themeXterm.ts) : sélection, taille de police et 16 couleurs ANSI. */
+  --terminal-selection: #5b9cf54d;
+  --terminal-taille: 13px;
+  --ansi-noir: #26262b;
+  --ansi-rouge: var(--echec);
+  --ansi-vert: var(--succes);
+  --ansi-jaune: #e5b454;
+  --ansi-bleu: var(--agent);
+  --ansi-magenta: var(--pilote);
+  --ansi-cyan: #5ec4d6;
+  --ansi-blanc: #d6d6db;
+  --ansi-vif-noir: var(--faible);
+  --ansi-vif-rouge: #ff7b74;
+  --ansi-vif-vert: #6fdba5;
+  --ansi-vif-jaune: #f2cb7a;
+  --ansi-vif-bleu: #82b4f8;
+  --ansi-vif-magenta: #bbb2f5;
+  --ansi-vif-cyan: #86d6e4;
+  --ansi-vif-blanc: #ffffff;
   --rayon: 10px;
   --police: "Geist", system-ui, sans-serif;
   --police-mono: "Geist Mono", ui-monospace, Menlo, monospace;

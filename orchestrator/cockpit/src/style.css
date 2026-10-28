@@ -7,24 +7,9 @@
   font-size: 0.85rem;
   margin-left: 0.4rem;
 }
-.terminal {
-  background: #000;
-  height: 70vh;
-  padding: 0.3rem;
-}
 .etat-terminal {
   color: #59636e;
 }
-.enchainee {
-  background: #ddf4ff;
-  border: 1px solid #54aeff;
-  padding: 0.6rem 0.8rem;
-}
-.onglets {
-  border-bottom: 1px solid #d0d7de;
-  margin: 1rem 0 0.5rem;
-}
-.onglets [role="tab"],
 .onglets-fichiers [role="tab"] {
   background: none;
   border: none;
@@ -32,7 +17,6 @@
   cursor: pointer;
   padding: 0.3rem 0.8rem;
 }
-.onglets [aria-selected="true"],
 .onglets-fichiers [aria-selected="true"] {
   border-bottom-color: #fd8c73;
   font-weight: 600;

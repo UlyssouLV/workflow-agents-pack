@@ -103,6 +103,37 @@ export const LIBELLES_ETAT_SESSION: Record<EtatSession, string> = {
   enchaînée: "Enchaînée",
 };
 
+const VARIANTES_ETAT_SESSION: Record<EtatSession, "agent" | "succes" | "pilote" | "neutre" | "echec"> = {
+  ouverte: "agent",
+  terminée: "succes",
+  enchaînée: "pilote",
+  arrêtée: "neutre",
+  interrompue: "neutre",
+  échouée: "echec",
+};
+
+/** État de la session, au code couleur ; `children` remplace le libellé (précision du code de sortie…). */
+export function BadgeEtat({ etat, children }: { etat: EtatSession; children?: ReactNode }) {
+  return <Badge variant={VARIANTES_ETAT_SESSION[etat]}>{children ?? LIBELLES_ETAT_SESSION[etat]}</Badge>;
+}
+
+/** Session ouverte : orange quand l’agent attend, bleu quand il travaille. */
+export function BadgeActivite({
+  session,
+  className,
+}: {
+  session: Pick<Session, "activite" | "skill">;
+  className?: string;
+}) {
+  const variante = session.activite === "attend" ? "attention" : session.activite === "travaille" ? "agent" : "neutre";
+  return (
+    <Badge variant={variante} className={className}>
+      <Pastille vivant={session.activite !== "inconnue"} />
+      {libelleActivite(session)}
+    </Badge>
+  );
+}
+
 /** `/sessions/<id>` d’une voisine de la chaîne ; seul un identifiant valide bâtit l’URL. */
 export function lienSession(id: string | null): string | null {
   return id && ID_SESSION.test(id) ? `/sessions/${id}` : null;
