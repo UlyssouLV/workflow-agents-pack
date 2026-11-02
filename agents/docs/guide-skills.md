@@ -6,6 +6,8 @@
 
 `meta/` = fonctions primaires. `process/` = recettes qui s’appellent entre elles.
 
+Ce guide appartient au pack (`/up` l’écrase). Les skills propres à un projet sont dans `agents/docs/guide-projet.md`.
+
 ---
 
 ## Meta
@@ -91,7 +93,7 @@ Tableau : chaque skill, bucket `meta`/`process` s’il est sous `agents/`, prés
 
 **Corps :** inutile.
 
-Rôle **`test-roots`**. Sans `-a` : périmètre **hybride** — working tree s’il est sale, sinon `origin/main...HEAD` ; pour pytest, seulement les fichiers de tests liés aux `*.py` touchés (repli = suite du root si aucun match). `npm test` reste la suite du package. Détecte le runner par racine (pytest + venv, sinon `npm test`). Inconnu → stop. Extra Tests : rôle **`agent-adapter`**. Échec → stop. Équivalent : « lance les tests ».
+Rôle **`test-roots`**. Sans `-a` : périmètre **hybride** — working tree s’il est sale, sinon `origin/main...HEAD` ; pour pytest, seulement les fichiers de tests liés aux `*.py` touchés (repli = suite du root si aucun match). `npm test` reste la suite du package. Détecte le runner par racine (pytest + venv, sinon `npm test`, sinon `cargo test --workspace`). Inconnu → stop. Extra Tests : rôle **`agent-adapter`**. Échec → stop. Équivalent : « lance les tests ».
 
 **Exemple :**
 
@@ -216,7 +218,7 @@ Priorité : avant déploiement
 
 **Corps :** `vX.Y.Z` (ou `X.Y.Z`), éventuellement le purpose.
 
-Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag = `vX.Y.Z` ou `{release_tag_prefix}X.Y.Z` si [canal d’intégration](integration-channel.md) (ex. `orchestrator-v0.1.0`). Titre humain `VX.Y.Z — …`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
+Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag = `vX.Y.Z` ou `{release_tag_prefix}X.Y.Z` si [canal d’intégration](integration-channel.md) (ex. `orchestrator-v0.1.0`). Titre humain `VX.Y.Z — …` au **numéro produit** (le tag passé par Finalise prime sur la branche ; le numéro de développement va dans les notes, ligne `Développement : D (#parent)`). Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
 
 **Exemple :**
 
@@ -254,7 +256,7 @@ Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), su
 
 **Corps :** optionnel — chemin local vers un checkout `workflow-agents-pack` ; sinon clone temporaire depuis GitHub.
 
-Inventorie le projet vs le pack (`agents/docs/migrations-pack.md`), propose migrations + sync skills, **attend un oui**, puis applique et dispatch. N’efface pas les skills locaux. Ne commit pas. Skill `mettre-a-jour-le-pack`. Sync brut sans grill : `update-from-pack.sh`.
+Inventorie le projet vs le pack (`agents/docs/migrations-pack.md`), propose migrations + sync skills, **attend un oui**, puis applique et dispatch. Refusé (hook `bloque-up-ecarts-pack`) tant qu’une ligne de `agents/docs/ecarts-avec-le-pack.md` est « à reporter » → **`/rap`** d’abord. N’efface pas les skills locaux. Ne commit pas. Skill `mettre-a-jour-le-pack`. Sync brut sans grill : `update-from-pack.sh`.
 
 **Exemple :**
 
@@ -264,6 +266,23 @@ Inventorie le projet vs le pack (`agents/docs/migrations-pack.md`), propose migr
 
 ```
 /up
+Pack local : /Users/moi/Desktop/workflow-agents-pack
+```
+
+### Remonter au pack
+
+**Commande :** `/rap` ou `Remonte au pack` / `Reporte dans le pack`
+
+**Options :** aucune.
+
+**Corps :** chemin d’un checkout local de `workflow-agents-pack` (obligatoire : les modifications y sont écrites).
+
+Depuis un projet : compare les fichiers venus du pack à leur version au `agents/.pack-sha`, classe chaque écart (bug du pack, amélioration générique, variante optionnelle, spécifique au projet, retard du projet), **attend un oui**, porte les éléments choisis dans le pack (branche `remontee-<projet>-<date>`, généralisés, opt-in si besoin) et passe leurs lignes à « reporté » dans `agents/docs/ecarts-avec-le-pack.md`. Ne commit pas. Ensuite : `/c` dans le pack, puis `/up` dans le projet. Skill `remonter-au-pack`.
+
+**Exemple :**
+
+```
+/rap
 Pack local : /Users/moi/Desktop/workflow-agents-pack
 ```
 
@@ -487,7 +506,7 @@ Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `gen
 
 **Corps :** inutile.
 
-Après une **`/code-review`** acceptée : tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis **`/crel`**, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
+Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 

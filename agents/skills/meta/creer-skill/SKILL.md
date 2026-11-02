@@ -60,7 +60,12 @@ If `--check` fails: stop. Do not hand-edit `.claude/skills/` or `.cursor/skills/
 
 ## 5. Guide
 
-Add (or replace if that heading already exists) one section in `agents/docs/guide-skills.md`. Same shape as the peers already in the file:
+Which guide:
+
+- **In a project** (`agents/docs/ecarts-avec-le-pack.md` exists): `agents/docs/guide-projet.md`, section `## Skills` (create the file with `# Guide du projet` and that heading if missing). `guide-skills.md` belongs to the pack and is overwritten by `/up`.
+- **In `workflow-agents-pack` itself** (no such register): `agents/docs/guide-skills.md`.
+
+Add (or replace if that heading already exists) one section there. Same shape as the peers already in `guide-skills.md`:
 
 - French title (`### …`)
 - **Commande :**
@@ -69,9 +74,9 @@ Add (or replace if that heading already exists) one section in `agents/docs/guid
 - one line of what it does
 - **Exemple :** a fenced block of what the user would type
 
-Put it under `## Meta` or `## Process` to match the bucket. Do not rewrite the rest of the guide.
+In `guide-skills.md`, put it under `## Meta` or `## Process` to match the bucket. Do not rewrite the rest of the guide.
 
-Done when the new folder exists under `agents/skills/meta/` or `agents/skills/process/`, `--check` is green, **and** the guide has that section.
+Done when the new folder exists under `agents/skills/meta/` or `agents/skills/process/`, `--check` is green, **and** the right guide has that section.
 
 ## Not this skill
 

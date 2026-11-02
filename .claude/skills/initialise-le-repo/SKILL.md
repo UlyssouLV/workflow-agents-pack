@@ -32,9 +32,15 @@ Create only what is absent. Never overwrite an existing file.
 - `docs/adr/` (directory)
 - `docs/glossaire.md` — title `# Glossary` only
 
-Copy `agents/scripts/gate-code-review.py` → `.claude/hooks/gate-code-review.py`.
+- `agents/docs/ecarts-avec-le-pack.md` — copy of `references/ecarts-avec-le-pack.md` (empty register)
 
-Merge **only** the `hooks` object from `references/settings-hooks.json` into `.claude/settings.json` (create the file if needed). Do **not** add `enabledPlugins` / frontend-design.
+Wire the pack hooks (adapter copies under `.claude/hooks/` and `.cursor/hooks/`, entries merged into `.claude/settings.json` **hooks** and `.cursor/hooks.json`):
+
+```bash
+python3 agents/scripts/cabler-hooks.py . .
+```
+
+Do **not** add `enabledPlugins` / frontend-design.
 
 Replace `agents/roles.yml` with `references/roles.yml` (pack paths). Do not invent `test-roots`. Do **not** add `suivi-avancement` here — that is step 6.
 

@@ -59,6 +59,12 @@ function versionFromTag(tag) {
   return String(tag || '').replace(/^v/i, '');
 }
 
+/** Ligne « Développement : 1.5.2 (#201) » des notes : la spec porte ce numéro. */
+function versionDeveloppement(body) {
+  const m = String(body || '').match(/^Développement\s*:\s*(\d+\.\d+\.\d+)/m);
+  return m ? m[1] : null;
+}
+
 /** « 1.4.2 » → « 1.4 » ; « 1.0.0 » → « 1.0 » ; « 1.1 » → « 1.1 » */
 function serieFromVersion(version) {
   const parts = String(version).split('.');
@@ -401,7 +407,7 @@ async function main() {
     const lot = parSerie.get(serie);
     lot.forEach((release, indexDansSerie) => {
       const version = versionFromTag(release.tag_name);
-      const specPath = findSpecFile(version);
+      const specPath = findSpecFile(versionDeveloppement(release.body) || version);
       entries.push(writeVersionPage(release, specPath, indexDansSerie + 1));
     });
   }

@@ -1,6 +1,11 @@
 /**
  * Extrait les prochaines versions de docs/dev/feuille-de-route/feuille-de-route-dev.md
- * → JSON accueil + pages docs/feuille-de-route/vX.Y.Z.md
+ * → JSON accueil + pages docs/feuille-de-route/<slug>.md
+ *
+ * Avec le rôle `livrables` (agents/roles.yml), le numéro de la feuille est un
+ * numéro de développement et la Release prendra un numéro produit calculé à
+ * Finalise : une version à venir est alors présentée et adressée par son titre,
+ * sans numéro. Sans ce rôle : par son numéro (`vX.Y.Z`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +21,24 @@ const SOURCE = path.join(
 );
 const OUT_JSON = path.join(__dirname, '../src/data/feuille-de-route.json');
 const OUT_DIR = path.join(REPO_ROOT, 'docs/feuille-de-route');
+const ROLES = path.join(REPO_ROOT, 'agents/roles.yml');
+
+function sansNumero() {
+  try {
+    return /^\s+livrables:\s*$/m.test(fs.readFileSync(ROLES, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+function slugDuTitre(titre) {
+  return titre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 function extraireObjectif(bloc) {
   const m = bloc.match(
@@ -46,7 +69,7 @@ function tronquer(texte, max = 180) {
   return `${coupe.slice(0, dernier > 80 ? dernier : max).trim()}…`;
 }
 
-function parserEnsuite(markdown) {
+function parserEnsuite(markdown, parTitre) {
   const re = /^## (?:Prochaine|Ensuite) : (\d+\.\d+(?:\.\d+)?)\s*[—–\-]\s*(.+)$/gm;
   const indices = [];
   let match;
@@ -69,9 +92,9 @@ function parserEnsuite(markdown) {
           ? plusTard
           : markdown.length;
     const corps = markdown.slice(courant.headerEnd, fin).trim();
-    const slug = `v${courant.version}`;
+    const slug = parTitre ? slugDuTitre(courant.titre) : `v${courant.version}`;
     versions.push({
-      version: courant.version,
+      version: parTitre ? null : courant.version,
       titre: courant.titre,
       resume: tronquer(extraireObjectif(corps)),
       corps,
@@ -109,11 +132,11 @@ function ecrirePages(versions) {
   resetOutDir();
   versions.forEach((v, index) => {
     const content = `---
-sidebar_label: ${escapeYaml(v.version)}
+sidebar_label: ${escapeYaml(v.version || v.titre)}
 sidebar_position: ${index + 1}
 ---
 
-# ${v.version} — ${v.titre}
+# ${v.version ? `${v.version} — ` : ''}${v.titre}
 
 > Extrait de la feuille de route.
 
@@ -134,7 +157,7 @@ function main() {
     return;
   }
   const markdown = fs.readFileSync(SOURCE, 'utf8');
-  const versions = parserEnsuite(markdown);
+  const versions = parserEnsuite(markdown, sansNumero());
   ecrirePages(versions);
   const payload = {
     versions: versions.map(({version, titre, resume, href, slug}) => ({

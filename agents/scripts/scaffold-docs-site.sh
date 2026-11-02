@@ -29,7 +29,9 @@ fi
 PACK="$(cd "$(dirname "$0")/../.." && pwd)"
 TMPL="$PACK/agents/templates/docs-site"
 STUBS="$PACK/agents/templates/docs-stubs"
-WF_SRC="$PACK/agents/templates/github/workflows/deploy-docs.yml"
+WF_DIR="$PACK/agents/templates/github/workflows"
+# First line of a pack-managed workflow; a project removes it to keep its own.
+WF_MARQUEUR="# Géré par workflow-agents-pack"
 
 if [ ! -d "$TMPL" ] || [ ! -f "$TMPL/package.json" ]; then
   echo "Template introuvable : $TMPL" >&2
@@ -139,13 +141,57 @@ copy_stubs() {
 
 copy_workflow() {
   mkdir -p "$TARGET/.github/workflows"
-  if [ ! -f "$TARGET/.github/workflows/deploy-docs.yml" ]; then
-    rsync -a "$WF_SRC" "$TARGET/.github/workflows/deploy-docs.yml"
+  local deploy="$TARGET/.github/workflows/deploy-docs.yml"
+  local build="$TARGET/.github/workflows/build-docs.yml"
+  local deploy_gere=0
+  if [ ! -f "$deploy" ]; then
+    rsync -a "$WF_DIR/deploy-docs.yml" "$deploy"
     echo "créé   .github/workflows/deploy-docs.yml"
-  elif [ "$MODE_FORCE_OWNED" -eq 1 ]; then
-    rsync -a "$WF_SRC" "$TARGET/.github/workflows/deploy-docs.yml"
+    deploy_gere=1
+  elif head -n 1 "$deploy" | grep -q "^$WF_MARQUEUR"; then
+    rsync -a "$WF_DIR/deploy-docs.yml" "$deploy"
     echo "MAJ    .github/workflows/deploy-docs.yml"
+    deploy_gere=1
+  else
+    echo "gardé  .github/workflows/deploy-docs.yml (personnalisé : pas de ligne « $WF_MARQUEUR »)"
   fi
+  # build-docs.yml is called by the pack's deploy-docs.yml.
+  if [ ! -f "$build" ]; then
+    if [ "$deploy_gere" -eq 1 ]; then
+      rsync -a "$WF_DIR/build-docs.yml" "$build"
+      echo "créé   .github/workflows/build-docs.yml"
+    fi
+  elif head -n 1 "$build" | grep -q "^$WF_MARQUEUR"; then
+    rsync -a "$WF_DIR/build-docs.yml" "$build"
+    echo "MAJ    .github/workflows/build-docs.yml"
+  else
+    echo "gardé  .github/workflows/build-docs.yml (personnalisé)"
+  fi
+}
+
+# package.json: pack dependencies added or bumped, pack scripts added,
+# project scripts and extra dependencies kept (a project may chain its own
+# steps in prebuild). Then: npm install in docs-site/.
+merge_package_json() {
+  python3 - "$TMPL/package.json" "$TARGET/docs-site/package.json" <<'PY2'
+import json
+import sys
+from pathlib import Path
+
+pack = json.loads(Path(sys.argv[1]).read_text())
+cible_path = Path(sys.argv[2])
+projet = json.loads(cible_path.read_text())
+for cle in ("dependencies", "devDependencies"):
+    fusion = dict(projet.get(cle) or {})
+    fusion.update(pack.get(cle) or {})
+    projet[cle] = dict(sorted(fusion.items()))
+scripts = dict(projet.get("scripts") or {})
+for nom, commande in (pack.get("scripts") or {}).items():
+    scripts.setdefault(nom, commande)
+projet["scripts"] = scripts
+cible_path.write_text(json.dumps(projet, indent=2, ensure_ascii=False) + "\n")
+PY2
+  echo "fusion docs-site/package.json (scripts du projet gardés)"
 }
 
 sync_owned_only() {
@@ -156,15 +202,15 @@ sync_owned_only() {
   fi
   while IFS= read -r rel || [ -n "$rel" ]; do
     [[ -z "$rel" || "$rel" =~ ^# ]] && continue
-    if [ -e "$TMPL/$rel" ]; then
+    if [ "$rel" = "package.json" ] && [ -f "$TARGET/docs-site/package.json" ]; then
+      merge_package_json
+    elif [ -e "$TMPL/$rel" ]; then
       mkdir -p "$(dirname "$TARGET/docs-site/$rel")"
       rsync -a "$TMPL/$rel" "$TARGET/docs-site/$rel"
       echo "MAJ    docs-site/$rel"
     fi
   done < "$owned"
-  # Always refresh workflow when syncing owned
-  rsync -a "$WF_SRC" "$TARGET/.github/workflows/deploy-docs.yml"
-  echo "MAJ    .github/workflows/deploy-docs.yml"
+  copy_workflow
 }
 
 # Known defects left by older templates in a project's docs-site/ (files
