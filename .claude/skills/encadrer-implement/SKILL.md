@@ -63,7 +63,7 @@ Only reach this block when steps **1–3 succeeded** (tests green, commit+push O
 2. `gh issue edit` that issue: replace `## Plan de tests` with checkboxes for each scenario (leave `## Résultats` and `## Ce qu’on peut faire maintenant` for `/th`).
 3. Stop after telling the user, in French (adapt `#n` / PR):
 
-   Tous les tickets d’implémentation sont Closed. Plan de tests humains proposé sur #<n>. Jouez ce que vous voulez (plan partiel OK). Quand c’est fait, lancez **`/th`** avec les résultats (et des captures si vous en avez). Ne lancez pas `/code-review` tant que #<n> est Open.
+   Tous les tickets d’implémentation sont Closed. Plan de tests humains proposé sur #<n>. Jouez ce que vous voulez (plan partiel OK). Lancez **`/th #<n>`** : l’agent joue d’abord les scénarios qu’il peut faire seul (avec captures) et vous liste ceux qui restent pour vous ; relancez ensuite **`/th #<n>`** avec vos résultats. Ne lancez pas `/code-review` tant que #<n> est Open.
 
 4. Do **not** propose `/code-review` or Finalise here. Do not merge, tag, or start the next version.
 

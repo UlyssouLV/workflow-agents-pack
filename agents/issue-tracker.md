@@ -149,7 +149,8 @@ _(brouillon produit pour la release ; images sous `docs/img/changelog/vX.Y.Z/`)_
 
 - At version open: create with empty Plan / Résultats / product draft (placeholders above).
 - After the last implementation child closes: `encadrer-implement` writes the concrete plan into `## Plan de tests`.
-- After the human reports: skill **`tests-humains`** (`/th`) fills Résultats + product section, commits screenshots if any, removes `ready-for-human`, closes the issue. Partial plans are OK (document non-joués). Closing this child is **`/th`**, not `/cci`.
+- `/th #<n>` first pass: skill **`tests-humains`** plays the scenarios the agent can run alone, commits their screenshots, writes `### Joué par l’agent` / `### À jouer par l’humain` under `## Résultats`, and leaves the issue Open.
+- After the human reports (`/th #<n>` with results): `tests-humains` fills Résultats + product section, commits screenshots if any, removes `ready-for-human`, closes the issue. Partial plans are OK (document non-joués). Closing this child is **`/th`**, not `/cci`.
 
 ## Changes to earlier versions
 

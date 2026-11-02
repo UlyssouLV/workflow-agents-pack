@@ -447,17 +447,23 @@ TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci
 
 **Commande :** `/th`
 
-**Options :** aucune (le ticket `Tests humains — VX.Y.Z` de la branche courante).
+**Options :** `#<n>` (le ticket `Tests humains — VX.Y.Z`) ; sans numéro, celui de la branche courante.
 
-**Corps :** scénarios joués / non joués, résultats ; images de preuve optionnelles (commit sous `docs/img/changelog/vX.Y.Z/`).
+**Corps :** vide au premier passage ; ensuite scénarios joués / non joués, résultats ; images de preuve optionnelles (commit sous `docs/img/changelog/vX.Y.Z/`).
 
-Met à jour le ticket `ready-for-human`, commit les captures si besoin, ferme l’issue, propose `/code-review` puis Finalise. Skill `tests-humains`. Pas `/implement`. Pas `/cci`.
+Deux passages. **1)** `/th #<n>` seul : l’agent joue les scénarios qu’il peut faire sans vous (CLI, app locale, navigateur), commit les captures, écrit ses résultats sur le ticket et liste ce qui reste pour vous ; le ticket reste ouvert. **2)** `/th #<n>` avec vos résultats (ou « ok » s’il ne restait rien) : met à jour le ticket `ready-for-human`, commit vos captures si besoin, ferme l’issue, propose `/code-review` puis Finalise. Skill `tests-humains`. Pas `/implement`. Pas `/cci`.
 
 **Exemple :**
 
 ```
-/th
-J’ai joué 1, 2 et 4 (OK). 3 non joué (pas de compte admin sous la main).
+/th #7
+```
+
+puis
+
+```
+/th #7
+J’ai joué 3 et 5 (OK). 6 non joué (pas de compte admin sous la main).
 ```
 
 
