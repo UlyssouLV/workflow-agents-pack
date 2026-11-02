@@ -181,10 +181,29 @@ site, tmpl = Path(sys.argv[1]), Path(sys.argv[2])
 def report(rel):
     print(f"réparé docs-site/{rel}")
 
+# A path that leaves docs-site/ is a defect only when it leads nowhere: old
+# templates carried BBASS's ../poste/… paths into projects without poste/.
+# A project that points at its own sources on purpose (they exist) is kept.
+def chemin_absent(base, relatif):
+    propre = relatif.split("*")[0].split("?")[0].split("#")[0]
+    return not (base / propre).exists()
+
 rel = "tsconfig.json"
 cfg = site / rel
-text = cfg.read_text() if cfg.exists() else ""
-if '"../' in text or "@docusaurus/tsconfig" not in text:
+try:
+    tsconfig = json.loads(cfg.read_text())
+    externes = [
+        cible
+        for cibles in ((tsconfig.get("compilerOptions") or {}).get("paths") or {}).values()
+        for cible in cibles
+        if cible.startswith("../")
+    ]
+    if isinstance(tsconfig.get("extends"), str) and tsconfig["extends"].startswith("../"):
+        externes.append(tsconfig["extends"])
+    casse = any(chemin_absent(site, cible) for cible in externes)
+except (OSError, ValueError, AttributeError, TypeError):
+    casse = True
+if casse:
     shutil.copyfile(tmpl / rel, cfg)
     report(rel)
 
@@ -217,7 +236,13 @@ rel = "src/css/custom.css"
 css = site / rel
 if css.exists():
     text = css.read_text()
-    cleaned = re.sub(r"@font-face\s*\{[^}]*url\(\s*[\"']?\.\./\.\./\.\./[^}]*\}\s*", "", text)
+    def sans_police_absente(bloc):
+        url = re.search(r"url\(\s*[\"']?([^\"')]+)", bloc.group(0))
+        if url and url.group(1).startswith("../") and chemin_absent(css.parent, url.group(1)):
+            return ""
+        return bloc.group(0)
+
+    cleaned = re.sub(r"@font-face\s*\{[^}]*\}\s*", sans_police_absente, text)
     if cleaned != text:
         css.write_text(cleaned)
         report(rel)
