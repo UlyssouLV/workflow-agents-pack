@@ -1,0 +1,85 @@
+# Géré par workflow-agents-pack (update-from-pack.sh --with-docs le rafraîchit). Pour le personnaliser, supprime cette ligne : le pack ne le touchera plus.
+name: Build docs
+
+# Check de PR, et build réutilisé par deploy-docs.yml sur main (workflow_call) :
+# une seule définition du build Docusaurus.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:
+    inputs:
+      upload-pages:
+        description: Publie docs-site/build comme artefact Pages (et les compteurs de commits)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Filtre de chemins au niveau du job (pas sur `on:`) : un job sauté par `if`
+  # compte comme réussi pour un check requis ; un `paths:` sur `on:` laisserait
+  # le check requis en attente sur une PR qui ne touche pas la doc.
+  changes:
+    name: Detect changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        id: filter
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'docs-site/**'
+              - '.github/workflows/build-docs.yml'
+
+  build-docs:
+    name: build-docs
+    needs: changes
+    # Appelé par deploy-docs : changes est sauté, on build toujours.
+    if: >-
+      !failure() && !cancelled() &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: docs-site
+        run: npm ci --ignore-scripts
+
+      # Badges README (static/stats/) : publiés avec le site, aucun commit de bot.
+      - name: Compteurs de commits
+        if: inputs.upload-pages
+        working-directory: docs-site
+        run: node scripts/generer-stats-commits.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Build
+        working-directory: docs-site
+        run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Upload Pages artifact
+        if: inputs.upload-pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/build

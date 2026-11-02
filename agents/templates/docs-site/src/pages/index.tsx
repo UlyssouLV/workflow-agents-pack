@@ -35,12 +35,13 @@ export default function Home(): ReactNode {
               <Link to="/docs/changelog/">Tout le changelog →</Link>
             </p>
 
-            <section>
+            {/* data-readme : repères des captures README (capturer-*.mjs). */}
+            <section data-readme="bugs">
               <Heading as="h2" className={styles.sousTitre}>
                 Bugs connus
               </Heading>
               <BugsConnusAccueil />
-              <p className="margin-top--md">
+              <p className="margin-top--md" data-readme="bugs-lien-sommaire">
                 <Link to="/docs/bugs/">Tous les bugs →</Link>
               </p>
             </section>

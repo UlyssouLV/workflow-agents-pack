@@ -10,6 +10,12 @@
 # Optional roles added only when enabled at /init (or adopter/update flags):
 #   suivi-avancement  — --with-suivi / init o
 #   docs-site         — --with-docs / init o  → docs-site/
+#
+# Optional role written by hand, never added by a script:
+#   livrables         — paths that reach the end user (images, packages,
+#                       app sources). Read by finaliser-la-version: a version
+#                       whose diff touches none of them (tests/ and *.md
+#                       ignored) gets no Release. Missing → always a Release.
 
 roles:
   roadmap:

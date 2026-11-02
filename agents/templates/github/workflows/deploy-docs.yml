@@ -1,13 +1,14 @@
+# Géré par workflow-agents-pack (update-from-pack.sh --with-docs le rafraîchit). Pour le personnaliser, supprime cette ligne : le pack ne le touchera plus.
 name: Deploy docs
 
+# À chaque push sur main (pas seulement la doc) : le site publie aussi les
+# compteurs de commits lus par les badges du README (static/stats/).
+# Aucun commit de bot sur main : les aperçus README sont produits sur la
+# branche de version (finaliser-la-version).
 on:
   push:
     branches:
       - main
-    paths:
-      - 'docs/**'
-      - 'docs-site/**'
-      - '.github/workflows/deploy-docs.yml'
   release:
     types: [published]
   workflow_dispatch:
@@ -35,36 +36,12 @@ jobs:
 
   build:
     if: github.event_name != 'release'
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/build-docs.yml
     permissions:
       contents: read
-      pages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: docs-site/package-lock.json
-
-      - name: Install dependencies
-        working-directory: docs-site
-        run: npm ci --ignore-scripts
-
-      - name: Build
-        working-directory: docs-site
-        run: npm run build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs-site/build
+      pull-requests: read
+    with:
+      upload-pages: true
 
   deploy:
     if: github.event_name != 'release'

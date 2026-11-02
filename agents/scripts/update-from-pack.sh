@@ -2,7 +2,8 @@
 # From a project root that already has agents/skills/: refresh pack-owned
 # skills and hooks from this checkout. Adds names that exist only in the
 # pack. Never deletes a skill or hook that exists only in the project.
-# Does not touch AGENTS.md, README, .env, or adapter settings by default.
+# Does not touch AGENTS.md, README or .env. In adapter settings, only the
+# entries of the pack hooks are (re)written (cabler-hooks.py).
 #
 # Usage: update-from-pack.sh [--with-docs] [--with-suivi]
 #   --with-docs   scaffold docs-site if missing; else refresh PACK_OWNED paths
@@ -108,21 +109,35 @@ if [ -d "$PACK/agents/hooks" ]; then
 fi
 
 mkdir -p "$TARGET/agents/scripts"
-for f in dispatch.py gate-code-review.py update-from-pack.sh adopter-le-pack.sh scaffold-docs-site.sh enchainer-implement.sh; do
+for f in dispatch.py gate-code-review.py cabler-hooks.py update-from-pack.sh adopter-le-pack.sh scaffold-docs-site.sh enchainer-implement.sh; do
   if [ -f "$PACK/agents/scripts/$f" ]; then
     rsync -a "$PACK/agents/scripts/$f" "$TARGET/agents/scripts/$f"
     chmod +x "$TARGET/agents/scripts/$f" 2>/dev/null || true
   fi
 done
 
-# Adapter copies actually executed by Claude Code / Cursor (same as adopter-le-pack.sh).
-mkdir -p "$TARGET/.claude/hooks" "$TARGET/.cursor/hooks"
-if [ -f "$PACK/agents/scripts/gate-code-review.py" ]; then
-  rsync -a "$PACK/agents/scripts/gate-code-review.py" "$TARGET/.claude/hooks/gate-code-review.py"
+# Adapter copies + settings entries of the pack hooks (same as adopter-le-pack.sh).
+# An entry that runs the same pack hook is replaced, never doubled.
+python3 "$PACK/agents/scripts/cabler-hooks.py" "$PACK" "$TARGET"
+
+# Pack-owned process docs: skills point to them, so a project must not lag.
+mkdir -p "$TARGET/agents/docs"
+for f in integration-channel.md migrations-pack.md checks-requis.md; do
+  rsync -a "$PACK/agents/docs/$f" "$TARGET/agents/docs/$f"
+done
+rsync -a "$PACK/agents/README.md" "$TARGET/agents/README.md"
+# Guides: pack sections only. Project skills / hooks live in guide-projet.md;
+# until /up has moved them there, keep the project's guides untouched.
+if [ -f "$TARGET/agents/docs/guide-projet.md" ]; then
+  for f in guide-skills.md guide-hooks.md; do
+    rsync -a "$PACK/agents/docs/$f" "$TARGET/agents/docs/$f"
+  done
+else
+  echo "guides NON mis à jour : agents/docs/guide-projet.md absent (migration guides-projet de /up)"
 fi
-if [ -f "$PACK/.cursor/hooks/gate-code-review.sh" ]; then
-  rsync -a "$PACK/.cursor/hooks/gate-code-review.sh" "$TARGET/.cursor/hooks/gate-code-review.sh"
-  chmod +x "$TARGET/.cursor/hooks/gate-code-review.sh"
+if [ ! -f "$TARGET/agents/docs/ecarts-avec-le-pack.md" ]; then
+  rsync -a "$REFS/ecarts-avec-le-pack.md" "$TARGET/agents/docs/ecarts-avec-le-pack.md"
+  echo "créé   agents/docs/ecarts-avec-le-pack.md"
 fi
 
 # Templates stay in the pack: scaffold-docs-site.sh reads them from $PACK.

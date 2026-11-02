@@ -51,9 +51,12 @@ Done when `PACK` path and `PACK_SHA` are known.
 Against the **project** cwd, using the catalogue in
 `<pack>/agents/docs/migrations-pack.md`, evaluate each id:
 
-- `glossaire-path`, `feuille-path`, `roles-required`, `agents-tracker`,
-  `adapter-cycle`, `skills-sync` (always applicable), `opt-docs`,
-  `docs-site-sync`, `opt-suivi`
+- `ecarts-a-reporter` (checked **first**: if it holds, report it and
+  **stop** — propose `/rap`; do not inventory the rest)
+- `glossaire-path`, `feuille-path`, `roles-required`, `guides-projet`,
+  `agents-tracker`, `adapter-cycle`, `feuille-numerotation`, `skills-sync`
+  (always applicable),
+  `opt-docs`, `docs-site-sync`, `opt-suivi`
 
 Also list skill folder names under `agents/skills/meta|process/` that exist
 **only** in the project (not in the pack) — for information; never delete them.
@@ -78,11 +81,14 @@ Order:
 
 1. **Path / roles migrations** (`glossaire-path`, `feuille-path`, `roles-required`)  
    as specified in the catalogue.
+   Then **`guides-projet`** (move project sections into `agents/docs/guide-projet.md`)
+   before the sync overwrites the guides.
 2. **`agents-tracker`** — copy from pack:  
    `agents/issue-tracker.md`, `agents/triage-labels.md`.
 3. **`adapter-cycle`** — merge Cycle + Tests (and CLAUDE « Fin d’un /implement »)  
    from pack `initialise-le-repo/references/` into project `AGENTS.md` /
    `.claude/CLAUDE.md` without wiping unrelated sections.
+   **`feuille-numerotation`** — insert the section into the project roadmap README.
 4. **`skills-sync`** (+ opt flags) from **project root**:
 
    ```bash
