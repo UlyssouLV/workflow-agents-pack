@@ -1,6 +1,11 @@
+import {createRequire} from 'node:module';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+
+const require = createRequire(import.meta.url);
+// Relie les termes de docs/glossaire.md dans toute la doc (generer-glossaire).
+const remarkGlossaire = require('./src/remark/glossaire.cjs');
 
 // Placeholders remplacés par scaffold-docs-site.sh : __OWNER__ __REPO__ __TITLE__ __TAGLINE__
 const OWNER = '__OWNER__';
@@ -38,6 +43,7 @@ const config: Config = {
           routeBasePath: 'docs',
           sidebarPath: './sidebars.ts',
           numberPrefixParser: false,
+          beforeDefaultRemarkPlugins: [remarkGlossaire],
           exclude: [
             'suivi-avancement/**',
             'specs/**',

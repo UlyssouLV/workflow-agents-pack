@@ -35,7 +35,7 @@ Used by `creer-un-bug` (`/cub`). A **bug** is not a version child (`/ct`):
 - **Captures:** save under `docs/img/bugs/`, then **`gh issue create` / `gh issue edit` with `--attach 'path#alt'`** so GitHub stores real issue attachments (visible on the ticket). Reference `![alt](./file)` in **Constat** so `gh` rewrites to the uploaded asset. Do **not** stop at repo-relative Markdown alone — that is not an attachment and often invisible on the issue. Requires a recent `gh` (see `gh issue create --help` → `--attach`).
 - Missing facts: exact token `Informations manquantes` (do not invent). Derived states **complet** / **incomplet** — same README.
 - Scheduling into a version: `/afr` removes the `### Bug — … (#n)` block from **Plus tard** (objectif de version). Do not close the issue yet.
-- Closing / fixing: version PR includes `Fixes #<n>` ; **`finaliser-la-version`** deletes any leftover Plus tard block and `gh issue close <n>` with `Corrigé en VX.Y.Z.` — not `/cub`.
+- Closing / fixing: version PR includes `Fixes #<n>` ; **`finaliser-la-version`** deletes any leftover Plus tard block and `gh issue close <n>` with `Corrigé en V<P>.` (product number) — not `/cub`.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -201,6 +201,8 @@ Skip a target that already holds the block for `VX.Y.Z` and that element. `Aucun
 - PR : https://github.com/<owner>/<repo>/pull/<n>
 - Commits : https://github.com/<owner>/<repo>/pull/<n>/commits
 
+Développement : <D> (#<parent>)
+
 Tickets (`Fixes`) : #<parent> #<enfant> …
 
 ## Hors périmètre
@@ -216,7 +218,7 @@ ADRs de cette version (liens **sur ce tag**, pas `main`) :
 Issues laissées de côté (PR / spec hors périmètre) : #…
 ```
 
-Title: `VX.Y.Z — <purpose>`. Tag on the **feature SHA**, not `main`. Optional leading `> **Modifié en …**` annotation blocks (from a later version) may sit **above** `## Pourquoi`, each separated by blank lines as above.
+Title: `VX.Y.Z — <purpose>`, where `X.Y.Z` is the **product number** (`finaliser-la-version` step 0), never the development number: `D` goes on the `Développement : D (#<parent>)` line of the notes, read by the docs changelog to find the spec. No Release when nothing reaches the end user (optional role `livrables`). Tag on the **feature SHA**, not `main`. Optional leading `> **Modifié en …**` annotation blocks (from a later version) may sit **above** `## Pourquoi`, each separated by blank lines as above.
 
 ## Wayfinding operations
 

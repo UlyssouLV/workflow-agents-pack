@@ -4,6 +4,8 @@
 
 **« Ouvre la version »** → implement each `ready-for-agent` child (close when tests are green) → human tests (`/th` on the `ready-for-human` child) → **`/code-review`** → **« Finalise la version »** (quality gate, then **`/cqg`** if it is not `OK`). The **parent** spec closes via `Fixes` on the squash. Do **not** leave implemented children Open. Do **not** close the parent from `encadrer-implement`.
 
+Version numbers: the roadmap, specs, branches, issues, PRs and commits use the **development** number. The GitHub Release and the docs site use the **product** number, always increasing, computed at Finalise (equal to the development number while versions land in order); no Release when the optional role **`livrables`** exists and none of its paths changed. Rule: `docs/dev/feuille-de-route/README.md` (*Numéro de développement et numéro produit*).
+
 - **« Initialise le repo »** (`/init`): skill `initialise-le-repo` (already done in this repo). Optional prompts: Sonar, suivi HTML, Docusaurus + GitHub Pages.
 - Upgrade an existing install: `/up` (`mettre-a-jour-le-pack`). Sync-only: `update-from-pack.sh` (`--with-docs` / `--with-suivi`)
 - **« Augmente la feuille de route de dev »** (`/afr`): skill `augmenter-la-feuille-de-route-dev`

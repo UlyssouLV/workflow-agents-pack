@@ -2,6 +2,15 @@
 # quand le site existe déjà. Ne pas y mettre docusaurus.config.ts ni sidebars.ts
 # (custom projet).
 scripts/echappement.mjs
+scripts/depot.mjs
+scripts/generer-glossaire.mjs
+scripts/generer-stats-commits.mjs
+scripts/capturer-apercus-readme.mjs
+scripts/capturer-accueil.mjs
+scripts/capturer-bugs.mjs
+scripts/capturer-travail-realise.mjs
+scripts/sync-architecture-readme.mjs
+src/remark/glossaire.cjs
 scripts/generer-changelog.mjs
 scripts/generer-feuille-de-route.mjs
 scripts/generer-bugs.mjs

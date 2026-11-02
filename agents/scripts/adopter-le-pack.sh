@@ -130,57 +130,11 @@ if [ ! -f "$TARGET/.claude/CLAUDE.md" ]; then
   echo "créé   .claude/CLAUDE.md"
 fi
 
-mkdir -p "$TARGET/.claude/hooks" "$TARGET/.cursor/hooks"
-rsync -a "$PACK/agents/scripts/gate-code-review.py" "$TARGET/.claude/hooks/gate-code-review.py"
-if [ -f "$PACK/.cursor/hooks/gate-code-review.sh" ]; then
-  rsync -a "$PACK/.cursor/hooks/gate-code-review.sh" "$TARGET/.cursor/hooks/gate-code-review.sh"
-  chmod +x "$TARGET/.cursor/hooks/gate-code-review.sh"
+python3 "$PACK/agents/scripts/cabler-hooks.py" "$PACK" "$TARGET"
+if [ ! -f "$TARGET/agents/docs/ecarts-avec-le-pack.md" ]; then
+  rsync -a "$REFS/ecarts-avec-le-pack.md" "$TARGET/agents/docs/ecarts-avec-le-pack.md"
+  echo "créé   agents/docs/ecarts-avec-le-pack.md"
 fi
-
-python3 - "$REFS/settings-hooks.json" "$PACK/.cursor/hooks.json" "$TARGET" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-claude_hooks_src = Path(sys.argv[1])
-cursor_hooks_src = Path(sys.argv[2])
-target = Path(sys.argv[3])
-
-
-def merge_event_lists(existing: dict, incoming: dict) -> dict:
-    out = dict(existing)
-    for event, entries in incoming.items():
-        dest = list(out.get(event) or [])
-        for entry in entries:
-            if entry not in dest:
-                dest.append(entry)
-        out[event] = dest
-    return out
-
-
-claude_path = target / ".claude" / "settings.json"
-claude_src = json.loads(claude_hooks_src.read_text())
-if claude_path.exists():
-    claude = json.loads(claude_path.read_text() or "{}")
-else:
-    claude = {}
-claude["hooks"] = merge_event_lists(claude.get("hooks") or {}, claude_src.get("hooks") or {})
-claude_path.parent.mkdir(parents=True, exist_ok=True)
-claude_path.write_text(json.dumps(claude, indent=2) + "\n")
-
-cursor_path = target / ".cursor" / "hooks.json"
-cursor_src = json.loads(cursor_hooks_src.read_text())
-if cursor_path.exists():
-    cursor = json.loads(cursor_path.read_text() or "{}")
-else:
-    cursor = {}
-cursor.setdefault("version", cursor_src.get("version", 1))
-cursor["hooks"] = merge_event_lists(cursor.get("hooks") or {}, cursor_src.get("hooks") or {})
-cursor_path.parent.mkdir(parents=True, exist_ok=True)
-cursor_path.write_text(json.dumps(cursor, indent=2) + "\n")
-PY
-
-echo "câblé  hooks Claude + Cursor (merge, rien d’autre écrasé)"
 
 (
   cd "$TARGET"
