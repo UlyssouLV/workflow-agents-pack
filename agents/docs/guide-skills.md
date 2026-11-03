@@ -234,7 +234,7 @@ Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag 
 
 **Corps :** inutile.
 
-Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), suppression de la branche **feature** seulement (jamais la base). Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
+Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), suppression de la branche **feature** seulement (jamais la base). Si `agents/checks-requis.yml` existe, refuse tant qu’un check de cette liste n’est pas vert (`agents/docs/checks-requis.md`). Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
 
 **Exemple :**
 
@@ -512,7 +512,7 @@ Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `gen
 
 **Corps :** inutile.
 
-Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
+Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe (sinon stop : les fusionner ou les fermer) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe, puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis les compteurs de commits du README si `scripts/stats-commits-readme.mjs` existe, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 

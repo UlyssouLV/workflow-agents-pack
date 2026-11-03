@@ -47,6 +47,11 @@ jobs:
     if: >-
       !failure() && !cancelled() &&
       (github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true')
+    # Au niveau du job : le workflow est aussi appelé par deploy-docs. Un nouveau
+    # push sur la PR annule le build précédent ; ailleurs (run_id), aucun.
+    concurrency:
+      group: build-docs-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

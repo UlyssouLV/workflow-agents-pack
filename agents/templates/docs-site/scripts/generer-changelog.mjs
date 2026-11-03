@@ -7,18 +7,13 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {escapeMdx, escapeYaml} from './echappement.mjs';
+import {jetonGithub, proprietaireEtDepot} from './depot.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const OUT_DIR = path.join(REPO_ROOT, 'docs/changelog');
 const SPECS_DIR = path.join(REPO_ROOT, 'docs/specs');
-const repoFull = process.env.GITHUB_REPOSITORY || '';
-const [OWNER_FROM_FULL, REPO_FROM_FULL] = repoFull.includes('/')
-  ? repoFull.split('/', 2)
-  : ['', ''];
-const OWNER =
-  process.env.GITHUB_REPOSITORY_OWNER || OWNER_FROM_FULL || 'OWNER';
-const REPO = REPO_FROM_FULL || 'REPO';
+const {owner: OWNER, repo: REPO} = proprietaireEtDepot();
 
 function authHeaders() {
   const headers = {
@@ -26,7 +21,7 @@ function authHeaders() {
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'docs-changelog',
   };
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  const token = jetonGithub();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -197,6 +192,25 @@ function extractFixes(body) {
   return [...new Set([...m[1].matchAll(/#(\d+)/g)].map((x) => x[1]))];
 }
 
+/**
+ * Images des notes : `github.com/<owner>/<repo>/raw/<sha>/docs/…` → chemin
+ * relatif au fichier local. Dépôt privé : le navigateur n'envoie pas la
+ * session GitHub sur une image d'un autre site, l'URL distante répond 404.
+ * Le fichier local est empaqueté par Docusaurus. Absent du disque → URL gardée.
+ */
+function imagesLocales(markdown, pageDir) {
+  const prefixe = `https://github.com/${OWNER}/${REPO}/raw/`;
+  const esc = prefixe.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`${esc}[^/\\s)]+/([^\\s)"']+)`, 'g');
+  return markdown.replace(re, (url, chemin) => {
+    const local = path.join(REPO_ROOT, decodeURIComponent(chemin));
+    if (!fs.existsSync(local)) {
+      return url;
+    }
+    return path.relative(pageDir, local).replace(/\\/g, '/');
+  });
+}
+
 function stripSpecTitle(specMarkdown) {
   return specMarkdown.replace(/^#\s+[^\n]+\n+/, '').trim();
 }
@@ -239,6 +253,8 @@ function writeVersionPage(release, specPath, positionInSerie) {
   const slug = `v${version}`;
   const serieDir = path.join(OUT_DIR, serie);
   fs.mkdirSync(serieDir, {recursive: true});
+  const functionalLocal = imagesLocales(functional, serieDir);
+  const technicalLocal = imagesLocales(technical, serieDir);
 
   const content = `---
 sidebar_label: ${escapeYaml(tag)}
@@ -264,7 +280,7 @@ Publiée le **${published}**.
 
 <SectionDoc variante="fonctionnelle">
 
-${escapeMdx(functional)}
+${escapeMdx(functionalLocal)}
 
 </SectionDoc>
 
@@ -277,7 +293,7 @@ ${escapeMdx(functional)}
   )}}
 >
 
-${escapeMdx(technical)}
+${escapeMdx(technicalLocal)}
 
 </SectionDoc>
 `;
