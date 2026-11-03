@@ -49,6 +49,17 @@ The **parent** spec may still be Open until squash. Leave it Open here.
 
 If the PR body’s `Fixes` line would not close the **parent** on squash, **edit the PR body first** (`Fixes #n` once per issue; include `Fixes #<parent>`). Children already Closed are fine to leave in `Fixes` (no-op).
 
+## 1 bis. No open Dependabot PR
+
+Only when `.github/dependabot.yml` exists (missing → one line, continue). Run `gh pr list --state open --author app/dependabot --base <base> --json number,title,url,headRefName`.
+
+- Empty → continue.
+- Otherwise **stop**. Do not tag, merge, or delete. List each PR: number, title, link, kind (**groupée** = minor/patch group, title mentions « group »; else **majeure**), and its CI in one word from `gh pr checks <n>` (verte / rouge / en cours). Tell the user each one must be **resolved** first: **merged**, or **closed** (closing = skipping that version; Dependabot will not propose it again). Do not merge or close them yourself unless the user asks.
+
+Once they are resolved, a merged one moved **base**: on the next « Finalise la version », step 0’s « up to date with base » rule makes the user merge **base** into the version branch first.
+
+Same rule outside the agent, when the project uses it: check `Dépendances à jour` (template `agents/templates/github/workflows/dependances-a-jour.yml`). Listed in `agents/checks-requis.yml` (or the ruleset), step 4 and `/mpr` refuse too.
+
 ## 2. Docs must match this version (before tag and squash)
 
 Read each role below (paths from `agents/roles.yml`), against the parent spec / ADRs / code that this PR actually ships:
@@ -85,11 +96,15 @@ Otherwise run **`quality-gate`** as if **`/qg -w`**.
 
 ## 4. Release, then squash
 
+**Required checks first** — only when `agents/checks-requis.yml` exists. Same rule as step 1.4 of **`fusionner-pr`**: run `python3 agents/scripts/checks-requis.py <PR number>` on the PR `HEAD`; only `en attente` → `gh pr checks <PR number> --watch`, then once more. Any check still `rouge`, `en attente` or `absent` (or exit `2`) → **stop**: name each faulty check. Do not `/crel` or `/mpr`. A red PR gets no tag. (`/mpr` checks again after the aperçus commit below.)
+
 **`P`** = none → no `/crel`: one line « Pas de Release produit (rien sous `livrables`) », then the aperçus below, then `/mpr`.
 
 Otherwise run skill **`creer-release`** as if the user had typed **`/crel vP`**, with purpose `<purpose>` and development number `X.Y.Z` for the notes. That skill owns title (`VP — <purpose>`) and notes layout. Wait until the release is visible.
 
 **README aperçus** (opt-in) — only when role **`docs-site`** resolves and `docs-site/scripts/capturer-apercus-readme.mjs` exists: run `node docs-site/scripts/capturer-apercus-readme.mjs` from the repo root. It soft-skips (exit 0, `[apercus-readme] soft-skip : …`) when the README shows no aperçu or Playwright is missing: one line, continue. Otherwise, when the README shows `docs/img/apercu-docs-accueil.png` and **`P`** exists, open that image and check **`vP`** heads « Dernières versions »; if not, the build did not see the release → **stop**. Changed files (`docs/img/apercu-*.png`, `README.md`) → run skill **`commit`** as if **`/c -a -p`**, so they enter the squash. The tag stays on the pre-aperçus SHA: do **not** move it. Never rely on a bot commit on **base** after Finalise.
+
+**README commit counters** — only when `scripts/stats-commits-readme.mjs` exists. One commit per version on **base**: the counters enter the squash, no bot commits after it. Last commit before the squash. From the repo root, on the version branch with its PR open: `GH_TOKEN="$(gh auth token)" node scripts/stats-commits-readme.mjs --avant-squash`. It anticipates the squash (commits on **base** + 1; commits of merged PRs + those of this PR + the counters commit itself) and prints `déjà à jour` when that commit is already in the PR. Fails → **stop**. Do not `/mpr`. `README.md` unchanged → one line, continue. Changed → `git add README.md` only, then run skill **`commit`** as if **`/c -p`** (no `[skip ci]`: the required checks must run on the new `HEAD`). The tag stays where it is.
 
 Then run skill **`fusionner-pr`** as if the user had typed **`/mpr`**.
 
