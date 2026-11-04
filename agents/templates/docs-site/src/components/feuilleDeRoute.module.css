@@ -86,6 +86,60 @@
   color: var(--bbass-rouge);
 }
 
+.etatOuvrable,
+.etatBloquee {
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.etatOuvrable {
+  color: #1b6b3a;
+  background: #e3f4e9;
+}
+
+.etatBloquee {
+  color: var(--bbass-muted-texte);
+  background: var(--bbass-muted);
+}
+
+.carteBloquee {
+  opacity: 0.78;
+}
+
+.attend {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--bbass-muted-texte);
+}
+
+.ouvrables {
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, #1b6b3a 25%, var(--bbass-bordure));
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, #1b6b3a 4%, white);
+}
+
+.ouvrablesTitre {
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1b6b3a;
+}
+
+.ouvrablesListe {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
 .titre {
   margin: 0 0 0.4rem;
   font-size: 1.02rem;

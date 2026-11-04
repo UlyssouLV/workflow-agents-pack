@@ -21,6 +21,10 @@ description: >-
 1. `git branch --show-current` is **protected** (base, `main`, `master`) → stop.
 2. Resolve the open PR for this branch (`gh pr view`). If none: stop. If its base is not **base**: stop and say so.
 3. Record `HEAD` SHA **before** the merge (the SHA any release tag must keep).
+4. **Required checks** — only when `agents/checks-requis.yml` exists (missing → skip; a ruleset then guards **base**, see `agents/docs/checks-requis.md`). Run `python3 agents/scripts/checks-requis.py <PR number>`:
+   - exit `0` → continue;
+   - exit `1` with only `en attente` lines → `gh pr checks <PR number> --watch`, then run the script once more;
+   - exit `1` (a check `rouge` or `absent`, or still not green after the wait) or `2` → **stop**. Do not squash. Quote the script’s lines (each faulty check by name). Never bypass with `gh pr merge --admin` or the GitHub « Merge » button.
 
 ## 2. Merge
 

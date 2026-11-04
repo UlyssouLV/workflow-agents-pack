@@ -49,6 +49,17 @@ The **parent** spec may still be Open until squash. Leave it Open here.
 
 If the PR body’s `Fixes` line would not close the **parent** on squash, **edit the PR body first** (`Fixes #n` once per issue; include `Fixes #<parent>`). Children already Closed are fine to leave in `Fixes` (no-op).
 
+## 1 bis. No open Dependabot PR
+
+Only when `.github/dependabot.yml` exists (missing → one line, continue). Run `gh pr list --state open --author app/dependabot --base <base> --json number,title,url,headRefName`.
+
+- Empty → continue.
+- Otherwise **stop**. Do not tag, merge, or delete. List each PR: number, title, link, kind (**groupée** = minor/patch group, title mentions « group »; else **majeure**), and its CI in one word from `gh pr checks <n>` (verte / rouge / en cours). Tell the user each one must be **resolved** first: **merged**, or **closed** (closing = skipping that version; Dependabot will not propose it again). Do not merge or close them yourself unless the user asks.
+
+Once they are resolved, a merged one moved **base**: on the next « Finalise la version », step 0’s « up to date with base » rule makes the user merge **base** into the version branch first.
+
+Same rule outside the agent, when the project uses it: check `Dépendances à jour` (template `agents/templates/github/workflows/dependances-a-jour.yml`). Listed in `agents/checks-requis.yml` (or the ruleset), step 4 and `/mpr` refuse too.
+
 ## 2. Docs must match this version (before tag and squash)
 
 Read each role below (paths from `agents/roles.yml`), against the parent spec / ADRs / code that this PR actually ships:
@@ -58,7 +69,8 @@ Read each role below (paths from `agents/roles.yml`), against the parent spec / 
 - **`agent-adapter`** — adapter still valid (hook, `/implement` close, Standards pointer); skills named there exist under `agents/skills/` (synced to the IDE adapters); implement / finalise cycle matches those skills; process docs still match (tracker, labels, domain).
 - **`spec`** — spec for this version exists there.
 - **`adr`** — new ADRs if decisions changed.
-- **`roadmap`** — follow **`docs/dev/feuille-de-route/README.md`**: move **`X.Y.Z`** into **Déjà livré** (one bullet `**X.Y.Z** — titre : résumé…`, ending with `Livrée en **P**.` when **`P`** ≠ **`X.Y.Z`**, or `Sans Release produit.` when **`P`** = none); drop it from **Prochaine** / **Ensuite**; the first remaining **Ensuite** becomes the sole **Prochaine** (keep its Objectif / Hors périmètre). Drop claims this version has **not** delivered. Do not invent new versions; only reshuffle what is already listed. New version ideas → leave for **`/afr`**.
+- **`roadmap`** — follow **`docs/dev/feuille-de-route/README.md`**: move **`X.Y.Z`** into **Déjà livré** (one bullet `**X.Y.Z** — titre : résumé…`, ending with `Livrée en **P**.` when **`P`** ≠ **`X.Y.Z`**, or `Sans Release produit.` when **`P`** = none); drop it from **Prochaine** / **Ensuite**; the first remaining **Ensuite** becomes the sole **Prochaine** (keep its Objectif / Hors périmètre) — with blockers (`scripts/deblocages-feuille-de-route.mjs` exists), do not pick it by hand: the next bullet recomputes it. Drop claims this version has **not** delivered. Do not invent new versions; only reshuffle what is already listed. New version ideas → leave for **`/afr`**.
+- **Roadmap progress** — only when `scripts/avancement-feuille-de-route.mjs` exists (opt-in, project-owned script): after the **`roadmap`** edit, run `node scripts/avancement-feuille-de-route.mjs` from the repo root (local, no token). It counts **Déjà livré** over **Déjà livré** + **Prochaine** + **Ensuite** and rewrites the README progress banner and its image. They enter the same docs commit as the roadmap, hence the squash: no bot commit on **base**. Fails → **stop**. **With blockers** (`scripts/deblocages-feuille-de-route.mjs` exists, README *Blocages*): run skill **`debloquer-la-feuille-de-route`** as if the user had typed **`/dfr`** instead of the script alone — it merges **base** into the branch when the roadmap changed there since the branch was cut, runs the script (which also recomputes **`État.`** and **Prochaine**), and reports what this version unblocked; show that report in the final summary.
 - **Bugs fixed by this version** (same docs commit as roadmap):
   1. From the open PR body, collect every `Fixes #<n>` / `Fix #<n>` / `Closes #<n>`.
   2. Keep only issues that still have label **`bug`** (`gh issue view <n> --json labels`). Also include any `#n` the parent **spec** / version narrative explicitly says this version closes, if it has label `bug` and is missing from the PR — then **edit the PR body** to add `Fixes #<n>` (same rule as step 1 for the parent).
@@ -85,11 +97,15 @@ Otherwise run **`quality-gate`** as if **`/qg -w`**.
 
 ## 4. Release, then squash
 
+**Required checks first** — only when `agents/checks-requis.yml` exists. Same rule as step 1.4 of **`fusionner-pr`**: run `python3 agents/scripts/checks-requis.py <PR number>` on the PR `HEAD`; only `en attente` → `gh pr checks <PR number> --watch`, then once more. Any check still `rouge`, `en attente` or `absent` (or exit `2`) → **stop**: name each faulty check. Do not `/crel` or `/mpr`. A red PR gets no tag. (`/mpr` checks again after the aperçus commit below.)
+
 **`P`** = none → no `/crel`: one line « Pas de Release produit (rien sous `livrables`) », then the aperçus below, then `/mpr`.
 
 Otherwise run skill **`creer-release`** as if the user had typed **`/crel vP`**, with purpose `<purpose>` and development number `X.Y.Z` for the notes. That skill owns title (`VP — <purpose>`) and notes layout. Wait until the release is visible.
 
 **README aperçus** (opt-in) — only when role **`docs-site`** resolves and `docs-site/scripts/capturer-apercus-readme.mjs` exists: run `node docs-site/scripts/capturer-apercus-readme.mjs` from the repo root. It soft-skips (exit 0, `[apercus-readme] soft-skip : …`) when the README shows no aperçu or Playwright is missing: one line, continue. Otherwise, when the README shows `docs/img/apercu-docs-accueil.png` and **`P`** exists, open that image and check **`vP`** heads « Dernières versions »; if not, the build did not see the release → **stop**. Changed files (`docs/img/apercu-*.png`, `README.md`) → run skill **`commit`** as if **`/c -a -p`**, so they enter the squash. The tag stays on the pre-aperçus SHA: do **not** move it. Never rely on a bot commit on **base** after Finalise.
+
+**README commit counters** — only when `scripts/stats-commits-readme.mjs` exists. One commit per version on **base**: the counters enter the squash, no bot commits after it. Last commit before the squash. From the repo root, on the version branch with its PR open: `GH_TOKEN="$(gh auth token)" node scripts/stats-commits-readme.mjs --avant-squash`. It anticipates the squash (commits on **base** + 1; commits of merged PRs + those of this PR + the counters commit itself) and prints `déjà à jour` when that commit is already in the PR. Fails → **stop**. Do not `/mpr`. `README.md` unchanged → one line, continue. Changed → `git add README.md` only, then run skill **`commit`** as if **`/c -p`** (no `[skip ci]`: the required checks must run on the new `HEAD`). The tag stays where it is.
 
 Then run skill **`fusionner-pr`** as if the user had typed **`/mpr`**.
 

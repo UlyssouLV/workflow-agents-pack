@@ -7,6 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {escapeMdx, escapeYaml} from './echappement.mjs';
+import {proprietaireEtDepot} from './depot.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -17,13 +18,7 @@ const SOURCE = path.join(
 const OUT_JSON = path.join(__dirname, '../src/data/bugs.json');
 const OUT_DIR = path.join(REPO_ROOT, 'docs/bugs');
 
-const repoFull = process.env.GITHUB_REPOSITORY || '';
-const [OWNER_FROM_FULL, REPO_FROM_FULL] = repoFull.includes('/')
-  ? repoFull.split('/', 2)
-  : ['', ''];
-const OWNER =
-  process.env.GITHUB_REPOSITORY_OWNER || OWNER_FROM_FULL || 'OWNER';
-const REPO = REPO_FROM_FULL || 'REPO';
+const {owner: OWNER, repo: REPO} = proprietaireEtDepot();
 
 const JETON = 'Informations manquantes';
 

@@ -125,6 +125,22 @@ Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`)
 /qg -w
 ```
 
+### Débloquer la feuille de route
+
+**Commande :** `/dfr` ou `Débloque la feuille de route` / `Analyse les blocages` / `Quelles versions sont ouvrables`
+
+**Options :** aucune.
+
+**Corps :** rien.
+
+Opt-in : seulement quand le projet a `scripts/deblocages-feuille-de-route.mjs` (rubriques **Bloquée par.** de la feuille de route, README *Blocages*). Recalcule l’**État.** de chaque version et la **Prochaine** (première version ouvrable), puis rapporte ce qui est ouvrable, en cours (branches et PR ouvertes), débloqué, encore bloqué et à découper. Seul, il lit la feuille de la base sans toucher la branche ; `finaliser-la-version` l’appelle sur la branche de version. Ne modifie ni objectifs ni bloqueurs (`/afr`), ne commite pas. Skill `debloquer-la-feuille-de-route`.
+
+**Exemple :**
+
+```
+/dfr
+```
+
 ### Ouvrir une branche
 
 **Commande :** `/ob`
@@ -234,7 +250,7 @@ Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag 
 
 **Corps :** inutile.
 
-Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), suppression de la branche **feature** seulement (jamais la base). Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
+Squash-merge du PR de la branche courante dans la **base** (`main` ou canal), suppression de la branche **feature** seulement (jamais la base). Si `agents/checks-requis.yml` existe, refuse tant qu’un check de cette liste n’est pas vert (`agents/docs/checks-requis.md`). Ne déplace pas le tag de release. Équivalent : « fusionne le PR ».
 
 **Exemple :**
 
@@ -394,7 +410,7 @@ Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of`
 
 **Corps :** versions à ajouter ou à reformuler, si tu les as déjà ; sinon le skill lit la feuille de route de dev et propose.
 
-Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé. Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
+Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé ; relance `scripts/avancement-feuille-de-route.mjs` s’il existe (bandeau d’avancement du README) ; avec les blocages (opt-in), écrit la rubrique **Bloquée par.** de chaque version et laisse le script calculer **État.** et la **Prochaine**. Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
 
 **Exemple :**
 
@@ -512,7 +528,7 @@ Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `gen
 
 **Corps :** inutile.
 
-Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
+Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe (sinon stop : les fusionner ou les fermer) + docs à jour (`readme`, `roadmap` — et le bandeau d’avancement du README si `scripts/avancement-feuille-de-route.mjs` existe —, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe, puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis les compteurs de commits du README si `scripts/stats-commits-readme.mjs` existe, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 
