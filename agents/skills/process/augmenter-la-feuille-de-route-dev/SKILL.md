@@ -75,6 +75,7 @@ When they confirm or name versions to add / change / move:
 - Write **only** those edits, in the **Format** above (and the README).
 - Keep versions they did not mention.
 - Preserve exactly one **Prochaine** after the edit (promote / demote **Ensuite** as needed).
+- Then, only when `scripts/avancement-feuille-de-route.mjs` exists (opt-in, project-owned script), run `node scripts/avancement-feuille-de-route.mjs` from the repo root: the README progress banner follows the new total (a project PR check may refuse it stale).
 
 Done when the file matches what they asked, or when they said to leave it as is.
 

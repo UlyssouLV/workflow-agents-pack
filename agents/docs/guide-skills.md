@@ -394,7 +394,7 @@ Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of`
 
 **Corps :** versions à ajouter ou à reformuler, si tu les as déjà ; sinon le skill lit la feuille de route de dev et propose.
 
-Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé. Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
+Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé ; relance `scripts/avancement-feuille-de-route.mjs` s’il existe (bandeau d’avancement du README). Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
 
 **Exemple :**
 
@@ -512,7 +512,7 @@ Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `gen
 
 **Corps :** inutile.
 
-Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe (sinon stop : les fusionner ou les fermer) + docs à jour (`readme`, `roadmap`, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe, puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis les compteurs de commits du README si `scripts/stats-commits-readme.mjs` existe, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
+Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe (sinon stop : les fusionner ou les fermer) + docs à jour (`readme`, `roadmap` — et le bandeau d’avancement du README si `scripts/avancement-feuille-de-route.mjs` existe —, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe, puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis les compteurs de commits du README si `scripts/stats-commits-readme.mjs` existe, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 
