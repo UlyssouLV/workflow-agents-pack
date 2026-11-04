@@ -125,6 +125,22 @@ Lecture seule (`SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` dans `.env`)
 /qg -w
 ```
 
+### Débloquer la feuille de route
+
+**Commande :** `/dfr` ou `Débloque la feuille de route` / `Analyse les blocages` / `Quelles versions sont ouvrables`
+
+**Options :** aucune.
+
+**Corps :** rien.
+
+Opt-in : seulement quand le projet a `scripts/deblocages-feuille-de-route.mjs` (rubriques **Bloquée par.** de la feuille de route, README *Blocages*). Recalcule l’**État.** de chaque version et la **Prochaine** (première version ouvrable), puis rapporte ce qui est ouvrable, en cours (branches et PR ouvertes), débloqué, encore bloqué et à découper. Seul, il lit la feuille de la base sans toucher la branche ; `finaliser-la-version` l’appelle sur la branche de version. Ne modifie ni objectifs ni bloqueurs (`/afr`), ne commite pas. Skill `debloquer-la-feuille-de-route`.
+
+**Exemple :**
+
+```
+/dfr
+```
+
 ### Ouvrir une branche
 
 **Commande :** `/ob`
@@ -394,7 +410,7 @@ Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of`
 
 **Corps :** versions à ajouter ou à reformuler, si tu les as déjà ; sinon le skill lit la feuille de route de dev et propose.
 
-Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé ; relance `scripts/avancement-feuille-de-route.mjs` s’il existe (bandeau d’avancement du README). Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
+Lit le rôle **`roadmap`** (`docs/dev/feuille-de-route/feuille-de-route-dev.md`), standards dans le README voisin. Liste Déjà livré / Prochaine / Ensuite / Plus tard (bugs), argumente, **attend**, puis écrit uniquement ce que tu as validé ; relance `scripts/avancement-feuille-de-route.mjs` s’il existe (bandeau d’avancement du README) ; avec les blocages (opt-in), écrit la rubrique **Bloquée par.** de chaque version et laisse le script calculer **État.** et la **Prochaine**. Pas de `/c` tout seul. Skill `augmenter-la-feuille-de-route-dev`.
 
 **Exemple :**
 
