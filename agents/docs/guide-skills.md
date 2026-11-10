@@ -510,7 +510,7 @@ Nécessite le rôle **`suivi-avancement`** (opt-in à `/init` ou `adopter-le-pac
 
 **Corps :** inutile.
 
-Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `generer-pdf.mjs` existe (sinon soft-skip). Soft-skip + rappel `/os` s’il n’y a pas de dossier. Soft-skip si le rôle suivi est absent. Appelé aussi par **Finalise la version**. Skill `mettre-a-jour-suivi-avancement`. Ne commit pas. Ne crée pas la semaine.
+Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `generer-pdf.mjs` existe (sinon soft-skip). Garde les versions dans l’ordre de déploiement. Tapé seul, régénère aussi les aperçus README (opt-in, `capturer-apercus-readme.mjs`) ; Finalise les régénère après la Release. Soft-skip + rappel `/os` s’il n’y a pas de dossier. Soft-skip si le rôle suivi est absent. Appelé aussi par **Finalise la version**. Skill `mettre-a-jour-suivi-avancement`. Ne commit pas. Ne crée pas la semaine.
 
 **Exemple :**
 
