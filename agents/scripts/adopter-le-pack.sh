@@ -6,6 +6,94 @@
 # Usage: adopter-le-pack.sh [--with-suivi] [--with-docs]
 set -euo pipefail
 
+# Copie : rsync s’il est installé, sinon Python (Git Bash sous Windows n’a
+# pas rsync). Même fonction dans adopter-le-pack.sh, update-from-pack.sh et
+# scaffold-docs-site.sh : la modifier dans les trois.
+#   copier [--delete] [--exclude MOTIF]... SOURCE DESTINATION
+# SOURCE dossier → son contenu va dans DESTINATION (rsync -a SOURCE/ DEST/).
+# SOURCE fichier → copié vers DESTINATION.
+# MOTIF : un nom ignoré à toute profondeur ; « /nom/ » : à la racine seulement.
+# --delete : DESTINATION devient une copie exacte (sans Python, les fichiers
+# exclus déjà présents dans DESTINATION sont aussi retirés).
+PYTHON="$(command -v python3 || command -v python || true)"
+copier() {
+  local delete=0 exclusions=() motif
+  while [ $# -gt 2 ]; do
+    case "$1" in
+      --delete) delete=1; shift ;;
+      --exclude) exclusions+=("$2"); shift 2 ;;
+      *) echo "copier : option inconnue $1" >&2; return 1 ;;
+    esac
+  done
+  local src="${1%/}" dest="${2%/}"
+  if command -v rsync >/dev/null 2>&1; then
+    local args=(-a)
+    [ "$delete" -eq 1 ] && args+=(--delete)
+    for motif in ${exclusions[@]+"${exclusions[@]}"}; do
+      args+=(--exclude "$motif")
+    done
+    if [ -d "$src" ]; then
+      rsync "${args[@]}" "$src"/ "$dest"/
+    else
+      rsync "${args[@]}" "$src" "$dest"
+    fi
+    return
+  fi
+  if [ -z "$PYTHON" ]; then
+    echo "copier : ni rsync ni python3/python introuvable" >&2
+    return 1
+  fi
+  # « /nom/ » devient « ^nom » : Git Bash convertirait un argument qui
+  # commence par « / » en chemin Windows avant de le passer à Python.
+  local motifs=()
+  for motif in ${exclusions[@]+"${exclusions[@]}"}; do
+    case "$motif" in
+      /*) motif="${motif#/}"; motifs+=("^${motif%/}") ;;
+      *) motifs+=("${motif%/}") ;;
+    esac
+  done
+  "$PYTHON" - "$src" "$dest" "$delete" ${motifs[@]+"${motifs[@]}"} <<'PY'
+import os, shutil, stat, sys, time
+
+src, dest, delete = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+racine = {m[1:] for m in sys.argv[4:] if m.startswith("^")}
+partout = {m for m in sys.argv[4:] if not m.startswith("^")}
+
+def rendre_inscriptible(fonction, chemin, _erreur):
+    os.chmod(chemin, stat.S_IWRITE)
+    fonction(chemin)
+
+def supprimer(dossier):
+    # Partage réseau Windows : un rmtree peut échouer (WinError 145) puis
+    # passer quelques instants plus tard.
+    for essai in range(1, 6):
+        try:
+            shutil.rmtree(dossier, onerror=rendre_inscriptible)
+            return
+        except OSError:
+            if essai == 5:
+                raise
+            time.sleep(0.2 * essai)
+
+if os.path.isfile(src):
+    if os.path.isdir(dest):
+        dest = os.path.join(dest, os.path.basename(src))
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    shutil.copy2(src, dest)
+    sys.exit(0)
+
+def ignorer(dossier, noms):
+    ignores = {n for n in noms if n in partout}
+    if dossier == src:
+        ignores |= {n for n in noms if n in racine}
+    return ignores
+
+if delete and os.path.isdir(dest):
+    supprimer(dest)
+shutil.copytree(src, dest, symlinks=True, ignore=ignorer, dirs_exist_ok=True)
+PY
+}
+
 WITH_SUIVI=0
 WITH_DOCS=0
 for arg in "$@"; do
@@ -49,8 +137,8 @@ fi
 
 mkdir -p "$TARGET/agents"
 # templates/ stays in the pack: scaffold-docs-site.sh reads it from $PACK.
-rsync -a --exclude .DS_Store --exclude __pycache__ --exclude /templates/ \
-  "$PACK/agents/" "$TARGET/agents/"
+copier --exclude .DS_Store --exclude __pycache__ --exclude /templates/ \
+  "$PACK/agents" "$TARGET/agents"
 echo "copié  agents/ (sans templates/)"
 
 if [ ! -f "$TARGET/docs/dev/feuille-de-route/feuille-de-route-dev.md" ]; then
@@ -60,7 +148,7 @@ if [ ! -f "$TARGET/docs/dev/feuille-de-route/feuille-de-route-dev.md" ]; then
 fi
 if [ ! -f "$TARGET/docs/dev/feuille-de-route/README.md" ] && [ -f "$REFS/feuille-de-route/README.md" ]; then
   mkdir -p "$TARGET/docs/dev/feuille-de-route"
-  rsync -a "$REFS/feuille-de-route/README.md" "$TARGET/docs/dev/feuille-de-route/README.md"
+  copier "$REFS/feuille-de-route/README.md" "$TARGET/docs/dev/feuille-de-route/README.md"
   echo "créé   docs/dev/feuille-de-route/README.md"
 fi
 mkdir -p "$TARGET/docs/specs" "$TARGET/docs/adr"
@@ -73,11 +161,11 @@ fi
 if [ "$WITH_SUIVI" -eq 1 ]; then
   mkdir -p "$TARGET/docs/suivi-avancement"
   if [ ! -f "$TARGET/docs/suivi-avancement/README.md" ] && [ -f "$REFS/suivi-avancement/README.md" ]; then
-    rsync -a "$REFS/suivi-avancement/README.md" "$TARGET/docs/suivi-avancement/README.md"
+    copier "$REFS/suivi-avancement/README.md" "$TARGET/docs/suivi-avancement/README.md"
     echo "créé   docs/suivi-avancement/README.md"
   fi
   if [ ! -f "$TARGET/docs/suivi-avancement/template-semaine.html" ] && [ -f "$REFS/suivi-avancement/template-semaine.html" ]; then
-    rsync -a "$REFS/suivi-avancement/template-semaine.html" "$TARGET/docs/suivi-avancement/template-semaine.html"
+    copier "$REFS/suivi-avancement/template-semaine.html" "$TARGET/docs/suivi-avancement/template-semaine.html"
     echo "créé   docs/suivi-avancement/template-semaine.html"
   fi
   if [ -f "$TARGET/agents/roles.yml" ] && ! grep -q 'suivi-avancement:' "$TARGET/agents/roles.yml"; then
@@ -121,18 +209,18 @@ PY
 fi
 
 if [ ! -f "$TARGET/AGENTS.md" ]; then
-  rsync -a "$REFS/AGENTS.md" "$TARGET/AGENTS.md"
+  copier "$REFS/AGENTS.md" "$TARGET/AGENTS.md"
   echo "créé   AGENTS.md"
 fi
 if [ ! -f "$TARGET/.claude/CLAUDE.md" ]; then
   mkdir -p "$TARGET/.claude"
-  rsync -a "$REFS/CLAUDE.md" "$TARGET/.claude/CLAUDE.md"
+  copier "$REFS/CLAUDE.md" "$TARGET/.claude/CLAUDE.md"
   echo "créé   .claude/CLAUDE.md"
 fi
 
 python3 "$PACK/agents/scripts/cabler-hooks.py" "$PACK" "$TARGET"
 if [ ! -f "$TARGET/agents/docs/ecarts-avec-le-pack.md" ]; then
-  rsync -a "$REFS/ecarts-avec-le-pack.md" "$TARGET/agents/docs/ecarts-avec-le-pack.md"
+  copier "$REFS/ecarts-avec-le-pack.md" "$TARGET/agents/docs/ecarts-avec-le-pack.md"
   echo "créé   agents/docs/ecarts-avec-le-pack.md"
 fi
 

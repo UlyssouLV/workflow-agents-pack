@@ -8,8 +8,11 @@ skills may still live only under .claude/ or .cursor/).
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import stat
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -19,6 +22,28 @@ DESTINATIONS = (
     REPO_ROOT / ".cursor" / "skills",
 )
 _IGNORE = shutil.ignore_patterns("__pycache__", ".DS_Store")
+_REMOVE_ATTEMPTS = 5
+
+
+def _make_writable(func, path, _exc_info) -> None:
+    # Fichier en lecture seule (Windows) : lever l'attribut puis réessayer.
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def _remove_tree(target: Path) -> None:
+    """rmtree qui réessaie : sur un partage réseau Windows, la suppression
+    d'un dossier peut échouer (WinError 145, répertoire non vide) puis
+    réussir quelques instants plus tard."""
+    for attempt in range(1, _REMOVE_ATTEMPTS + 1):
+        try:
+            # onerror plutôt qu'onexc : compatible avec Python < 3.12.
+            shutil.rmtree(target, onerror=_make_writable)
+            return
+        except OSError:
+            if attempt == _REMOVE_ATTEMPTS:
+                raise
+            time.sleep(0.2 * attempt)
 
 
 def skill_dirs(root: Path) -> dict[str, Path]:
@@ -61,7 +86,7 @@ def copy_skills() -> None:
         for name, src_dir in source.items():
             target = dest_root / name
             if target.exists():
-                shutil.rmtree(target)
+                _remove_tree(target)
             shutil.copytree(src_dir, target, ignore=_IGNORE)
 
 
