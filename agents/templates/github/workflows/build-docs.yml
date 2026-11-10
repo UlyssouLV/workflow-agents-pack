@@ -30,8 +30,8 @@ jobs:
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -47,12 +47,17 @@ jobs:
     if: >-
       !failure() && !cancelled() &&
       (github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true')
+    # Au niveau du job : le workflow est aussi appelé par deploy-docs. Un nouveau
+    # push sur la PR annule le build précédent ; ailleurs (run_id), aucun.
+    concurrency:
+      group: build-docs-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -80,6 +85,6 @@ jobs:
 
       - name: Upload Pages artifact
         if: inputs.upload-pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs-site/build

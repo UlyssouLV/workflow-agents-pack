@@ -1,0 +1,87 @@
+name: Dépendances à jour
+
+# Modèle opt-in du pack (copier dans .github/workflows/ si le projet a
+# .github/dependabot.yml ; voir agents/docs/checks-requis.md).
+#
+# Une PR ne se fusionne pas dans sa base tant qu’une PR Dependabot vers cette
+# base reste ouverte.
+# Résolue = fusionnée ou fermée (fermer = renoncer à cette version : Dependabot
+# ne la repropose plus). À exiger : ruleset, ou agents/checks-requis.yml
+# (lu par /mpr et finaliser-la-version ; sans ruleset, le bouton Merge de
+# GitHub reste cliquable).
+#
+# Le verdict dépend des PR Dependabot, pas du code : quand une PR Dependabot
+# s’ouvre ou se ferme, le job `relance` rejoue le check des autres PR ouvertes,
+# qui relit alors l’état du moment. pull_request_target : le workflow vient de
+# la branche par défaut (une branche Dependabot ancienne ne l’a pas) et le jeton peut relancer ;
+# aucun code de la PR n’est récupéré.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [opened, reopened, closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verifie:
+    name: Dépendances à jour
+    # Une PR Dependabot ne se bloque pas elle-même : job sauté, donc vert.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Cherche les PR Dependabot ouvertes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          ouvertes="$(gh pr list --state open --author app/dependabot --base "$BASE" \
+            --json number,title,url --jq '.[] | "#\(.number) \(.title) — \(.url)"')"
+          if [ -z "$ouvertes" ]; then
+            echo "Aucune PR Dependabot ouverte."
+            exit 0
+          fi
+          {
+            echo "### PR Dependabot à résoudre (fusionner ou fermer) avant de fusionner"
+            echo
+            printf '%s\n' "$ouvertes" | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$ouvertes" | while IFS= read -r ligne; do
+            echo "::error::PR Dependabot ouverte : $ligne"
+          done
+          exit 1
+
+  relance:
+    name: Relance « Dépendances à jour »
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Rejoue le check des PR ouvertes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          gh pr list --state open --base "$BASE" --json number,headRefOid,author \
+            --jq '.[] | select(.author.login != "app/dependabot" and .author.login != "dependabot") | "\(.number) \(.headRefOid)"' |
+          while read -r numero sha; do
+            run="$(gh run list --workflow dependances-a-jour.yml --event pull_request --commit "$sha" \
+              --limit 1 --json databaseId,status --jq '.[0] | select(.status == "completed") | .databaseId')"
+            if [ -n "$run" ]; then
+              echo "PR #$numero : relance du run $run"
+              gh run rerun "$run"
+            else
+              echo "PR #$numero : pas de run terminé sur $sha, rien à relancer"
+            fi
+          done

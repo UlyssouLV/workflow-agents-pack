@@ -8,7 +8,7 @@ description: >-
 
 # Open a version
 
-Triggered by **« Ouvre la version »**. The user **must** give a semver **`X.Y.Z`** (e.g. `1.2.0`). If they omit it, ask and **wait** — do not invent a number.
+Triggered by **« Ouvre la version »**. The user gives a semver **`X.Y.Z`** (e.g. `1.2.0`). If they omit it: with blockers (below), take the first ouvrable version not in progress; otherwise ask and **wait** — do not invent a number.
 
 Do **not** `/implement` here. Do **not** merge. Do **not** `git commit` on the integration **base** (`main` by default, or `base_branch` from `agents/integration-channel.yml` — see `agents/docs/integration-channel.md`). Git branch / commit / PR go through the skills below, not inline.
 
@@ -16,13 +16,17 @@ Paths: **`agents/roles.yml`**. Roadmap writing standards: **`docs/dev/feuille-de
 
 ## 1. Purpose
 
-Read role **`roadmap`**. Look for **`X.Y.Z`** as **`## Prochaine : X.Y.Z — …`** or **`## Ensuite : X.Y.Z — …`** (or a **Déjà livré** bullet — then stop: already shipped).
+Read role **`roadmap`** **as on base, not on the current branch**: `git fetch origin`, then `git show origin/<base>:<roadmap path>` — another open version’s branch may carry a stale copy. Look for **`X.Y.Z`** as **`## Prochaine : X.Y.Z — …`** or **`## Ensuite : X.Y.Z — …`** (or a **Déjà livré** bullet — then stop: already shipped).
 
 If that file already describes version **`X.Y.Z`**:
 
 - That section **is** the purpose: take **`Objectif.`** (one job, product language). State it back in one sentence, then go to step 2. Do **not** ask « what is this version for? ».
 - The file is a roadmap, not a spec: grilling may still refine it. Do not invent a different job.
-- Prefer opening the current **Prochaine**. If the user names an **Ensuite**, say so in one line and continue only if they confirm.
+- Without blockers: prefer opening the current **Prochaine**. If the user names an **Ensuite**, say so in one line and continue only if they confirm.
+- **With blockers** (versions carry **`Bloquée par.`** / **`État.`**, README *Blocages*):
+  - **No number given** → take the **first version whose `État.` is Ouvrable and that is not in progress** — in progress = a remote branch `vX.Y.Z-…` (`git ls-remote --heads origin 'v*'`) or an open PR whose head starts with `vX.Y.Z-` (`gh pr list --state open --json headRefName`). Say in one line which one and why (« 1.4.1 est en cours, je prends 1.4.2 »). None → list the blocked versions with what they wait for, and **wait**.
+  - **`État.` Bloquée** → refuse: list what it still waits for and the ouvrable versions instead. A blocker is lifted only once merged on base (in **Déjà livré**); do not open it from another version’s branch. Continue only after the roadmap changes (`/afr`: split or drop the blocker).
+  - **`État.` Ouvrable** → open it, **Prochaine** or **Ensuite**: several ouvrable versions may run in parallel. Already in progress → say so and stop.
 
 If **`X.Y.Z` is absent** from that file: tell them to add it with **`/afr`** (standards in the README), **or** ask **what is this version for?** (one job, product language) and **wait** — do not invent a number or rewrite the feuille here.
 

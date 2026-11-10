@@ -6,6 +6,12 @@
  * numéro de développement et la Release prendra un numéro produit calculé à
  * Finalise : une version à venir est alors présentée et adressée par son titre,
  * sans numéro. Sans ce rôle : par son numéro (`vX.Y.Z`).
+ *
+ * Déblocages : chaque version porte une ligne **État.** (Ouvrable, ou Bloquée
+ * avec ce qui reste) et une rubrique **Bloquée par.**, recalculées dans la
+ * feuille par scripts/avancement-feuille-de-route.mjs (vérifié sur chaque PR).
+ * Ce script les lit telles quelles ; sans numéro, les numéros cités y sont
+ * remplacés par le titre de la version.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,14 +75,36 @@ function tronquer(texte, max = 180) {
   return `${coupe.slice(0, dernier > 80 ? dernier : max).trim()}…`;
 }
 
+/** Titres des versions livrées, par numéro (puces `- **X.Y.Z** — titre : …`). */
+function titresLivres(markdown) {
+  const titres = new Map();
+  for (const m of markdown.matchAll(/^- \*\*(\d+\.\d+\.\d+)\*\* — ([^:\n]+)/gm)) {
+    titres.set(m[1], m[2].trim());
+  }
+  return titres;
+}
+
+function lireEtat(corps) {
+  const m = corps.match(/^\*\*État\.\*\*\s*(.+)$/m);
+  if (!m) {
+    return {etat: null, attend: []};
+  }
+  const ouvrable = /^Ouvrable/.test(m[1]);
+  const attend = ouvrable
+    ? []
+    : [...m[1].matchAll(/\*\*(\d+\.\d+\.\d+)\*\*/g)].map((x) => x[1]);
+  return {etat: ouvrable ? 'ouvrable' : 'bloquee', attend};
+}
+
 function parserEnsuite(markdown, parTitre) {
-  const re = /^## (?:Prochaine|Ensuite) : (\d+\.\d+(?:\.\d+)?)\s*[—–\-]\s*(.+)$/gm;
+  const re = /^## (Prochaine|Ensuite) : (\d+\.\d+(?:\.\d+)?)\s*[—–\-]\s*(.+)$/gm;
   const indices = [];
   let match;
   while ((match = re.exec(markdown)) !== null) {
     indices.push({
-      version: match[1],
-      titre: match[2].trim(),
+      prochaine: match[1] === 'Prochaine',
+      version: match[2],
+      titre: match[3].trim(),
       start: match.index,
       headerEnd: match.index + match[0].length,
     });
@@ -94,13 +122,35 @@ function parserEnsuite(markdown, parTitre) {
     const corps = markdown.slice(courant.headerEnd, fin).trim();
     const slug = parTitre ? slugDuTitre(courant.titre) : `v${courant.version}`;
     versions.push({
+      numero: courant.version,
+      prochaine: courant.prochaine,
       version: parTitre ? null : courant.version,
       titre: courant.titre,
       resume: tronquer(extraireObjectif(corps)),
       corps,
+      ...lireEtat(corps),
       slug,
       href: `/docs/feuille-de-route/${slug}`,
     });
+  }
+
+  // Les numéros cités (État, Bloquée par, Hors périmètre) deviennent des liens.
+  const aVenir = new Map(versions.map((v) => [v.numero, v]));
+  const livres = titresLivres(markdown);
+  const citer = (numero) => {
+    const cible = aVenir.get(numero);
+    if (cible) {
+      return `[${parTitre ? cible.titre : numero}](./${cible.slug}.md)`;
+    }
+    const titre = livres.get(numero);
+    return parTitre && titre ? `**${titre}** (livrée)` : `**${numero}**`;
+  };
+  for (const v of versions) {
+    v.corps = v.corps.replace(/\*\*(\d+\.\d+\.\d+)\*\*/g, (_, n) => citer(n));
+    v.attend = v.attend
+      .map((n) => aVenir.get(n))
+      .filter(Boolean)
+      .map((b) => ({titre: parTitre ? b.titre : `${b.numero} — ${b.titre}`, href: b.href}));
   }
   return versions;
 }
@@ -160,13 +210,18 @@ function main() {
   const versions = parserEnsuite(markdown, sansNumero());
   ecrirePages(versions);
   const payload = {
-    versions: versions.map(({version, titre, resume, href, slug}) => ({
-      version,
-      titre,
-      resume,
-      href,
-      slug,
-    })),
+    versions: versions.map(
+      ({version, titre, resume, href, slug, etat, attend, prochaine}) => ({
+        version,
+        titre,
+        resume,
+        href,
+        slug,
+        etat,
+        attend,
+        prochaine,
+      }),
+    ),
     plusTard: parserPlusTard(markdown).slice(0, 6),
   };
   fs.writeFileSync(OUT_JSON, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

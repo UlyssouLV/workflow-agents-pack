@@ -6,6 +6,7 @@ Outils branchés dessus :
 
 - skill `/afr` (`augmenter-la-feuille-de-route-dev`) — rôle `roadmap` dans `agents/roles.yml` ;
 - skill `/cub` (`creer-un-bug`) — issue GitHub `bug` + entrée sous **Plus tard** ;
+- opt-in **blocages** (voir *Blocages*) : skill `/dfr` (`debloquer-la-feuille-de-route`) et le script du projet `scripts/deblocages-feuille-de-route.mjs` ;
 - si le rôle **`docs-site`** est activé (opt-in `/init` ou `update-from-pack.sh --with-docs`) : `docs-site/scripts/generer-feuille-de-route.mjs` et `generer-bugs.mjs` au build Pages.
 
 Ce n’est **pas** une spec (la spec naît à « Ouvre la version »).
@@ -24,11 +25,11 @@ Ce n’est **pas** une spec (la spec naît à « Ouvre la version »).
 | Section | Rôle |
 | --- | --- |
 | **Déjà livré** | Versions shipped (une puce par `X.Y.Z`). |
-| **Prochaine** | Exactement **une** version : la suivante à ouvrir. |
-| **Ensuite** | Versions numérotées après la Prochaine, dans l’ordre. |
+| **Prochaine** | Exactement **une** version : la suivante à ouvrir. Avec les blocages : **au plus une**, la **première ouvrable**, calculée. |
+| **Ensuite** | Versions numérotées après la Prochaine, dans l’ordre. Avec les blocages : toutes les autres, ouvrables ou bloquées, dans l’ordre des numéros. |
 | **Plus tard** | Idées / bugs **sans** semver encore (ou reprise plus tard). |
 
-À « Finalise la version » : la version livrée passe en **Déjà livré** ; la première **Ensuite** devient **Prochaine**.
+À « Finalise la version » : la version livrée passe en **Déjà livré** ; la première **Ensuite** devient **Prochaine** (avec les blocages : **`/dfr`** recalcule les états et la Prochaine).
 
 ## Conventions d’écriture des versions
 
@@ -74,6 +75,40 @@ Dans **Déjà livré**, la puce garde le numéro de développement et indique le
 - **`Hors périmètre`** — ce qui est explicitement reporté (souvent vers une autre version).
 - Optionnel : auth / orientation technique / recherche / tests, si utile avant le grilling.
 - Pas de détail d’implémentation digne d’une spec ; les décisions figées peuvent pointer vers un ADR ou une issue.
+
+### Blocages (opt-in)
+
+Seulement quand le projet a **`scripts/deblocages-feuille-de-route.mjs`** (script du projet, appelé par son script d’avancement). Sans lui, rien de cette section ne s’applique.
+
+Chaque version (Prochaine / Ensuite) porte alors, dans cet ordre : **`État.`** juste sous le titre (**calculé** par le script, jamais écrit ni fusionné à la main), **`Objectif.`**, **`Bloquée par.`** (**toujours présente**), optionnellement **`À trancher au grilling.`**, puis **`Hors périmètre`**.
+
+Une version est **bloquée** par une autre quand une partie de son **Objectif** ne peut pas se faire sans elle. Écrit par **`/afr`** à la création de la version, revu quand un objectif change.
+
+```markdown
+**Bloquée par.**
+
+- **1.5.0** — les crédits initiaux qu’un participant reçoit à l’inscription n’existent pas encore.
+- **1.4.2** — la borne refuse au-delà du débit maximal.
+```
+
+- Une puce par version **directement** nécessaire : `- **X.Y.Z** — raison`, la raison en langage produit (ce qui manque, pas une table ou une route). Les blocages hérités ne se recopient pas.
+- Le numéro cité est une version de **Déjà livré**, de **Prochaine** ou d’**Ensuite** ; pas de cycle. Le script refuse sinon.
+- Une version qui ne dépend de rien : `**Bloquée par.** Aucune.`
+- **Levée = fusionnée sur la base.** Un bloqueur est levé quand sa version est dans **Déjà livré**. Une version ouverte, ou dont la PR est prête, ne débloque rien : ne pas ouvrir une version depuis la branche d’une autre (le squash-merge réécrit ses commits).
+- **Pas de blocage partiel.** Un bloqueur bloque toute la version. S’il ne touche qu’une partie de l’objectif, on **découpe** avec **`/afr`** : la partie bloquée passe en **Hors périmètre** vers la version qui bloque (si elle y a sa place) ou vers une nouvelle version, et la version perd ce bloqueur. **`/dfr`** signale ces cas, il ne les tranche pas.
+
+**`État.`** se déduit des bloqueurs et de **Déjà livré** :
+
+| État | Quand | Ligne écrite |
+| --- | --- | --- |
+| Ouvrable | tous ses bloqueurs sont livrés | `**État.** Ouvrable.` |
+| Bloquée | il reste au moins un bloqueur | `**État.** Bloquée : il reste **1.6.1**.` ; `(n sur m)` quand une partie est déjà levée |
+
+La **Prochaine** est la première version ouvrable dans l’ordre du fichier ; aucune si tout est bloqué. « Ouvre la version » sans numéro prend la première ouvrable **pas encore en cours**.
+
+« En cours » (branche `vX.Y.Z-…` ou PR ouverte) n’est **pas** écrit : une branche non fusionnée est invisible depuis la base. **`/dfr`** et « Ouvre la version » le lisent sur GitHub.
+
+**Versions en parallèle.** Plusieurs versions ouvrables peuvent être ouvertes en même temps. Chacune, fusionnée, débloque ce qui l’attendait, dans l’ordre d’arrivée sur la base. Deux branches qui modifient la feuille se réconcilient en relançant le script après fusion de la base : **État.**, **Prochaine** et le bandeau du README (si le projet en a un) ne se fusionnent jamais à la main. La copie d’une branche peut dater ; celle de la base fait foi.
 
 ### Déjà livré
 
