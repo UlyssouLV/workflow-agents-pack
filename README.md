@@ -48,8 +48,8 @@ Communs à tous les OS :
 | OS | Shell recommandé | Notes |
 | --- | --- | --- |
 | **macOS** | Terminal (bash ou zsh) | `mktemp`, `rsync`, `bash` sont disponibles. |
-| **Linux** | bash | Idem. Paquets usuels : `git`, `rsync`, `python3`. |
-| **Windows** | **Git Bash** ou **WSL** (Ubuntu) | Les scripts sont en bash : PowerShell seul ne suffit pas. Avec Git for Windows, ouvrir *Git Bash* à la racine du projet. Sous WSL, travailler dans le filesystem Linux du clone. |
+| **Linux** | bash | Idem. Paquets usuels : `git`, `rsync`, `python3`. Sans `rsync`, les scripts copient avec Python. |
+| **Windows** | **Git Bash** ou **WSL** (Ubuntu) | Les scripts sont en bash : PowerShell seul ne suffit pas. Avec Git for Windows, ouvrir *Git Bash* à la racine du projet ; Git Bash n’a pas `rsync`, les scripts du pack copient alors avec `python3` (ou `python`). Sous WSL, travailler dans le filesystem Linux du clone. |
 
 `gh` (GitHub CLI) n’est pas requis pour adopter ou mettre à jour le pack ; il l’est pour beaucoup de skills une fois le pack en place (`/cub`, `/ct`, PRs, etc.).
 
@@ -101,7 +101,13 @@ rsync -a --exclude README.md --exclude .git --exclude .DS_Store /tmp/hephaistos-
 rm -rf /tmp/hephaistos-pack
 ```
 
-Le `rsync` **exclut** le README du pack : le projet ne doit pas hériter de ce fichier.
+Sans `rsync` (Git Bash sous Windows), remplacer la ligne `rsync` par :
+
+```bash
+(cd /tmp/hephaistos-pack && tar --exclude=./README.md --exclude=./.git --exclude=.DS_Store -cf - .) | tar -xf -
+```
+
+Les deux commandes **excluent** le README du pack : le projet ne doit pas hériter de ce fichier.
 
 3. Ouvrir le projet dans Cursor ou Claude Code.
 4. Lancer **`/init`** et suivre les questions (Sonar, suivi HTML, docs-site, etc.).
