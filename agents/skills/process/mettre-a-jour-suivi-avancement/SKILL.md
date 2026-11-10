@@ -40,6 +40,7 @@ Follow **`docs/suivi-avancement/README.md`** (*Structure HTML*, *Langage*):
 3. **Travail réalisé**: add a bullet on **today’s** `.jour` (or the ship day if the user gives it).
 4. **Livré pour** / recap: fold `X.Y.Z` into the “livré” side.
 5. **Reste à implémenter**: remove `X.Y.Z` if listed as still todo.
+6. **Order**: keep `.version` blocks and their TOC entries chronological — shipped versions by `Déployé le` date and time, not by version number, then planned versions. Move the block and its TOC entry when `X.Y.Z` ships out of order.
 
 Do **not** edit other weeks. Do **not** rewrite the whole HTML without need.
 
@@ -55,7 +56,13 @@ node docs/suivi-avancement/generer-pdf.mjs <chemin-du-html-ou-dossier-semaine>
 
 If the script fails (PDF locked, no Chrome/Edge, …): **stop**. HTML may already be updated — say so in one line and tell the user how to fix (close the PDF, install Chrome/Edge, rerun the command). Do not invent another print method.
 
-Done when: HTML updated and PDF regenerated, or soft-skip (no week / no script / parent finaliser).
+## 4. README aperçus (typed `/msa` only)
+
+Called by **`finaliser-la-version`** → skip: it regenerates the aperçus after the Release (step 4), so « Dernières versions » shows the new version.
+
+Typed **`/msa`** (opt-in) — only when role **`docs-site`** resolves and `docs-site/scripts/capturer-apercus-readme.mjs` exists: from the repo root, run `node docs-site/scripts/capturer-apercus-readme.mjs`, so the README capture of the suivi matches the HTML. It soft-skips (exit 0, `[apercus-readme] soft-skip : …`) when the README shows no aperçu or Playwright is missing: one line, continue. Never leave this to a bot commit on **base**. Changed `docs/img/apercu-*.png` / `README.md` go in the same later `/c` as the suivi HTML; a `README.md` diff made only of line endings → `git checkout -- README.md`.
+
+Done when: HTML updated and PDF regenerated (or soft-skip: no week / no script / parent finaliser), and, for a typed `/msa`, aperçus attempted (or soft-skip).
 
 ## Not this skill
 
