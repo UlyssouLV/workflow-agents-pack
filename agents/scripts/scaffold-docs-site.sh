@@ -305,6 +305,9 @@ sync_owned_only() {
     exit 1
   fi
   while IFS= read -r rel || [ -n "$rel" ]; do
+    # Checkout Windows (core.autocrlf) : PACK_OWNED.txt arrive en CRLF ; sans
+    # retirer le \r, aucun chemin n'existe et rien n'est rafraîchi, en silence.
+    rel="${rel%$'\r'}"
     [[ -z "$rel" || "$rel" =~ ^# ]] && continue
     if [ "$rel" = "package.json" ] && [ -f "$TARGET/docs-site/package.json" ]; then
       merge_package_json
