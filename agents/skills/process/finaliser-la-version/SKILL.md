@@ -141,7 +141,7 @@ After a pre-release: delete the pre-release **Releases** of this version (`gh re
 **Two CI cycles, the second one tiny.** A version runs the PR CI twice at this stage:
 
 1. **The Release CI** — the full suite on the SHA that gets the tag. The required checks above are green on it: that is what was released.
-2. **The counters CI** — on the single commit below, after the Release. That commit only touches `README.md` and `docs/img/`: its CI must be **tiny** — the required checks answer in seconds without rerunning builds, tests or e2e (e.g. a paths filter or a script that compares the files changed since the last green `HEAD` of the PR, and answers green when they are only `README.md` / `docs/img/`). Nothing it could break was not already tested.
+2. **The counters CI** — on the single commit below, after the Release. That commit only touches `README.md` and `docs/img/`: its CI must be **tiny** — the required checks answer in seconds without rerunning builds, tests or e2e (model: `scripts/ci-eclair.mjs`, from `initialise-le-repo/references/scripts/`, called by a `changes` job of the PR workflow; or a paths filter). Nothing it could break was not already tested.
 
 If the project's CI reruns everything on that commit, say so in one line of the final summary (« la CI du compteur rejoue toute la suite : à alléger ») and continue; never `[skip ci]` (the required checks must answer on the new `HEAD`).
 

@@ -133,7 +133,8 @@ Ordre fixe — **chaque** rubrique est toujours présente :
 4. **Cause probable** — hypothèse ; ou `Inconnue` (examiné, pas d’hypothèse) ; ou jeton ci-dessous.
 5. **À corriger** — intention produit (pas le patch).
 6. **Hors périmètre** — ou `Aucun.`
-7. **Métadonnées** (issue) / **Suivi** (feuille) :
+7. **Ce que vous voyez / quoi faire** — pour un collaborateur, en langage simple : ce qu’il voit et quoi faire en attendant ; ou jeton ci-dessous.
+8. **Métadonnées** (issue) / **Suivi** (feuille) :
    - Trouvé dans : `X.Y.Z` (Release) \| `<nom>` (version) \| `inconnu` \| jeton
    - Contexte : `test humain` \| `usage` \| `revue` \| … \| jeton
    - Date : `YYYY-MM-DD` \| jeton
@@ -160,6 +161,7 @@ Exactement cette chaîne (casse comprise) quand une info **n’est pas encore fo
 ## Cause probable
 ## À corriger
 ## Hors périmètre
+## Ce que vous voyez / quoi faire
 ## Métadonnées
 ```
 
@@ -181,6 +183,8 @@ Exemple feuille (**complet**) :
 **À corriger :** …
 
 **Hors périmètre :** Aucun.
+
+**Ce que vous voyez / quoi faire :** la liste affiche les dossiers d’un autre compte. En attendant, déconnectez-vous puis reconnectez-vous avant d’ouvrir la liste.
 
 **Suivi :** [#161](…) (`bug`). Trouvé dans : 1.4.3 · Contexte : test humain · Date : 2026-10-07 · Priorité : non prioritaire.
 ```

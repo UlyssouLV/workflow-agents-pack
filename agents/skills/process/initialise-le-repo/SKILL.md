@@ -28,6 +28,7 @@ Create only what is absent. Never overwrite an existing file.
 
 - `docs/dev/feuille-de-route/feuille-de-route-dev.md` — title `# Feuille de route de dev` only
 - `docs/dev/feuille-de-route/` and `docs/dev/recherches/` (directories). If missing, copy `references/feuille-de-route/README.md` → `docs/dev/feuille-de-route/README.md` (writing standards for `/afr` / `/cub`).
+- `scripts/deblocages-feuille-de-route.mjs`, `scripts/avancement-feuille-de-route.mjs`, `scripts/numero-definitif.mjs` and their `*.test.mjs` — copies of `references/scripts/` (État., Prochaine and N° prévu of the roadmap, README progress banner, definitive number at Finalise). `references/scripts/ci-eclair.mjs` is **not** copied here: it needs the project's PR workflow (`/up`, migration `ci-eclair`).
 - `docs/specs/` (directory)
 - `docs/adr/` (directory)
 - `docs/glossaire.md` — title `# Glossary` only
