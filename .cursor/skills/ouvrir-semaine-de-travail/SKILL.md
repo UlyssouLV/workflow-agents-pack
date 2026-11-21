@@ -30,15 +30,15 @@ Under role **`suivi-avancement`**: if that folder exists → **stop**. One line.
 ## 3. Attendus (versions)
 
 Default: read role **`roadmap`** — **Prochaine** + every **Ensuite** (titles + one-line Objectif).  
-Override: versions listed in the user message (`/os 1.5.0 1.6.0`) win for the “attendus cette semaine” set; still mention other roadmap items under **Reste à implémenter** if useful.
+Override: versions listed in the user message by **Nom** (`/os agent-administration messagerie-outlook`) win for the “attendus cette semaine” set; still mention other roadmap items under **Reste à implémenter** if useful.
 
-If attendus came from the roadmap (no explicit list in the prompt): show the proposed list (**VX.Y.Z — titre**) and **wait for oui**. Explicit list in the prompt → no wait.
+If attendus came from the roadmap (no explicit list in the prompt): show the proposed list (**titre**, Nom in backticks; no number: a planned version has none yet) and **wait for oui**. Explicit list in the prompt → no wait.
 
 ## 4. Write
 
 1. Copy **`docs/suivi-avancement/template-semaine.html`** →  
    `docs/suivi-avancement/semaine-…/suivi-semaine-….html` (same dates).
-2. Fill couverture, TOC, five `.jour` headings (lun→ven), **Reste à implémenter**, **Livré pour** (date du point = jeudi de la semaine unless the user says otherwise), and one `.version` stub per attendu (`id="version-X-Y-Z"`, badge `.prevu`, body = Objectif in **functional product** language).
+2. Fill couverture, TOC, five `.jour` headings (lun→ven), **Reste à implémenter**, **Livré pour** (date du point = jeudi de la semaine unless the user says otherwise), and one `.version` stub per attendu (`id="version-<nom>"`, heading `<Titre>` without number, badge `.prevu`, body = Objectif in **functional product** language).
 3. Do **not** invent day bullets for work not done (keep « À compléter. »).
 4. Do **not** `git commit`. Do **not** run `generer-pdf.mjs` yet (empty week → PDF optional; skip).
 

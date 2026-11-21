@@ -1,10 +1,11 @@
 ---
 name: fermer-ticket-enfant
 description: >-
-  Close a GitHub child issue and drop ready-for-agent. Use when the user
-  types `/cci` or says « ferme le ticket enfant », or when another skill
-  tells you to run fermer-ticket-enfant with `#n`. `-t` runs lancer-tests
-  (`/t`) first and aborts the close on failure. Never close the parent spec.
+  Close a GitHub child issue and drop ready-for-agent, refusing while a box
+  of its Acceptance criteria is still empty. Use when the user types `/cci`
+  or says « ferme le ticket enfant », or when another skill tells you to
+  run fermer-ticket-enfant with `#n`. `-t` runs lancer-tests (`/t`) first
+  and aborts the close on failure. Never close the parent spec.
 ---
 
 # Close a child issue
@@ -26,6 +27,18 @@ If it is missing: ask and **wait**. Do not invent one.
 If the issue has label **`ready-for-human`** or title starts with **`Tests humains —`**: **stop**. That child closes via skill **`tests-humains`** (`/th`), not `/cci`.
 
 If the issue is already Closed: say so and stop.
+
+If the title starts with **`Essai en staging —`**: **stop**. That child closes via **`/th`** too.
+
+## 2 bis. Every acceptance criterion ticked
+
+From the repo root: `node agents/scripts/criteres-non-coches.mjs <n>`.
+
+- Exit `0` → continue.
+- Exit `1` → **stop**. Do not close, do not drop the label. Show the boxes it printed (each `- [ ] …` still empty in `## Acceptance criteria`) and say: tick each proven one (`encadrer-implement`, step 2), or, for a criterion only a human can check, mark the end of its line `— vérifié par un humain : <scénario>` and add that scenario to the human-test plan. Then `/cci #<n>` again.
+- Exit `2` (`gh` or the issue unreadable) → **stop**, quote the error.
+
+Rule and marker: `agents/issue-tracker.md` (*Child ticket body*). Cases under other headings do not count.
 
 ## 3. Tests (`-t` only)
 

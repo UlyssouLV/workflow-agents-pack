@@ -4,7 +4,7 @@ Fichier optionnel : **`agents/integration-channel.yml`**.
 
 ## Rôle
 
-Sur `main`, le cycle de version ouvre une branche depuis `main`, PR vers `main`, release `vX.Y.Z`, squash dans `main`.
+Sur `main`, le cycle de version ouvre une branche `version/<nom>` depuis `main`, PR vers `main`, release `vX.Y.Z` (le numéro de la version, fixé à « Finalise la version »), squash dans `main`.
 
 Pour un chantier long (ex. runtime orchestrateur) qui ne doit **pas** merger chaque version dans `main`, ce fichier déclare un **canal** :
 
@@ -24,7 +24,7 @@ Au début de `/ob`, `/opr`, `/mpr`, `/crel`, `commit`, `ouvrir-la-version`, `fin
 
 Ne pas committer sur une branche **protected** (sauf `/init` sur `main` uniquement). Ne jamais `git push --force` vers **base** ni `main`.
 
-Pour ouvrir une version du canal : être sur **base** (ou un descendant qui a déjà le fichier), puis « Ouvre la version X.Y.Z ».
+Pour ouvrir une version du canal : être sur **base** (ou un descendant qui a déjà le fichier), puis « Ouvre la version <nom> ».
 
 ## Suivi
 

@@ -34,10 +34,6 @@ fi
 PROMPT="/implement #${N}"
 # shellcheck disable=SC2016
 INNER=$(printf 'cd %q && exec claude %q' "$REPO" "$PROMPT")
-# Git Bash / MSYS réécrit les args qui commencent par / (ex. /implement →
-# C:/Program Files/Git/implement). Couper la conversion avant exec claude.
-# shellcheck disable=SC2016
-INNER_WIN=$(printf 'cd %q && export MSYS2_ARG_CONV_EXCL=* MSYS_NO_PATHCONV=1 && exec claude %q' "$REPO" "$PROMPT")
 
 ouvrir_macos() {
   osascript \
@@ -90,16 +86,34 @@ ouvrir_linux() {
   return 1
 }
 
+# Windows (Git Bash / MSYS / Cygwin) : la fenêtre s'ouvre dans le clone et y
+# lance claude sous PowerShell, pour que la session se retrouve dans
+# `claude --resume` depuis le clone. Jamais `bash` : wt.exe / cmd.exe le
+# cherchent dans le PATH Windows et tombent sur celui de WSL.
 ouvrir_windows() {
-  # Git Bash / MSYS / Cygwin : nouvelle console Windows avec Claude.
-  # INNER_WIN : voir MSYS2_ARG_CONV_EXCL ci-dessus (sinon /implement est mangé).
+  local dossier ps commande q
+  dossier="$(cygpath -w "$REPO" 2>/dev/null || true)"
+  if [ -z "$dossier" ] || [ ! -d "$(cygpath -u "$dossier" 2>/dev/null || true)" ]; then
+    echo "Enchaînement auto : dossier du clone introuvable côté Windows (${dossier:-$REPO})." >&2
+    return 1
+  fi
+  ps="$(command -v pwsh || command -v pwsh.exe || command -v powershell.exe || command -v powershell || true)"
+  if [ -z "$ps" ]; then
+    echo "Enchaînement auto : PowerShell introuvable (ni pwsh ni powershell)." >&2
+    return 1
+  fi
+  ps="$(cygpath -w "$ps")"
+  # Prompt entre apostrophes PowerShell (une apostrophe se double).
+  local q="'"
+  commande="& claude '${PROMPT//$q/$q$q}'"
+  # MSYS réécrit les args qui commencent par / (/c, /D) : conversion coupée.
   if command -v wt.exe >/dev/null 2>&1; then
-    wt.exe new-tab -- bash -lc "$INNER_WIN" &
-    return 0
+    MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1       wt.exe new-tab -d "$dossier" "$ps" -NoLogo -Command "$commande"
+    return $?
   fi
   if command -v cmd.exe >/dev/null 2>&1; then
-    cmd.exe //c start "" bash -lc "$INNER_WIN" &
-    return 0
+    MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1       cmd.exe /c start "" /D "$dossier" "$ps" -NoLogo -Command "$commande"
+    return $?
   fi
   echo "Enchaînement auto : ni wt.exe ni cmd.exe pour ouvrir une nouvelle fenêtre." >&2
   return 1

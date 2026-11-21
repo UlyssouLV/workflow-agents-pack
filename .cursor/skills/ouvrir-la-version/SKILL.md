@@ -1,34 +1,36 @@
 ---
 name: ouvrir-la-version
 description: >-
-  When the user says « Ouvre la version », « ouvre la version vX.Y.Z »,
+  When the user says « Ouvre la version », « ouvre la version <nom> »,
   « open the version », or asks to start a new version branch and PR.
   Not for /implement, not for « Finalise la version ».
 ---
 
 # Open a version
 
-Triggered by **« Ouvre la version »**. The user gives a semver **`X.Y.Z`** (e.g. `1.2.0`). If they omit it: with blockers (below), take the first ouvrable version not in progress; otherwise ask and **wait** — do not invent a number.
+Triggered by **« Ouvre la version »**. The user names the version by its **Nom** (roadmap line **`Nom.`**, e.g. `agent-administration`) or its title. If they omit it: with blockers (below), take the first ouvrable version not in progress; otherwise ask and **wait** — do not invent a version. A version is identified by its Nom, never by a number (named-version rule): a number the user gives may be a **`N° prévu.`** — say in one line which version carries it and continue only once they confirm that Nom.
 
 Do **not** `/implement` here. Do **not** merge. Do **not** `git commit` on the integration **base** (`main` by default, or `base_branch` from `agents/integration-channel.yml` — see `agents/docs/integration-channel.md`). Git branch / commit / PR go through the skills below, not inline.
 
-Paths: **`agents/roles.yml`**. Roadmap writing standards: **`docs/dev/feuille-de-route/README.md`** (this skill does **not** edit the roadmap — adding / renumbering versions is **`/afr`**).
+Paths: **`agents/roles.yml`**. Roadmap writing standards: **`docs/dev/feuille-de-route/README.md`** (this skill does **not** edit the roadmap — adding versions, setting their Nom or Type is **`/afr`**).
 
 ## 1. Purpose
 
-Read role **`roadmap`** **as on base, not on the current branch**: `git fetch origin`, then `git show origin/<base>:<roadmap path>` — another open version’s branch may carry a stale copy. Look for **`X.Y.Z`** as **`## Prochaine : X.Y.Z — …`** or **`## Ensuite : X.Y.Z — …`** (or a **Déjà livré** bullet — then stop: already shipped).
+Read role **`roadmap`** **as on base, not on the current branch**: `git fetch origin`, then `git show origin/<base>:<roadmap path>` — another open version’s branch may carry a stale copy. Look for the version as a **`## Prochaine : <Titre>`** or **`## Ensuite : <Titre>`** section whose **`Nom.`** is `` `<nom>` `` (or a **Déjà livré** bullet `**<nom>**`, or `**X.Y.Z**` citing `` `<nom>` `` — then stop: already shipped). Old form `## Ensuite : X.Y.Z — <titre>` without Nom: tell them to give it a Nom and a Type with **`/afr`** first.
 
-If that file already describes version **`X.Y.Z`**:
+Keep for the next steps: **`<nom>`**, **`<Titre>`** (heading without `Prochaine :` / `Ensuite :`), **`Type.`**.
+
+If that file already describes the version:
 
 - That section **is** the purpose: take **`Objectif.`** (one job, product language). State it back in one sentence, then go to step 2. Do **not** ask « what is this version for? ».
 - The file is a roadmap, not a spec: grilling may still refine it. Do not invent a different job.
 - Without blockers: prefer opening the current **Prochaine**. If the user names an **Ensuite**, say so in one line and continue only if they confirm.
 - **With blockers** (versions carry **`Bloquée par.`** / **`État.`**, README *Blocages*):
-  - **No number given** → take the **first version whose `État.` is Ouvrable and that is not in progress** — in progress = a remote branch `vX.Y.Z-…` (`git ls-remote --heads origin 'v*'`) or an open PR whose head starts with `vX.Y.Z-` (`gh pr list --state open --json headRefName`). Say in one line which one and why (« 1.4.1 est en cours, je prends 1.4.2 »). None → list the blocked versions with what they wait for, and **wait**.
+  - **No version named** → take the **first version whose `État.` is Ouvrable and that is not in progress** — in progress = a remote branch `version/<nom>` (`git ls-remote --heads origin 'version/*'`) or an open PR whose head is that branch (`gh pr list --state open --json headRefName`); old form, still accepted: a branch `vX.Y.Z-…` (`git ls-remote --heads origin 'v*'`) or a PR on it, when the version’s body cites that branch name. Say in one line which one and why (« messagerie-outlook est en cours, je prends serveurs-de-fichiers »). None → list the blocked versions with what they wait for, and **wait**.
   - **`État.` Bloquée** → refuse: list what it still waits for and the ouvrable versions instead. A blocker is lifted only once merged on base (in **Déjà livré**); do not open it from another version’s branch. Continue only after the roadmap changes (`/afr`: split or drop the blocker).
   - **`État.` Ouvrable** → open it, **Prochaine** or **Ensuite**: several ouvrable versions may run in parallel. Already in progress → say so and stop.
 
-If **`X.Y.Z` is absent** from that file: tell them to add it with **`/afr`** (standards in the README), **or** ask **what is this version for?** (one job, product language) and **wait** — do not invent a number or rewrite the feuille here.
+If the version is **absent** from that file: tell them to add it with **`/afr`** (Nom, Type, standards in the README), **or** ask **what is this version for?** (one job, product language) and **wait** — do not invent a Nom or rewrite the feuille here.
 
 ## 2. `/grill-with-docs` (conversation only if you are on the base)
 
@@ -38,17 +40,17 @@ Resolve **base** per `agents/docs/integration-channel.md`. If the current branch
 
 ## 3. `/to-spec` (content first)
 
-Matt’s next step is **`/to-spec`**. Synthesize the full spec (problem, solution, user stories, implementation/testing, out of scope), plus **Changements apportés aux versions antérieures** in the format of `agents/issue-tracker.md` (*Changes to earlier versions*): `Aucun.` when this version changes nothing an earlier version shipped. Publish the **parent GitHub issue** (`ready-for-agent`). Do not overwrite a previous version’s spec issue.
+Matt’s next step is **`/to-spec`**. Synthesize the full spec (problem, solution, user stories, implementation/testing, out of scope), plus **Changements apportés aux versions antérieures** in the format of `agents/issue-tracker.md` (*Changes to earlier versions*): `Aucun.` when this version changes nothing an earlier version shipped. Publish the **parent GitHub issue** (`ready-for-agent`), titled **`<Titre>`** — no number: the Release number is fixed at « Finalise la version ». Its spec names the version (`Nom : <nom>`, `Type : <type>`). Do not overwrite a previous version’s spec issue.
 
 Still **do not** commit that spec onto **base**.
 
 ## 4. Branch, write, init commit
 
-Run skill **`ouvrir-branche`** as if the user had typed **`/ob vX.Y.Z-<slug>`** (from **base**). Slug = kebab-case of the purpose (ASCII). If that skill stops because the name exists: ask and wait.
+Run skill **`ouvrir-branche`** as if the user had typed **`/ob version/<nom>`** (from **base**). If that skill stops because the name exists: ask and wait.
 
 Then write on **this** branch only:
 
-- role **`spec`** for this version (the `/to-spec` body)
+- role **`spec`** for this version (the `/to-spec` body), file **`<spec dir>/<nom>.md`** (`docs/specs/<nom>.md`)
 - roles **`glossary`**, **`agent-adapter`**, **`adr`** only if this version actually changes them (new ADR; never rewrite old ADR history)
 
 Then run skill **`commit`** as if the user had typed **`/c -a -p`**. That commit **is** the initialisation de la version. **base** stays unchanged.
@@ -76,7 +78,7 @@ Show the **implementation order**: tickets with no open blockers first (lowest n
 
 Then create **one human-test child** (format: `agents/issue-tracker.md`, *Human-test child*):
 
-1. Title `Tests humains — VX.Y.Z`. Label **`ready-for-human`** only (never `ready-for-agent`). Body skeleton: Matt headings + empty `## Plan de tests` / `## Résultats` / `## Ce qu’on peut faire maintenant` placeholders. `## Blocked by` = **every** implementation child just created, each as `ordre de process` (see `agents/issue-tracker.md`). Do not add extra blockers.
+1. Title `Tests humains — <nom>`. Label **`ready-for-human`** only (never `ready-for-agent`). Body skeleton: Matt headings + empty `## Plan de tests` / `## Résultats` / `## Ce qu’on peut faire maintenant` placeholders. `## Blocked by` = **every** implementation child just created, each as `ordre de process` (see `agents/issue-tracker.md`). Do not add extra blockers.
 2. Attach as a **GitHub sub-issue** of the parent (same POST as above).
 3. Native blocked-by: this ticket blocked by **each** implementation child; **parent** blocked by this ticket as well.
 
@@ -88,7 +90,7 @@ A body `Part of` line alone does **not** create the sub-issue link. The `## Bloc
 
 Run skill **`ouvrir-pr`** as if the user had typed **`/opr -draft`** with:
 
-- Title: `VX.Y.Z — <purpose in one line>`
+- Title: `<Titre>` (no number; Finalise renames it `VX.Y.Z — <Titre>` when the version gets a Release)
 - `## Summary` (what this version is)
 - `Fixes #<parent>` and `Fixes #<child>` **one keyword per issue** (include the human-test child)
 - If this version **fixes** known roadmap bugs: also `Fixes #<bug>` for each GitHub issue with label **`bug`** that this version closes (so `finaliser-la-version` can remove them from **Plus tard** and close them)

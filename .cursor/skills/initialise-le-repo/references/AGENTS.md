@@ -2,14 +2,14 @@
 
 ## Cycle
 
-**« Ouvre la version »** → implement each `ready-for-agent` child (close when tests are green) → human tests (`/th` on the `ready-for-human` child) → **`/code-review`** → **« Finalise la version »** (quality gate, then **`/cqg`** if it is not `OK`). The **parent** spec closes via `Fixes` on the squash. Do **not** leave implemented children Open. Do **not** close the parent from `encadrer-implement`.
+**« Ouvre la version »** → implement each `ready-for-agent` child (close when tests are green) → human tests (`/th` on the `ready-for-human` child) → **`/code-review`** → **« Finalise la version »** (quality gate, then **`/cqg`** if it is not `OK`) — with the optional role **`staging`** and **Staging** scenarios, Finalise runs twice: first a pre-release `vX.Y.Z-rc.<k>` and its **Essai en staging — VX.Y.Z** child (`/th` on staging; a KO is fixed on the branch, then a new rc), then, once that child is Closed, the final Release on the same SHA. The **parent** spec closes via `Fixes` on the squash. Do **not** leave implemented children Open. Do **not** close the parent from `encadrer-implement`.
 
-Version numbers: the roadmap, specs, branches, issues, PRs and commits use the **development** number. The GitHub Release and the docs site use the **product** number, always increasing, computed at Finalise (equal to the development number while versions land in order); no Release when the optional role **`livrables`** exists and none of its paths changed. Rule: `docs/dev/feuille-de-route/README.md` (*Numéro de développement et numéro produit*).
+Versions: one number per version, its Release’s, in strict semver, fixed at Finalise from the version’s **Type** (majeure, mineure, correctif); a documentation, analyse, évaluation or process version has no number and no Release. A version is identified by its **Nom** (roadmap line `**Nom.**`): branch `version/<nom>`, spec `docs/specs/<nom>.md`, issues and PR titled `<Titre>`; the roadmap’s **N° prévu** identifies nothing. Tags `vX.Y.Z`; a pre-release `vX.Y.Z-rc.<k>` (staging trial) reserves its number. Rule: `docs/dev/feuille-de-route/README.md` (*Nom, Type et Numéro prévu*).
 
 - **« Initialise le repo »** (`/init`): skill `initialise-le-repo` (already done in this repo). Optional prompts: Sonar, suivi HTML, Docusaurus + GitHub Pages.
 - Upgrade an existing install: `/up` (`mettre-a-jour-le-pack`). Sync-only: `update-from-pack.sh` (`--with-docs` / `--with-suivi`)
 - **« Augmente la feuille de route de dev »** (`/afr`): skill `augmenter-la-feuille-de-route-dev`
-- **« Ouvre la version »** (must include **`X.Y.Z`**): skill `ouvrir-la-version`
+- **« Ouvre la version »** (optionally with the version’s **Nom**): skill `ouvrir-la-version`
 - Child-ticket TDD: `/implement`, then skill `encadrer-implement`
 - Human tests: `/th` (`tests-humains`) after the plan on the version’s `ready-for-human` child
 - **« Finalise la version »**: skill `finaliser-la-version`
