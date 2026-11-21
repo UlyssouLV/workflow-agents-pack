@@ -200,7 +200,7 @@ mkdir -p "$TARGET/agents/scripts"
 # Tous les scripts du pack, pas une liste : un script ajouté au pack (ex.
 # checks-requis.py, appelé par fusionner-pr et finaliser-la-version) ne peut
 # plus être oublié. Les scripts propres au projet ne sont pas touchés.
-for chemin in "$PACK"/agents/scripts/*.sh "$PACK"/agents/scripts/*.py; do
+for chemin in "$PACK"/agents/scripts/*.sh "$PACK"/agents/scripts/*.py "$PACK"/agents/scripts/*.mjs; do
   [ -f "$chemin" ] || continue
   f="$(basename "$chemin")"
   copier "$chemin" "$TARGET/agents/scripts/$f"

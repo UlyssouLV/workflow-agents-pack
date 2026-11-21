@@ -44,7 +44,7 @@ Reprendre **`template-semaine.html`**. Sections attendues :
 2. **`#travail-realise`** — un `.jour` par jour lun→ven ; puces en **langage fonctionnel produit** : pas de noms d’outils/stack, pas de `#ticket` dans les puces jour.
 3. **`#reste-a-implementer`** — suite feuille de route / non livré.
 4. **`#livre-pour`** — récap point (visé / livré), langage fonctionnel.
-5. **`#descriptif-versions`** — blocs `.version` avec `id="version-X-Y-Z"` :
+5. **`#descriptif-versions`** — blocs `.version` avec `id="version-<nom>"` (Nom de la version dans la feuille de route ; `version-X-Y-Z` pour une version d’avant la règle des versions nommées) ; titre `<Titre>` tant qu’elle est prévue, `VX.Y.Z — <Titre>` une fois sa Release faite, `<Titre>` et « Sans Release » sinon :
    - prévu : `<span class="prevu">…</span>` ;
    - livré : `<span class="deploye">Déployé le JJ/MM/AAAA à HH:MM</span>` + corps enrichi.
 6. TOC : entrée par version sous « Descriptif des versions ».
@@ -66,7 +66,7 @@ Sinon `/msa` met à jour le HTML et soft-skip le PDF.
 | Moment | Action |
 | --- | --- |
 | Début de semaine (ou avant la 1ʳᵉ finalisation de la semaine) | **`/os`** — crée dossier + HTML (attendus = Prochaine/Ensuite roadmap, surcharge possible dans le prompt) |
-| À chaque **Finalise la version** | **`/msa`** (via finaliser, si rôle présent) — met à jour le HTML pour `X.Y.Z`, PDF si script présent |
+| À chaque **Finalise la version** | **`/msa`** (via finaliser, si rôle présent) — met à jour le HTML pour la version livrée, PDF si script présent |
 | Pas de dossier pour la semaine courante à la finalisation | **soft-skip** + rappel de lancer `/os` ; on ne bloque pas le release |
 | Commit / push | **ni `/os` ni `/msa`** — via `/c` (finaliser fait `/c -a -p` sur le lot docs) |
 

@@ -23,7 +23,8 @@ Paths: **`agents/roles.yml`**. Tracker detail: **`agents/issue-tracker.md`**
 
 One child per invocation. Later children: run `/ct` again.
 
-The local `docs/specs/vX.Y.Z-*.md` is the source of truth for the parent
+The local version spec (`docs/specs/<nom>.md`, or `docs/specs/vX.Y.Z-*.md` for
+a version opened before the named-version rule) is the source of truth for the parent
 narrative. The GitHub parent issue body must match it after this skill runs.
 
 **Body format (mandatory):** Matt `/to-tickets` template in
@@ -56,10 +57,11 @@ A ticket with **no** parent is out of scope: ask for `#parent` and **wait**.
 
 ## 2. Spec gate (before create)
 
-Resolve **`X.Y.Z`** from the branch `vX.Y.Z-<slug>`, the PR title
-`VX.Y.Z — …`, or the parent title. Find the role **`spec`** file for that
-version under `docs/specs/` (`vX.Y.Z-*.md`). Missing file / ambiguous match →
-**stop**.
+Resolve the version from the branch: `version/<nom>` → role **`spec`** file
+`docs/specs/<nom>.md`; old form `vX.Y.Z-<slug>` (opened before the named-version rule) →
+`docs/specs/vX.Y.Z-*.md`. On another branch, from the parent: its spec names
+the version (`Nom : <nom>`), or its old title `VX.Y.Z — …`. Missing file /
+ambiguous match → **stop**.
 
 **Fits the spec:** the title + body must not contradict what that file
 promises and must not add behaviour the file does not describe. If they do

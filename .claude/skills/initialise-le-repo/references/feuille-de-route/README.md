@@ -15,59 +15,48 @@ Ce n’est **pas** une spec (la spec naît à « Ouvre la version »).
 
 ```text
 # Feuille de route de dev
-## Déjà livré          ← puces **X.Y.Z** — titre + résumé court
-## Prochaine : X.Y.Z — Titre
-## Ensuite : X.Y.Z — Titre   (répétable)
-## Plus tard (pas encore numéroté)
+## Déjà livré          ← puces **X.Y.Z** (Release) ou **<nom>** (sans Release) — titre + résumé court
+## Prochaine : <Titre>
+## Ensuite : <Titre>     (répétable)
+## Plus tard (pas encore planifié)
 ### … sujets / bugs …
 ```
 
 | Section | Rôle |
 | --- | --- |
-| **Déjà livré** | Versions shipped (une puce par `X.Y.Z`). |
+| **Déjà livré** | Versions livrées (une puce par version, sous son numéro de Release ou, sans Release, sous son nom). |
 | **Prochaine** | Exactement **une** version : la suivante à ouvrir. Avec les blocages : **au plus une**, la **première ouvrable**, calculée. |
-| **Ensuite** | Versions numérotées après la Prochaine, dans l’ordre. Avec les blocages : toutes les autres, ouvrables ou bloquées, dans l’ordre des numéros. |
-| **Plus tard** | Idées / bugs **sans** semver encore (ou reprise plus tard). |
+| **Ensuite** | Versions planifiées après la Prochaine, dans l’ordre où elles doivent arriver. Avec les blocages : toutes les autres, ouvrables ou bloquées. |
+| **Plus tard** | Idées / bugs pas encore planifiés en version (ou reprise plus tard). |
 
-À « Finalise la version » : la version livrée passe en **Déjà livré** ; la première **Ensuite** devient **Prochaine** (avec les blocages : **`/dfr`** recalcule les états et la Prochaine).
+À « Finalise la version » : la version livrée passe en **Déjà livré** ; la première **Ensuite** devient **Prochaine** (avec les blocages : **`/dfr`** recalcule les états, les N° prévus et la Prochaine).
 
 ## Conventions d’écriture des versions
 
-### Numérotation
+### Nom, Type et Numéro prévu
 
-- Semver : `X.Y.Z` (ex. `1.4.4`, `1.5.0`) — c’est le **numéro de développement** (voir ci-dessous).
-- Titre de section : `## Prochaine : X.Y.Z — <titre>` ou `## Ensuite : X.Y.Z — <titre>`.
+Un seul numéro par version, celui de sa Release, en semver strict ; une version s’identifie par son **Nom**.
+
+- Titre de section : `## Prochaine : <Titre>` ou `## Ensuite : <Titre>`, sans numéro. Le titre peut changer au grilling ; le Nom, jamais.
 - Un **seul job** par version (un objectif métier clair).
+- Sous le titre : **`Nom.`** `` `<nom>` `` (kebab-case ASCII, unique, jamais changé : branche `version/<nom>`, spec `docs/specs/<nom>.md`, bloqueurs), **`Type.`**, **`N° prévu.`**.
 
-### Numéro de développement et numéro produit
+Types :
 
-Deux suivis. Tant que les versions arrivent sur `main` dans l’ordre de leurs numéros, les deux sont égaux et rien ne change.
+- **majeure** — tout le monde doit faire un geste (réinstaller, changer d’adresse, migrer des données à la main, mise en production définitive) ; décidé dans ce fichier, jamais calculé ;
+- **mineure** — une capacité nouvelle visible par l’utilisateur ;
+- **correctif** — une correction ou une amélioration sans capacité nouvelle ;
+- **documentation**, **analyse**, **évaluation**, **process** — rien n’arrive chez l’utilisateur : pas de Release, pas de numéro.
 
-| | Numéro de développement | Numéro produit |
-| --- | --- | --- |
-| Où | ce fichier, specs, branches `vX.Y.Z-…`, issues, PR, commits, suivi d’avancement | tag et titre de la GitHub Release, version affichée par le produit, site de doc |
-| Ordre | par thème ; deux séries peuvent arriver sur `main` en alternance | **toujours croissant**, dans l’ordre d’arrivée sur `main` |
-| Fixé | à l’ouverture de la version | à « Finalise la version » |
+**N° prévu.** À partir de la dernière Release lue dans **Déjà livré**, chaque version numérotée prend, dans l’ordre du fichier, le prochain numéro de son type (majeure `X+1.0.0`, mineure `X.Y+1.0`, correctif `X.Y.Z+1`) ; `Aucun (pas de Release).` sinon. Calculé par le script du projet quand il en a un (`scripts/deblocages-feuille-de-route.mjs`, opt-in), sinon tenu par **`/afr`**. Il n’identifie jamais une version.
 
-Sens des chiffres (communs aux deux suivis) :
+**Numéro définitif, à « Finalise la version ».** Le prochain numéro libre de son type par rapport à la dernière Release. Avec le rôle optionnel **`livrables`** (`agents/roles.yml` : ce qui entre dans ce que l’utilisateur installe), le diff de la branche repère une incohérence : version sans numéro qui touche `livrables`, ou version numérotée qui n’en touche aucun → Finalise s’arrête et demande.
 
-- **majeur** — rupture qui demande un geste à tous (réinstaller, migrer des données à la main, mise en production définitive) ; décidé dans ce fichier, jamais calculé ;
-- **mineur** — une **série** = un grand thème ;
-- **correctif** — une étape de plus dans la série, une correction, ou une version arrivée après une série plus récente.
+**Pré-release (rôle optionnel `staging`).** Quand le projet a un environnement staging et que la version a des scénarios Staging, Finalise publie d’abord une pré-release `vX.Y.Z-rc.<k>` (marquée *Pre-release* sur GitHub, notes minimales) pour l’essai en staging, puis la Release finale `vX.Y.Z` sur le même SHA une fois l’essai OK. Une rc **réserve** son numéro : une autre version finalisée entre-temps prend le suivant. Les pré-releases ne comptent jamais comme « dernière Release » pour le **N° prévu**.
 
-À « Finalise la version », le numéro produit se calcule ainsi :
+Tags `vX.Y.Z`. Parent et PR titrés `<Titre>` ; à Finalise, le commit squash, la Release et le parent prennent `VX.Y.Z — <Titre>`. Notes de Release : `Version : <nom> (#<parent>)`.
 
-1. **Rien de livré à l’utilisateur final** — seulement si le rôle optionnel **`livrables`** existe dans `agents/roles.yml` (ce qui entre dans ce que l’utilisateur installe : images, paquets, sources de l’application) : le diff de la branche (`origin/main...HEAD`) ne touche aucun de ces chemins, hors tests et fichiers `.md` → **pas de Release**, donc pas de numéro produit. La version passe en **Déjà livré** sous son numéro de développement ; le site de doc se publie à la fusion.
-2. **Numéro de développement plus grand que la dernière Release** (comparaison semver) → numéro produit = numéro de développement.
-3. **Sinon** → numéro produit = dernière Release, correctif + 1.
-
-Titre de la Release : `VX.Y.Z — <titre>` au numéro produit ; le numéro de développement figure dans ses notes (`Développement : A.B.C (#<parent>)`).
-
-Exemples : développement 1.5.2 finalisée après la Release 1.6.2 → produit **1.6.3** ; une série de documentation sans `livrables` touchés → aucune Release ; 1.8.0 après 1.6.3 → **1.8.0** ; une 1.8.3 finalisée après la Release 1.9.0 → **1.9.1**.
-
-Sur le site de doc, le Changelog montre le numéro produit. Une version à venir n’en a pas encore : quand le rôle `livrables` existe, la feuille de route du site la présente par son titre, sans numéro ; elle passe au Changelog une fois livrée.
-
-Dans **Déjà livré**, la puce garde le numéro de développement et indique le numéro produit quand il diffère (`**1.5.2** — … Livrée en **1.6.3**.`) ou l’absence de Release (`Sans Release produit.`).
+Sur le site de doc, une version à venir est présentée par son titre, une version livrée par son numéro de Release, une version sans Release par son titre et « Sans Release ».
 
 ### Corps d’une version (Prochaine / Ensuite)
 
@@ -80,19 +69,19 @@ Dans **Déjà livré**, la puce garde le numéro de développement et indique le
 
 Seulement quand le projet a **`scripts/deblocages-feuille-de-route.mjs`** (script du projet, appelé par son script d’avancement). Sans lui, rien de cette section ne s’applique.
 
-Chaque version (Prochaine / Ensuite) porte alors, dans cet ordre : **`État.`** juste sous le titre (**calculé** par le script, jamais écrit ni fusionné à la main), **`Objectif.`**, **`Bloquée par.`** (**toujours présente**), optionnellement **`À trancher au grilling.`**, puis **`Hors périmètre`**.
+Chaque version (Prochaine / Ensuite) porte alors, dans cet ordre : **`État.`** juste sous le titre (**calculé** par le script, jamais écrit ni fusionné à la main), **`Nom.`**, **`Type.`**, **`N° prévu.`** (calculé), **`Objectif.`**, **`Bloquée par.`** (**toujours présente**), optionnellement **`À trancher au grilling.`**, puis **`Hors périmètre`**.
 
 Une version est **bloquée** par une autre quand une partie de son **Objectif** ne peut pas se faire sans elle. Écrit par **`/afr`** à la création de la version, revu quand un objectif change.
 
 ```markdown
 **Bloquée par.**
 
-- **1.5.0** — les crédits initiaux qu’un participant reçoit à l’inscription n’existent pas encore.
+- **credits-initiaux** — les crédits initiaux qu’un participant reçoit à l’inscription n’existent pas encore.
 - **1.4.2** — la borne refuse au-delà du débit maximal.
 ```
 
-- Une puce par version **directement** nécessaire : `- **X.Y.Z** — raison`, la raison en langage produit (ce qui manque, pas une table ou une route). Les blocages hérités ne se recopient pas.
-- Le numéro cité est une version de **Déjà livré**, de **Prochaine** ou d’**Ensuite** ; pas de cycle. Le script refuse sinon.
+- Une puce par version **directement** nécessaire : `- **<nom>** — raison` (ou `- **X.Y.Z** — raison` pour une version déjà livrée sous son numéro), la raison en langage produit (ce qui manque, pas une table ou une route). Les blocages hérités ne se recopient pas.
+- Le nom ou le numéro cité est une version de **Déjà livré**, de **Prochaine** ou d’**Ensuite** ; pas de cycle. Le script refuse sinon.
 - Une version qui ne dépend de rien : `**Bloquée par.** Aucune.`
 - **Levée = fusionnée sur la base.** Un bloqueur est levé quand sa version est dans **Déjà livré**. Une version ouverte, ou dont la PR est prête, ne débloque rien : ne pas ouvrir une version depuis la branche d’une autre (le squash-merge réécrit ses commits).
 - **Pas de blocage partiel.** Un bloqueur bloque toute la version. S’il ne touche qu’une partie de l’objectif, on **découpe** avec **`/afr`** : la partie bloquée passe en **Hors périmètre** vers la version qui bloque (si elle y a sa place) ou vers une nouvelle version, et la version perd ce bloqueur. **`/dfr`** signale ces cas, il ne les tranche pas.
@@ -102,24 +91,25 @@ Une version est **bloquée** par une autre quand une partie de son **Objectif** 
 | État | Quand | Ligne écrite |
 | --- | --- | --- |
 | Ouvrable | tous ses bloqueurs sont livrés | `**État.** Ouvrable.` |
-| Bloquée | il reste au moins un bloqueur | `**État.** Bloquée : il reste **1.6.1**.` ; `(n sur m)` quand une partie est déjà levée |
+| Bloquée | il reste au moins un bloqueur | `**État.** Bloquée : il reste **credits-initiaux**.` ; `(n sur m)` quand une partie est déjà levée |
 
-La **Prochaine** est la première version ouvrable dans l’ordre du fichier ; aucune si tout est bloqué. « Ouvre la version » sans numéro prend la première ouvrable **pas encore en cours**.
+La **Prochaine** est la première version ouvrable dans l’ordre du fichier ; aucune si tout est bloqué. « Ouvre la version » sans nom prend la première ouvrable **pas encore en cours**.
 
-« En cours » (branche `vX.Y.Z-…` ou PR ouverte) n’est **pas** écrit : une branche non fusionnée est invisible depuis la base. **`/dfr`** et « Ouvre la version » le lisent sur GitHub.
+« En cours » (branche `version/<nom>`, ou PR ouverte dont la tête est cette branche) n’est **pas** écrit : une branche non fusionnée est invisible depuis la base. **`/dfr`** et « Ouvre la version » le lisent sur GitHub.
 
 **Versions en parallèle.** Plusieurs versions ouvrables peuvent être ouvertes en même temps. Chacune, fusionnée, débloque ce qui l’attendait, dans l’ordre d’arrivée sur la base. Deux branches qui modifient la feuille se réconcilient en relançant le script après fusion de la base : **État.**, **Prochaine** et le bandeau du README (si le projet en a un) ne se fusionnent jamais à la main. La copie d’une branche peut dater ; celle de la base fait foi.
 
 ### Déjà livré
 
-- Une ligne : `**X.Y.Z** — titre : résumé…` avec liens utiles (`#issue`, spec, ADR) si déjà connus.
+- Avec Release : ``- **X.Y.Z** — <Titre> (`<nom>`, [#parent](…), [spec](…)) : résumé…`` ; le nom en tête des parenthèses lève les bloqueurs qui le citent.
+- Sans Release : `- **<nom>** — <Titre> (…) : résumé… Sans Release.`
 - Bug connu **livré avec** la version : le mentionner ici **et** le reporter en **Plus tard** / Bug tant qu’il n’est pas corrigé.
 
 ## Bugs
 
 Création standardisée : skill **`/cub`** (`creer-un-bug`) — issue GitHub **et** entrée feuille. Ne pas inventer un format parallèle.
 
-Les bugs non encore numérotés en version vivent sous **`## Plus tard (pas encore numéroté)`**.
+Les bugs pas encore planifiés en version vivent sous **`## Plus tard (pas encore planifié)`**.
 
 ### Titre
 
@@ -144,7 +134,7 @@ Ordre fixe — **chaque** rubrique est toujours présente :
 5. **À corriger** — intention produit (pas le patch).
 6. **Hors périmètre** — ou `Aucun.`
 7. **Métadonnées** (issue) / **Suivi** (feuille) :
-   - Trouvé dans : `X.Y.Z` \| `inconnu` \| jeton
+   - Trouvé dans : `X.Y.Z` (Release) \| `<nom>` (version) \| `inconnu` \| jeton
    - Contexte : `test humain` \| `usage` \| `revue` \| … \| jeton
    - Date : `YYYY-MM-DD` \| jeton
    - Priorité : `bloquant` \| `avant déploiement` \| `non prioritaire` \| jeton
@@ -201,7 +191,7 @@ Exemple rubrique manquante :
 **Cause probable :** Informations manquantes
 ```
 
-Quand le bug est **pris en charge** (planifié) : via **`/afr`**, **retirer** le bloc `### Bug — … (#n)` de **Plus tard** et en faire (ou l’inclure dans) l’**Objectif** d’une **Prochaine** / **Ensuite**. Ne pas laisser le bug listé en Plus tard une fois numéroté.
+Quand le bug est **pris en charge** (planifié) : via **`/afr`**, **retirer** le bloc `### Bug — … (#n)` de **Plus tard** et en faire (ou l’inclure dans) l’**Objectif** d’une **Prochaine** / **Ensuite**. Ne pas laisser le bug listé en Plus tard une fois planifié.
 
 Quand le bug est **corrigé** (version livrée) : skill **`finaliser-la-version`** —
 

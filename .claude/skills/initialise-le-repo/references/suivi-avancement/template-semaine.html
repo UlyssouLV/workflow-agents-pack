@@ -412,7 +412,7 @@
               <span class="toc-ref">livraisons</span>
             </div>
             <ol data-slot="toc-versions">
-              <!-- Une <li><a href="#version-X-Y-Z">VX.Y.Z — titre</a></li> par version attendue / livrée -->
+              <!-- Une <li><a href="#version-<nom>">Titre (VX.Y.Z — Titre une fois livrée)</a></li> par version attendue / livrée -->
             </ol>
           </li>
         </ol>
@@ -457,7 +457,7 @@
     <section class="bloc" id="reste-a-implementer">
     <h2>Reste à implémenter</h2>
     <ul data-slot="liste-reste">
-      <!-- Puces VX.Y.Z — titre (attendus + suite feuille de route) -->
+      <!-- Puces : titre de chaque version (attendus + suite feuille de route) -->
     </ul>
     </section>
 
@@ -475,9 +475,9 @@
 
       <!--
         Gabarit d’un bloc version (prévu) :
-        <div class="version" id="version-X-Y-Z">
+        <div class="version" id="version-nom-de-la-version">
           <div class="version-head">
-            <h3>VX.Y.Z — Titre</h3>
+            <h3>Titre</h3>
             <span class="prevu">Livraison prévue …</span>
           </div>
           <div class="version-body">

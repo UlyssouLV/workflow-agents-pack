@@ -33,7 +33,7 @@ From the user message. **Do not invent.**
 | **Cause probable** | yes | Hypothesis, or `Inconnue`, or `Informations manquantes`. |
 | **À corriger** | yes | Product intent, or `Informations manquantes`. |
 | **Hors périmètre** | yes | Default `Aucun.` if the user said nothing on scope. |
-| **Trouvé dans** | yes | `X.Y.Z`, or `inconnu`, or `Informations manquantes`. |
+| **Trouvé dans** | yes | the version where it was seen: its Release number `X.Y.Z` once released, else its **Nom** `<nom>` (roadmap `**Nom.**`, e.g. found in human tests before the Release; older bugs keep the number they were written with) — or `inconnu`, or `Informations manquantes`. |
 | **Contexte** | yes | `test humain` \| `usage` \| `revue` \| …, or `Informations manquantes`. |
 | **Date** | yes | `YYYY-MM-DD` (Europe/Paris). If omitted but other facts imply a day, use it; else today’s date **only if** the user is filing now; else `Informations manquantes`. |
 | **Priorité** | yes | `bloquant` \| `avant déploiement` \| `non prioritaire`, or `Informations manquantes`. |
@@ -92,7 +92,7 @@ Body — **exact** headings below. Under **Constat**, after the text, add one Ma
 
 ## Métadonnées
 
-- Trouvé dans : <X.Y.Z|inconnu|Informations manquantes>
+- Trouvé dans : <X.Y.Z|nom|inconnu|Informations manquantes>
 - Contexte : <…|Informations manquantes>
 - Date : <YYYY-MM-DD|Informations manquantes>
 - Priorité : <bloquant|avant déploiement|non prioritaire|Informations manquantes>
@@ -112,7 +112,7 @@ Done when the issue exists with label `bug`, that body shape, and every intended
 
 ## 4. Update the feuille de route
 
-Read role **`roadmap`**. Under **`## Plus tard (pas encore numéroté)`**, append one entry that matches **`docs/dev/feuille-de-route/README.md`** (*Bugs*), including `(#n)` and the same fields (Constat → Suivi), using **`Informations manquantes`** wherever the issue body does.
+Read role **`roadmap`**. Under **`## Plus tard (pas encore planifié)`**, append one entry that matches **`docs/dev/feuille-de-route/README.md`** (*Bugs*), including `(#n)` and the same fields (Constat → Suivi), using **`Informations manquantes`** wherever the issue body does.
 
 On the feuille, **do not** embed the binary images; point to the issue (`[#n](url)`) where the attachments live. Optionally note « captures en pièce jointe sur #n ».
 

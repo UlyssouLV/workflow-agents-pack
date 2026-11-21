@@ -16,6 +16,13 @@
 #                       app sources). Read by finaliser-la-version: a version
 #                       whose diff touches none of them (tests/ and *.md
 #                       ignored) gets no Release. Missing → always a Release.
+#   staging           — one doc (e.g. docs/dev/staging.md) describing the
+#                       staging environment: how a pre-release vX.Y.Z-rc.<k>
+#                       reaches it, and how to check which version it runs.
+#                       Present → human-test scenarios are split Branche /
+#                       Staging, and finaliser-la-version publishes a
+#                       pre-release for the staging trial before the final
+#                       Release. Missing → one pass, final Release directly.
 
 roles:
   roadmap:

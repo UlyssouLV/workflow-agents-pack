@@ -177,7 +177,7 @@ Push la branche courante (pas de force) et ouvre un PR vers la **base** (`main` 
 
 ```
 /opr -draft
-VX.Y.Z — un job
+Agent Administration
 Fixes #12
 Fixes #13
 ```
@@ -190,7 +190,7 @@ Fixes #13
 
 **Corps :** titre + ce que le ticket livre (critères d’acceptation) ; `#parent` si besoin ; éventuellement `Blocked by #n` **avec** `vraie dépendance : <ce qui casse>` ou `ordre de confort : …` (`agents/issue-tracker.md`). Sans cette phrase : l’agent demande, il n’invente pas.
 
-Crée **un** enfant GitHub (`Part of`, sub-issue, parent bloqué par l’enfant). Corps au format Matt `/to-tickets` : `## What to build` / `## Acceptance criteria` / `## Blocked by` (`agents/issue-tracker.md`). Avant : le ticket tient dans `docs/specs/vX.Y.Z-*.md`. Après : le corps de l’issue parente GitHub = ce fichier ; si une PR ouverte cite déjà le parent, ajoute les `Fixes #n` manquants. Pas de nouvelle PR. Équivalent : « crée un ticket ». Skill `creer-ticket`.
+Crée **un** enfant GitHub (`Part of`, sub-issue, parent bloqué par l’enfant). Corps au format Matt `/to-tickets` : `## What to build` / `## Acceptance criteria` / `## Blocked by` (`agents/issue-tracker.md`). Avant : le ticket tient dans la spec de la version (`docs/specs/<nom>.md`, ou `docs/specs/vX.Y.Z-*.md` pour une version ouverte sur une branche `vX.Y.Z-…`). Après : le corps de l’issue parente GitHub = ce fichier ; si une PR ouverte cite déjà le parent, ajoute les `Fixes #n` manquants. Pas de nouvelle PR. Équivalent : « crée un ticket ». Skill `creer-ticket`.
 
 **Exemple :**
 
@@ -234,7 +234,7 @@ Priorité : avant déploiement
 
 **Corps :** `vX.Y.Z` (ou `X.Y.Z`), éventuellement le purpose.
 
-Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag = `vX.Y.Z` ou `{release_tag_prefix}X.Y.Z` si [canal d’intégration](integration-channel.md) (ex. `orchestrator-v0.1.0`). Titre humain `VX.Y.Z — …` au **numéro produit** (le tag passé par Finalise prime sur la branche ; le numéro de développement va dans les notes, ligne `Développement : D (#parent)`). Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
+Crée la GitHub Release **sur le SHA de la branche courante**, pas la base. Tag = `vX.Y.Z` ou `{release_tag_prefix}X.Y.Z` si [canal d’intégration](integration-channel.md) (ex. `orchestrator-v0.1.0`). Titre humain `VX.Y.Z — <Titre>`, le numéro fixé par Finalise selon le Type de la version (le tag passé par Finalise prime sur la branche) ; les notes nomment la version, ligne `Version : <nom> (#parent)`. Notes : Pourquoi / Ce qu’on peut faire / Historique (PR + Fixes) / Hors périmètre (ADR sur le tag) — **même format** ; l’historique de commits ne sert qu’à **combler les manques** (feature ou bug absents de la spec/PR), jamais en dump de subjects. Avec **`--prerelease`** et un tag `vX.Y.Z-rc.<k>` : pré-release aux notes minimales (pas de captures), pour l’essai en staging. Ne retaggue pas. Pas de merge. Équivalent : « crée une release ».
 
 **Exemple :**
 
@@ -390,7 +390,7 @@ Commit sur la branche courante (HEAD ↔ working tree). Défaut = fichiers déj�
 
 **Corps :** `#n` de l’enfant. S’il manque, le skill demande et attend.
 
-Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of` / `## Parent` (probable spec). Refuse les tickets **tests humains** (`ready-for-human` → `/th`). Équivalent : « ferme le ticket enfant ».
+Retire `ready-for-agent` et ferme l’issue. Refuse s’il n’y a pas `Part of` / `## Parent` (probable spec). Refuse les tickets **tests humains** et **essai en staging** (`ready-for-human` → `/th`). Refuse tant qu’une case `- [ ]` reste dans `## Acceptance criteria` (`agents/scripts/criteres-non-coches.mjs`), sauf un critère marqué « vérifié par un humain : … », et cite les cases. Équivalent : « ferme le ticket enfant ».
 
 **Exemple :**
 
@@ -427,16 +427,16 @@ Augmente la feuille de route de dev
 
 **Commande :** `Ouvre la version`
 
-**Options :** semver obligatoire `X.Y.Z` (ex. `1.3.0`).
+**Options :** le **Nom** de la version dans la feuille de route (ex. `agent-administration`) ; sans nom, la première version ouvrable pas encore en cours. Jamais un numéro : il n’est fixé qu’à « Finalise la version ».
 
 **Corps :** seulement si la version n’est pas déjà dans le rôle **`roadmap`** — à quoi elle sert (un job).
 
-Grill + spec, puis **`/ob`**, écriture de la spec, **`/c -a -p`**, tickets d’implémentation + **un enfant tests humains** (`ready-for-human` ; chaque enfant : `Part of`, **sub-issue** GitHub, `blocked_by` **avec** `vraie dépendance` / `ordre de confort`), **`/opr -draft`**, puis propose le premier `/implement` (pas le ticket tests humains). Skill `ouvrir-la-version`.
+Grill + spec, puis **`/ob version/<nom>`**, écriture de la spec (`docs/specs/<nom>.md` ; parent et PR titrés `<Titre>`), **`/c -a -p`**, tickets d’implémentation + **un enfant tests humains** (`ready-for-human` ; chaque enfant : `Part of`, **sub-issue** GitHub, `blocked_by` **avec** `vraie dépendance` / `ordre de confort`), **`/opr -draft`**, puis propose le premier `/implement` (pas le ticket tests humains). Skill `ouvrir-la-version`.
 
 **Exemple :**
 
 ```
-Ouvre la version 1.3.0
+Ouvre la version agent-administration
 ```
 
 
@@ -449,7 +449,7 @@ Ouvre la version 1.3.0
 
 **Corps :** inutile en général (le ticket suffit).
 
-TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci #<n>`**, puis auto-enchaînement du suivant `ready-for-agent` via `agents/scripts/enchainer-implement.sh` (`$WAP_ENCHAINER` si défini — session orchestrateur — sinon nouvelle fenêtre terminal + Claude Code vierge sur `/implement #<next>` sous macOS / Linux / Windows ; fallback : demander une nouvelle session). Pas de `/clear` de la conversation finie. Quand il n’en reste plus : remplit le **plan** sur le ticket tests humains et renvoie vers **`/th`** (pas `/code-review` tant que ce ticket est Open). Quand tout est Closed : **`/code-review`**, puis **Finalise la version**. Pas de quality gate ici. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
+TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, cocher les **Acceptance criteria** du ticket (chacun prouvé par un test vert, ou laissé aux tests humains), **`/c`**, **`/cci #<n>`**, push seulement quand la suite ne s’enchaîne pas dans le même clone (tests humains, Finalise, repli, `$WAP_ENCHAINER`), puis auto-enchaînement du suivant `ready-for-agent` via `agents/scripts/enchainer-implement.sh` (`$WAP_ENCHAINER` si défini — session orchestrateur — sinon nouvelle fenêtre terminal + Claude Code vierge sur `/implement #<next>` sous macOS / Linux / Windows ; fallback : demander une nouvelle session). Pas de `/clear` de la conversation finie. Après le `/cci`, coche la ligne du `## Test plan` de la PR qui cite l’enfant. Quand il n’en reste plus : remplit le **plan** sur le ticket tests humains, chaque scénario étiqueté **Branche** (joué sur la branche, dans `## Plan de tests`) ou **Staging** (seulement avec le rôle `staging` : ce que seul l’environnement staging permet, dans `## À jouer en staging`), et renvoie vers **`/th`** (pas `/code-review` tant que ce ticket est Open). Quand tout est Closed : **`/code-review`**, puis **Finalise la version**. Pas de quality gate ici. Skill `encadrer-implement`. Ne pas l’appeler à la place de `/implement`.
 
 **Exemple :**
 
@@ -463,11 +463,11 @@ TDD du ticket (plugin `/implement`). La **fin** : **`/t`**, **`/c -p`**, **`/cci
 
 **Commande :** `/th`
 
-**Options :** `#<n>` (le ticket `Tests humains — VX.Y.Z`) ; sans numéro, celui de la branche courante.
+**Options :** `#<n>` (le ticket `Tests humains — <nom>`, ou `Tests humains — VX.Y.Z` d’une version ouverte avant la règle des versions nommées) ; sans numéro, celui de la branche courante (`version/<nom>` ou `vX.Y.Z-…`).
 
-**Corps :** vide au premier passage ; ensuite scénarios joués / non joués, résultats ; images de preuve optionnelles (commit sous `docs/img/changelog/vX.Y.Z/`).
+**Corps :** vide au premier passage ; ensuite scénarios joués / non joués, résultats ; images de preuve optionnelles (commit sous `docs/img/changelog/<nom>/`).
 
-Deux passages. **1)** `/th #<n>` seul : l’agent joue les scénarios qu’il peut faire sans vous (CLI, app locale, navigateur), commit les captures, écrit ses résultats sur le ticket et liste ce qui reste pour vous ; le ticket reste ouvert. **2)** `/th #<n>` avec vos résultats (ou « ok » s’il ne restait rien) : met à jour le ticket `ready-for-human`, commit vos captures si besoin, ferme l’issue, propose `/code-review` puis Finalise. Skill `tests-humains`. Pas `/implement`. Pas `/cci`.
+Deux passages. **1)** `/th #<n>` seul : l’agent joue les scénarios qu’il peut faire sans vous (CLI, app locale, navigateur), commit les captures, écrit ses résultats sur le ticket et liste ce qui reste pour vous ; le ticket reste ouvert. **2)** `/th #<n>` avec vos résultats (ou « ok » s’il ne restait rien) : met à jour le ticket `ready-for-human`, commit vos captures si besoin, ferme l’issue, propose `/code-review` puis Finalise. Joue aussi l’enfant **Essai en staging — VX.Y.Z** sur staging, sur la pré-release `vX.Y.Z-rc.<k>` : tout OK → fermé, le Finalise suivant publie la Release finale ; un KO → reste ouvert, correction sur la branche puis nouvelle rc. Skill `tests-humains`. Pas `/implement`. Pas `/cci`.
 
 **Exemple :**
 
@@ -506,7 +506,7 @@ Nécessite le rôle **`suivi-avancement`** (opt-in à `/init` ou `adopter-le-pac
 
 **Commande :** `/msa`
 
-**Options :** semver `X.Y.Z` si pas déductible de la branche.
+**Options :** le Nom de la version (et son numéro de Release s’il y en a un) si pas déductible de la branche.
 
 **Corps :** inutile.
 
@@ -528,7 +528,11 @@ Met à jour le HTML de la semaine courante pour la version livrée ; PDF si `gen
 
 **Corps :** inutile.
 
-Après une **`/code-review`** acceptée : branche à jour avec la base (sinon stop : merge de la base, `/t`, `/c -p`), calcul du **numéro produit** (`docs/dev/feuille-de-route/README.md` ; pas de Release si le rôle optionnel `livrables` existe et qu’aucun de ses chemins n’a bougé), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe (sinon stop : les fusionner ou les fermer) + docs à jour (`readme`, `roadmap` — et le bandeau d’avancement du README si `scripts/avancement-feuille-de-route.mjs` existe —, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe, puis **`/crel vP`**, puis les aperçus README si le README en affiche (opt-in, Playwright), puis les compteurs de commits du README si `scripts/stats-commits-readme.mjs` existe, puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
+Après une **`/code-review`** acceptée : branche à jour avec la base (sinon Finalise **fusionne la base lui-même**, résout les conflits, cherche ceux que git ne signale pas, relance lint, typage et `/t -a`, et ne s’arrête que sur un choix produit), numéro de la version : le prochain libre de son **Type** après la dernière Release, les pré-releases en cours réservant le leur (`docs/dev/feuille-de-route/README.md`, *Nom, Type et Numéro prévu* ; pas de Release pour un type sans numéro ; arrêt si le diff du rôle optionnel `livrables` ne s’accorde pas avec le Type), tous les enfants Closed (y compris le ticket **tests humains** — sinon stop et **`/th`**), aucune PR Dependabot ouverte si `.github/dependabot.yml` existe + docs à jour (`readme`, `roadmap` — et le bandeau d’avancement du README si `scripts/avancement-feuille-de-route.mjs` existe —, **`/msa`** si rôle suivi présent — `/c -a -p` si besoin), puis **`/qg -w`** (puis **`/cqg`** si le gate n’est pas `OK`), puis les checks exigés si `agents/checks-requis.yml` existe.
+
+**Avec un staging** (rôle `staging`) et des scénarios Staging : **deux passages**. 1) Pré-release **`vX.Y.Z-rc.<k>`** (`/crel --prerelease`, notes minimales, sans captures) : elle sert à construire et rattacher les artefacts ; Finalise crée l’enfant **Essai en staging — VX.Y.Z** et s’arrête. `/th` le joue sur staging ; un KO se corrige sur la branche et le Finalise suivant publie `rc.<k+1>`. 2) Essai fermé et OK : Finalise relancé publie la **Release finale `vX.Y.Z`** sur le même SHA que la dernière rc, et supprime les Releases rc (les tags restent). Sans staging : un seul passage, Release finale directe.
+
+Puis **un seul commit** : aperçus README (opt-in, Playwright) et compteurs de commits (`scripts/stats-commits-readme.mjs --avant-squash`) ensemble. **Deux cycles de CI** : celui du SHA de la Release (suite complète) et celui de ce commit, qui ne touche que `README.md` / `docs/img/` et doit être **minuscule** (les checks exigés répondent sans rejouer builds ni tests). Puis le `## Test plan` de la PR coché case par case (arrêt sur une case ni prouvée ni expliquée), puis les titres `VX.Y.Z — <Titre>` (PR et parent), puis **`/mpr`**. Skill `finaliser-la-version`. Ne relance pas `/code-review`.
 
 **Exemple :**
 
